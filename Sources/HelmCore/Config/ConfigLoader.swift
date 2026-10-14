@@ -99,18 +99,29 @@ public enum ConfigLoader {
     # l = "right_arrow"
 
     # ── Mouse ────────────────────────────────────────────────
-    # [mouse.buttons]             # button2 = middle, button3 = back, button4 = forward
-    # button3 = "navigate.back"
-    # button4 = "navigate.forward"
-    #
-    # [[mouse.app]]               # per-app exceptions
+    # Buttons: button1 = right, button2 (or middle) = wheel click,
+    #          button3 (or back) / button4 (or forward) = side buttons, button5...31 = extra.
+    #          The left button can't be remapped.
+    # Actions: "navigate.back" / "navigate.forward"  back/forward in every app
+    #          "cmd-w"                                a key or combo (US key positions)
+    #          { shell = "open -a Safari" }           run a shell command
+    #          "none"                                 disable the button
+    #          "passthrough"                          keep the normal behavior (for app exceptions)
+    # [mouse.buttons]
+    # button3 = "navigate.back"     # side button: back
+    # button4 = "navigate.forward"  # side button: forward
+    # middle = "cmd-w"              # wheel click: close tab
+
+    # Per-app exceptions: these buttons behave differently in one app.
+    # [[mouse.app]]
     # bundle_id = "com.google.Chrome"
     # buttons = { button3 = "passthrough", button4 = "passthrough" }
-    #
-    # [mouse.scroll]              # wheel only; trackpads are never touched
-    # reverse = true
-    # linear = true
-    # lines = 3
+
+    # Wheel scrolling only; trackpads and Magic Mouse are never touched.
+    # [mouse.scroll]
+    # reverse = true                # invert the wheel direction
+    # linear = true                 # same distance per notch, no acceleration
+    # lines = 3                     # lines per notch when linear (1-20)
 
     # ── Window manager ───────────────────────────────────────
     # [wm]
