@@ -59,6 +59,8 @@ public struct Layer: Sendable, Equatable {
     public static let trigger = KeyNames.key("f18")!
 
     public var alone: Output?
+    /// Added to unmapped keys while the layer is held.
+    public var hold: Modifiers
     public var tapTimeoutNs: UInt64
     public var base: KeyTable
     public var apps: [String: KeyTable]
@@ -74,6 +76,7 @@ public struct ActiveTables: Sendable, Equatable {
     public struct ActiveLayer: Sendable, Equatable {
         public var trigger: UInt16
         public var alone: Output?
+        public var hold: Modifiers
         public var tapTimeoutNs: UInt64
         public var map: KeyTable
     }
@@ -102,8 +105,16 @@ public struct KeyboardPlan: Sendable, Equatable {
         }
         if let caps = config.capslock {
             hid.append(HIDMapping(from: KeyNames.key("caps_lock")!.usage, to: Layer.trigger.usage, device: nil))
+            var hold: Modifiers = []
+            if let text = caps.hold {
+                guard let parsed = Modifiers(parsing: text) else {
+                    throw Error(message: "keyboard.capslock.hold: '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\", \"meh\" or \"hyper\"")
+                }
+                hold = parsed
+            }
             layer = Layer(
                 alone: try output(caps.alone, path: "keyboard.capslock.alone"),
+                hold: hold,
                 tapTimeoutNs: UInt64(max(0, caps.tapTimeoutMs)) * 1_000_000,
                 base: try table(caps.map, path: "keyboard.capslock.map"),
                 apps: [:]
@@ -126,6 +137,7 @@ public struct KeyboardPlan: Sendable, Equatable {
             tables.layer = .init(
                 trigger: Layer.trigger.code,
                 alone: layer.alone,
+                hold: layer.hold,
                 tapTimeoutNs: layer.tapTimeoutNs,
                 map: bundleID.flatMap { layer.apps[$0] } ?? layer.base
             )

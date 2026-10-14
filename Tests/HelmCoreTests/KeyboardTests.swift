@@ -68,6 +68,7 @@ struct KeyboardPlanTests {
         #expect(error("[keyboard.capslock.map]\nh = \"cmd-lefty\"") == "keyboard.capslock.map.h: unknown key or combo 'cmd-lefty'")
         #expect(error("[keyboard]\nsimple = [{ from = \"left_shift\", to = \"cmd-a\" }]")?.contains("modifier to a combo") == true)
         #expect(error("[keyboard]\nsimple = [{ from = \"caps_lock\", to = \"escape\" }]\n[keyboard.capslock]")?.contains("already configured") == true)
+        #expect(error("[keyboard.capslock]\nhold = \"shift-k\"")?.contains("isn't a modifier list") == true)
     }
 }
 
@@ -141,6 +142,32 @@ struct KeyEngineTests {
         #expect(e.handle(code: t, down: true, isRepeat: false, now: 3, tables: tables) == .emit(.shell("open -a Terminal")))
         #expect(e.handle(code: t, down: true, isRepeat: true, now: 4, tables: tables) == .drop)
         #expect(e.handle(code: t, down: false, isRepeat: false, now: 5, tables: tables) == .drop)
+    }
+
+    @Test func holdAddsModifiersToUnmappedKeys() throws {
+        let tables = try KeyboardPlan(ConfigLoader.parse("""
+        [keyboard.capslock]
+        hold = "shift-ctrl-opt"
+        alone = "escape"
+        [keyboard.capslock.map]
+        h = "left_arrow"
+        """).get().keyboard).tables(forApp: nil)
+        var e = KeyEngine()
+        _ = e.handle(code: trigger, down: true, isRepeat: false, now: 0, tables: tables)
+        #expect(e.handle(code: t, down: true, isRepeat: false, now: 1, tables: tables) == combo("shift-ctrl-opt-t"))
+        #expect(e.handle(code: t, down: true, isRepeat: true, now: 2, tables: tables) == combo("shift-ctrl-opt-t"))
+        #expect(e.handle(code: h, down: true, isRepeat: false, now: 3, tables: tables) == combo("left_arrow"), "mapped keys win")
+        _ = e.handle(code: trigger, down: false, isRepeat: false, now: 4, tables: tables)
+        #expect(e.handle(code: t, down: false, isRepeat: false, now: 5, tables: tables) == combo("shift-ctrl-opt-t"), "release matches press")
+        #expect(e.handle(code: t, down: true, isRepeat: false, now: 6, tables: tables) == .pass)
+    }
+
+    @Test func holdModifierNames() {
+        #expect(Modifiers(parsing: "meh") == [.shift, .control, .option])
+        #expect(Modifiers(parsing: "hyper") == [.shift, .control, .option, .command])
+        #expect(Modifiers(parsing: "ctrl-alt") == [.control, .option])
+        #expect(Modifiers(parsing: "shift-k") == nil)
+        #expect(Modifiers(parsing: "") == nil)
     }
 
     @Test func simpleRemapsWorkWithoutLayer() {

@@ -15,6 +15,22 @@ public struct Modifiers: OptionSet, Sendable, Hashable {
         "ctrl": .control, "control": .control,
         "fn": .fn,
     ]
+
+    /// `"shift-ctrl-opt"`, or the shortcuts `"meh"` (⇧⌃⌥) and `"hyper"` (⇧⌃⌥⌘).
+    public init?(parsing text: String) {
+        switch text.lowercased() {
+        case "meh": self = [.shift, .control, .option]
+        case "hyper": self = [.shift, .control, .option, .command]
+        default:
+            var result: Modifiers = []
+            for part in text.lowercased().split(separator: "-") {
+                guard let modifier = Modifiers.names[String(part)] else { return nil }
+                result.insert(modifier)
+            }
+            guard !result.isEmpty else { return nil }
+            self = result
+        }
+    }
 }
 
 /// A key plus modifiers, e.g. `cmd-shift-k`, `ctrl-minus`, `left_arrow`.

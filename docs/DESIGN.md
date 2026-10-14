@@ -122,6 +122,7 @@ Any key (Caps Lock included) that appears in the config does *only* what it is m
 - While Caps Lock is held, every key can be mapped to an action (key, key combo, shell command, WM command). Each key is configured on its own.
 - **Unmapped keys keep their normal behavior**: if `Caps + Q` has no mapping, the event passes through untouched (as plain `Q`, with any real modifiers kept).
 - Tapping Caps Lock alone does nothing by default; it can be given its own action (`alone = "escape"`, etc.).
+- `hold = "meh"` (or `"hyper"`, or any list like `"shift-ctrl-opt"`): while Caps Lock is held, every *unmapped* key gets these modifiers, so Caps works as a Meh/Hyper key. Keys listed in the layer map keep their own action.
 - Implementation:
   1. L0 remaps Caps Lock to an unused key (e.g. F18). This kills the caps lock toggle and the built-in Caps Lock delay at kernel level, and gives L1 a normal key down/up pair to track.
   2. L1 tracks the F18 down/up state and looks up `layer[keycode]` for each key while it's held. A hit emits the mapped action and swallows the original event; a miss passes the event through.
