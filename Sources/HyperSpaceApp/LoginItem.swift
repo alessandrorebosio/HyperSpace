@@ -1,12 +1,12 @@
 import Foundation
-import HelmCore
+import HyperSpaceCore
 import ServiceManagement
 
 /// Launch at login through `SMAppService` (no hand-written LaunchAgent).
 /// Only works when running from an app bundle.
 @MainActor
 enum LoginItem {
-    private static let log = Helm.logger("login-item")
+    private static let log = HyperSpace.logger("login-item")
 
     static var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
     static var isEnabled: Bool { isAvailable && SMAppService.mainApp.status == .enabled }

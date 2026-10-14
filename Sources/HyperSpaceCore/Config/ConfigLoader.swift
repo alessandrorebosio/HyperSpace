@@ -9,12 +9,12 @@ public struct ConfigError: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 public enum ConfigLoader {
-    /// `$XDG_CONFIG_HOME/helm/helm.toml`, falling back to `~/.config/helm/helm.toml`.
+    /// `$XDG_CONFIG_HOME/hyperspace/hyperspace.toml`, falling back to `~/.config/hyperspace/hyperspace.toml`.
     public static var defaultURL: URL {
         let env = ProcessInfo.processInfo.environment
         let base = env["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config")
-        return base.appending(path: "helm/helm.toml")
+        return base.appending(path: "hyperspace/hyperspace.toml")
     }
 
     /// Loads the config. A missing file is not an error: it means every feature is off.
@@ -30,7 +30,7 @@ public enum ConfigLoader {
         return parse(text, path: url.path)
     }
 
-    public static func parse(_ text: String, path: String = "helm.toml") -> Result<Config, ConfigError> {
+    public static func parse(_ text: String, path: String = "hyperspace.toml") -> Result<Config, ConfigError> {
         do {
             let config = try TOMLDecoder().decode(Config.self, from: text)
             _ = try InputPlan(config) // validates key names, combos and mouse inputs
@@ -84,7 +84,7 @@ public enum ConfigLoader {
     }
 
     public static let template = """
-    # Helm configuration. Saved changes are applied immediately.
+    # HyperSpace configuration. Saved changes are applied immediately.
     # Remapped keys and buttons only do what is mapped here; everything else is untouched.
 
     # ── Keyboard ─────────────────────────────────────────────
@@ -100,7 +100,7 @@ public enum ConfigLoader {
     #            "passthrough"                    keep the normal behavior (for app exceptions)
 
     # Simple remaps, always active. key -> key works everywhere, even in password fields;
-    # key -> combo needs Helm running. "device" limits a remap to one keyboard.
+    # key -> combo needs HyperSpace running. "device" limits a remap to one keyboard.
     # [keyboard]
     # simple = [
     #   { from = "command.right", to = "option.right" },
@@ -123,7 +123,7 @@ public enum ConfigLoader {
 
     # Per-app Caps + key overrides: only while that app is in front; other apps keep the
     # global behavior. bundle_id identifies the app; to find it:
-    #   helmctl apps                          bundle ids of the running apps
+    #   hsctl apps                          bundle ids of the running apps
     #   osascript -e 'id of app "Safari"'     bundle id of any installed app
     # [[keyboard.capslock.app]]
     # bundle_id = "com.microsoft.VSCode"

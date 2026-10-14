@@ -2,23 +2,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "Helm",
+    name: "HyperSpace",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "Helm", targets: ["HelmApp"]),
-        .executable(name: "helmctl", targets: ["helmctl"]),
+        .executable(name: "HyperSpace", targets: ["HyperSpaceApp"]),
+        .executable(name: "hsctl", targets: ["hsctl"]),
     ],
     dependencies: [
         .package(url: "https://github.com/dduan/TOMLDecoder.git", exact: "0.4.5"),
     ],
     targets: [
-        .target(name: "HelmCore", dependencies: ["TOMLDecoder"]),
-        // Tiny on purpose: helmctl links only this.
-        .target(name: "HelmIPC"),
+        .target(name: "HyperSpaceCore", dependencies: ["TOMLDecoder"]),
+        // Tiny on purpose: hsctl links only this.
+        .target(name: "HyperSpaceIPC"),
         // Talks to macOS input APIs (event tap, HID event system).
-        .target(name: "HelmInput", dependencies: ["HelmCore"]),
-        .executableTarget(name: "HelmApp", dependencies: ["HelmCore", "HelmIPC", "HelmInput"]),
-        .executableTarget(name: "helmctl", dependencies: ["HelmIPC"]),
-        .testTarget(name: "HelmCoreTests", dependencies: ["HelmCore", "HelmIPC"]),
+        .target(name: "HyperSpaceInput", dependencies: ["HyperSpaceCore"]),
+        .executableTarget(name: "HyperSpaceApp", dependencies: ["HyperSpaceCore", "HyperSpaceIPC", "HyperSpaceInput"]),
+        .executableTarget(name: "hsctl", dependencies: ["HyperSpaceIPC"]),
+        .testTarget(name: "HyperSpaceCoreTests", dependencies: ["HyperSpaceCore", "HyperSpaceIPC"]),
     ]
 )

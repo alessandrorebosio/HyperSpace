@@ -1,8 +1,8 @@
 import Foundation
-import HelmCore
+import HyperSpaceCore
 
 enum ActionRunner {
-    private static let log = Helm.logger("action")
+    private static let log = HyperSpace.logger("action")
 
     /// Runs a shell command without waiting for it. Homebrew paths are added because apps
     /// launched from Finder get a minimal PATH.

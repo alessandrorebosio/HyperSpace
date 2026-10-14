@@ -1,5 +1,5 @@
 import AppKit
-import HelmCore
+import HyperSpaceCore
 
 /// Applies an `InputPlan`: L0 key mappings through `HIDMapper`, keyboard and mouse remapping
 /// through `InputTap`, and keeps the tap's tables in sync with the frontmost app.
@@ -9,7 +9,7 @@ public final class InputService {
         case off, running, failed
     }
 
-    private let log = Helm.logger("input")
+    private let log = HyperSpace.logger("input")
     private let mapper = HIDMapper()
     private var tap: InputTap?
     private var plan = InputPlan()

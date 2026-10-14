@@ -1,6 +1,6 @@
 import Foundation
 
-/// `helmctl` <-> Helm.app protocol: one JSON line each way over a Unix domain socket.
+/// `hsctl` <-> HyperSpace.app protocol: one JSON line each way over a Unix domain socket.
 public enum IPC {
     public struct Request: Codable, Sendable, Equatable {
         public var args: [String]
@@ -22,10 +22,10 @@ public enum IPC {
         public static func error(_ text: String, exitCode: Int32 = 1) -> Response { Response(exitCode: exitCode, stderr: text) }
     }
 
-    /// `~/Library/Application Support/Helm/helm.sock`: per user, not world-writable like /tmp.
+    /// `~/Library/Application Support/HyperSpace/hyperspace.sock`: per user, not world-writable like /tmp.
     public static var defaultSocketPath: String {
         FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Application Support/Helm/helm.sock").path
+            .appending(path: "Library/Application Support/HyperSpace/hyperspace.sock").path
     }
 
     static let maxMessageSize = 64 * 1024

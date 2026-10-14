@@ -26,7 +26,7 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 - **Diversion works** (interactive run): after `setCidReporting(0x03)` middle/back/forward are no longer delivered to macOS and arrive as `divertedButtons` events instead, ~1 ms apart from the physical press. Events carry the full set of held CIDs (up to 4), so chords like back+forward+middle are visible. `setCidReporting(0x02)` restored all 5 controls on exit.
 - DPI button `0x00FD`: confirmed in the second run, see below.
 - The first request to a sleeping device can take > 0.4 s: HID++ calls need a ~2 s timeout and must never run on the input thread.
-- Another process was talking HID++ to the receiver at the same time (different software id). Helm must tolerate shared access and match responses by software id.
+- Another process was talking HID++ to the receiver at the same time (different software id). HyperSpace must tolerate shared access and match responses by software id.
 
 ### S2 — Raw HID on standard mouse/keyboard interfaces needs **Input Monitoring** ⚠️
 - `IOHIDDeviceOpen` on every generic desktop interface (mouse `1:2`, keyboard `1:6`) returns `not permitted` while `IOHIDCheckAccess(ListenEvent)` is denied. This applies to **mice too**, not just keyboards.
@@ -34,19 +34,19 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 
 ### L0 — `UserKeyMapping` API is public and available ✅
 - `IOHIDEventSystemClientCreateSimpleClient` / `IOHIDServiceClientSetProperty` are in the public SDK headers (`IOKit/hidsystem`).
-- 3 keyboard services found: built-in keyboard, Bolt receiver, Karabiner virtual keyboard. Helm must skip Karabiner's virtual keyboard.
+- 3 keyboard services found: built-in keyboard, Bolt receiver, Karabiner virtual keyboard. HyperSpace must skip Karabiner's virtual keyboard.
 - Effect on key events still to verify interactively (see below).
 
 ### L1 — Active event tap needs **Accessibility only** ✅
 - With Accessibility granted to the terminal and Input Monitoring *not* granted, the active tap (`kCGSessionEventTap`, `.defaultTap`) was created and saw every key down/up and modifier change. Confirms the single-permission design.
 - Slowest callback over the 40 s run (excluding logging): **284 µs**, below the 1 ms target even in a debug build with a dictionary lookup.
 
-- **Cold start:** the second run reported a 60 ms worst case. It's the first `CGEvent(keyboardEventSource:)` call in the process: measured separately at ~100 ms the first time, 0.002 ms afterwards. Helm must **pre-warm** event creation at startup (create and drop one event of each kind) so the first remapped key isn't slow.
+- **Cold start:** the second run reported a 60 ms worst case. It's the first `CGEvent(keyboardEventSource:)` call in the process: measured separately at ~100 ms the first time, 0.002 ms afterwards. HyperSpace must **pre-warm** event creation at startup (create and drop one event of each kind) so the first remapped key isn't slow.
 
 ### Mouse through the event tap (S1) ✅
 - Lift buttons arrive as `otherMouseDown/Up` with button **2 = middle, 3 = back, 4 = forward**, subtype 0.
 - Back/forward were swallowed and replaced with ⌘[ / ⌘].
-- Scroll: the Lift sends line-based wheel events (`lines = ±1`, `points = ±1`, `continuous = 0`, no phase): it's a notched wheel, so linear/smooth scrolling has to be synthesized by Helm.
+- Scroll: the Lift sends line-based wheel events (`lines = ±1`, `points = ±1`, `continuous = 0`, no phase): it's a notched wheel, so linear/smooth scrolling has to be synthesized by HyperSpace.
 
 ### DPI button via HID++ (S3) ✅
 - After diversion the DPI button arrives as CID `0x00FD` press/release events, like the other buttons. It never reaches macOS on its own, so S3 is the only way to remap it, with no permission needed.

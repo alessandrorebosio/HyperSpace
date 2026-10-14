@@ -1,13 +1,13 @@
 import Foundation
 
-/// Accepts `helmctl` connections. Socket IO runs on a background queue; requests are handled
+/// Accepts `hsctl` connections. Socket IO runs on a background queue; requests are handled
 /// on the main actor, where the app state lives.
 public final class IPCServer: @unchecked Sendable {
     public typealias Handler = @MainActor @Sendable (IPC.Request) -> IPC.Response
 
     private let path: String
     private let handler: Handler
-    private let queue = DispatchQueue(label: "helm.ipc", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "hyperspace.ipc", attributes: .concurrent)
     private var listenFD: Int32 = -1
     private var source: (any DispatchSourceRead)?
 
@@ -58,7 +58,7 @@ public final class IPCServer: @unchecked Sendable {
 
         guard let data = IPC.readMessage(from: client),
               let request = try? JSONDecoder().decode(IPC.Request.self, from: data) else {
-            reply(.error("helm: malformed request"), to: client)
+            reply(.error("hyperspace: malformed request"), to: client)
             return
         }
         let handler = handler

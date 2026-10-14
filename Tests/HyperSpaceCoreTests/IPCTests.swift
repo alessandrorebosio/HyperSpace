@@ -1,11 +1,11 @@
 import Foundation
-@testable import HelmIPC
+@testable import HyperSpaceIPC
 import Testing
 
 struct IPCTests {
     private func socketPath() -> String {
         // Short path: sockaddr_un is limited to 104 bytes.
-        "/tmp/helm-test-\(UUID().uuidString.prefix(8)).sock"
+        "/tmp/hs-test-\(UUID().uuidString.prefix(8)).sock"
     }
 
     @Test func requestRoundTrip() async throws {
