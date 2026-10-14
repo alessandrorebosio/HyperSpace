@@ -10,7 +10,13 @@ public final class InputTap: @unchecked Sendable {
     static let marker: Int64 = 0x4845_4C4D // "HELM"
 
     private let log = Helm.logger("input-tap")
-    private let tables = Mutex(ActiveTables())
+    /// Swapped as a whole by the main thread; reading it costs one retain, not a table copy.
+    private final class Snapshot: Sendable {
+        let tables: ActiveTables
+        init(_ tables: ActiveTables) { self.tables = tables }
+    }
+
+    private let snapshot = Mutex(Snapshot(ActiveTables()))
     private let perform: @Sendable (Output) -> Void
 
     // Input thread only.
@@ -25,9 +31,12 @@ public final class InputTap: @unchecked Sendable {
         self.perform = perform
     }
 
-    public func update(_ newTables: ActiveTables) {
-        tables.withLock { $0 = newTables }
+    public func update(_ tables: ActiveTables) {
+        let new = Snapshot(tables)
+        snapshot.withLock { $0 = new }
     }
+
+    private var current: Snapshot { snapshot.withLock { $0 } }
 
     /// Starts the input thread. Returns false if the tap can't be created (no Accessibility).
     public func start() -> Bool {
@@ -96,7 +105,7 @@ public final class InputTap: @unchecked Sendable {
             }
             return Unmanaged.passUnretained(event)
         case .scrollWheel:
-            if let scroll = tables.withLock({ $0.scroll }), event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0 {
+            if let scroll = current.tables.scroll, event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0 {
                 InputTap.adjust(event, scroll)
             }
             return Unmanaged.passUnretained(event)
@@ -107,13 +116,12 @@ public final class InputTap: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
-        let current = tables.withLock { $0 }
         let decision = engine.handle(
             code: UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode)),
             down: type == .keyDown,
             isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
             now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW),
-            tables: current
+            tables: current.tables
         )
 
         switch decision {
@@ -138,7 +146,7 @@ public final class InputTap: @unchecked Sendable {
         let decision = mouse.button(
             Int(event.getIntegerValueField(.mouseEventButtonNumber)),
             down: type == .rightMouseDown || type == .otherMouseDown,
-            tables: tables.withLock { $0 }
+            tables: current.tables
         )
         switch decision {
         case .pass:
@@ -158,8 +166,10 @@ public final class InputTap: @unchecked Sendable {
         case let .navigate(direction):
             let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
             navigation.send(direction, targetPID: pid, location: event.location)
-        case .shell, .wm, .drop:
+        case .shell, .wm:
             perform(output)
+        case .drop:
+            break
         }
     }
 

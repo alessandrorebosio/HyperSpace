@@ -3,27 +3,21 @@
 public struct Key: Sendable, Hashable {
     public let code: UInt16
     public let usage: UInt32
+    /// macOS reports these keys with the fn flag (function row, navigation block, arrows).
+    public var hasFnFlag = false
 
     public var isModifier: Bool { (0xE0...0xE7).contains(usage) }
 
-    /// Arrow keys carry the fn and numeric pad flags when typed on a real keyboard.
+    /// Arrow keys also carry the numeric pad flag when typed on a real keyboard.
     public var isArrow: Bool { (123...126).contains(code) }
-
-    /// Keys that macOS reports with the fn flag (function row, navigation block, arrows).
-    public var hasFnFlag: Bool {
-        isArrow || [115, 116, 117, 119, 121].contains(code) || Key.functionKeyCodes.contains(code)
-    }
-
-    static let functionKeyCodes: Set<UInt16> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
-                                                105, 107, 113, 106, 64, 79, 80, 90]
 }
 
 public enum KeyNames {
     /// Name -> key. Multi-word names are `family.variant` (`arrow.left`, `command.right`, `page.up`).
     public static let table: [String: Key] = {
         var t: [String: Key] = [:]
-        func add(_ names: [String], _ code: UInt16, _ usage: UInt32) {
-            for name in names { t[name] = Key(code: code, usage: usage) }
+        func add(_ names: [String], _ code: UInt16, _ usage: UInt32, fn: Bool = false) {
+            for name in names { t[name] = Key(code: code, usage: usage, hasFnFlag: fn) }
         }
 
         let letters: [(String, UInt16)] = [
@@ -57,19 +51,19 @@ public enum KeyNames {
         add(["backslash.iso"], 10, 0x64) // the extra key next to left shift on ISO keyboards
 
         let fCodes: [UInt16] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
-        for (i, code) in fCodes.enumerated() { add(["f\(i + 1)"], code, 0x3A + UInt32(i)) }
+        for (i, code) in fCodes.enumerated() { add(["f\(i + 1)"], code, 0x3A + UInt32(i), fn: true) }
         let fHighCodes: [UInt16] = [105, 107, 113, 106, 64, 79, 80, 90] // f13...f20
-        for (i, code) in fHighCodes.enumerated() { add(["f\(i + 13)"], code, 0x68 + UInt32(i)) }
+        for (i, code) in fHighCodes.enumerated() { add(["f\(i + 13)"], code, 0x68 + UInt32(i), fn: true) }
 
-        add(["home"], 115, 0x4A)
-        add(["page.up"], 116, 0x4B)
-        add(["delete.forward"], 117, 0x4C)
-        add(["end"], 119, 0x4D)
-        add(["page.down"], 121, 0x4E)
-        add(["arrow.right"], 124, 0x4F)
-        add(["arrow.left"], 123, 0x50)
-        add(["arrow.down"], 125, 0x51)
-        add(["arrow.up"], 126, 0x52)
+        add(["home"], 115, 0x4A, fn: true)
+        add(["page.up"], 116, 0x4B, fn: true)
+        add(["delete.forward"], 117, 0x4C, fn: true)
+        add(["end"], 119, 0x4D, fn: true)
+        add(["page.down"], 121, 0x4E, fn: true)
+        add(["arrow.right"], 124, 0x4F, fn: true)
+        add(["arrow.left"], 123, 0x50, fn: true)
+        add(["arrow.down"], 125, 0x51, fn: true)
+        add(["arrow.up"], 126, 0x52, fn: true)
         add(["keypad.enter"], 76, 0x58)
 
         add(["control.left"], 59, 0xE0)

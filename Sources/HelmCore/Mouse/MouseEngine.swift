@@ -8,7 +8,7 @@ public struct MouseEngine: Sendable {
     }
 
     /// Output chosen when a button went down, so its release matches.
-    private var inFlight = ButtonTable()
+    private var inFlight = OutputTable.buttons
 
     public init() {}
 

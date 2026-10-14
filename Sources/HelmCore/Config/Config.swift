@@ -52,12 +52,11 @@ public struct DeviceMatch: Sendable, Equatable {
 // MARK: - Mouse
 
 public struct MouseConfig: Sendable, Equatable {
-    /// Input name (e.g. `button3`, `hidpp:0x00fd`) -> action, for every mouse.
+    /// Button name (e.g. `button3`, `back`) -> action, for every mouse.
     public var buttons: [String: Action] = [:]
     public var app: [AppMouseMap] = []
     /// Wheel scrolling (notched mice). Trackpads and smooth-scrolling mice are never touched.
     public var scroll: ScrollConfig?
-    public var device: [MouseDevice] = []
 
     public init() {}
 }
@@ -65,12 +64,6 @@ public struct MouseConfig: Sendable, Equatable {
 public struct AppMouseMap: Sendable, Equatable {
     public var bundleID: String
     public var buttons: [String: Action]
-}
-
-public struct MouseDevice: Sendable, Equatable {
-    public var match: DeviceMatch
-    public var scroll: ScrollConfig?
-    public var buttons: [String: Action] = [:]
 }
 
 public struct ScrollConfig: Sendable, Equatable {
@@ -178,7 +171,7 @@ extension DeviceMatch: Decodable {
 }
 
 extension MouseConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, scroll, device }
+    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, scroll }
 
     public init(from decoder: any Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
@@ -186,7 +179,6 @@ extension MouseConfig: Decodable {
         buttons = try c.decode(.buttons, default: [:])
         app = try c.decode(.app, default: [])
         scroll = try c.decodeIfPresent(ScrollConfig.self, forKey: .scroll)
-        device = try c.decode(.device, default: [])
     }
 }
 
@@ -197,18 +189,6 @@ extension AppMouseMap: Decodable {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         bundleID = try c.decode(String.self, forKey: .bundleID)
-        buttons = try c.decode(.buttons, default: [:])
-    }
-}
-
-extension MouseDevice: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case match, scroll, buttons }
-
-    public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        match = try c.decode(DeviceMatch.self, forKey: .match)
-        scroll = try c.decodeIfPresent(ScrollConfig.self, forKey: .scroll)
         buttons = try c.decode(.buttons, default: [:])
     }
 }
