@@ -127,6 +127,9 @@ Any key (Caps Lock included) that appears in the config does *only* what it is m
   2. L1 tracks the F18 down/up state and looks up `layer[keycode]` for each key while it's held. A hit emits the mapped action and swallows the original event; a miss passes the event through.
   3. Tap alone (down → up with no other key in between, within `tap_timeout`) emits the `alone` action, if any.
 - The same layer mechanism works for any other key used as a layer trigger.
+- Caps Lock → F18 is applied at L0 **only while the event tap is running**: without Accessibility the layer can't work, and Caps Lock would otherwise go dead.
+- L0 mappings replace any `hidutil` mapping on the same keyboard while Helm runs; the previous mapping is restored on quit (also on `SIGTERM`/`SIGINT`) and re-applied when a keyboard is plugged in or the Mac wakes.
+- Only one Helm instance can run at a time (bundle id check + live socket check).
 - Mappings can be overridden per app (bundle id).
 
 **Other keyboard features**
@@ -284,7 +287,7 @@ layout = "floating"
 |---|---|---|
 | **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
 | **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
-| **2 — Keyboard** | L0 + KeyEngine (Caps layer, simple remaps, dual-role, per-app conditions) | Replaces typical Karabiner usage |
+| **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, simple remaps, per-app overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
 | **3 — Mouse** | MouseEngine (S1), back/forward everywhere, per-device scrolling; then HIDInput (S2, S3 with Logitech HID++), `helmctl list-inputs` | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
 | **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |

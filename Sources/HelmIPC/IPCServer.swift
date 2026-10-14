@@ -23,6 +23,10 @@ public final class IPCServer: @unchecked Sendable {
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        if case .success = IPCClient.send(IPC.Request(args: ["version"]), path: path, timeoutSeconds: 1) {
+            close(fd)
+            throw POSIXError(.EADDRINUSE) // another server is alive: don't steal its socket
+        }
         unlink(path) // stale socket from a previous run
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }

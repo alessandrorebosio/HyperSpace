@@ -15,7 +15,9 @@ let package = Package(
         .target(name: "HelmCore", dependencies: ["TOMLDecoder"]),
         // Tiny on purpose: helmctl links only this.
         .target(name: "HelmIPC"),
-        .executableTarget(name: "HelmApp", dependencies: ["HelmCore", "HelmIPC"]),
+        // Talks to macOS input APIs (event tap, HID event system).
+        .target(name: "HelmInput", dependencies: ["HelmCore"]),
+        .executableTarget(name: "HelmApp", dependencies: ["HelmCore", "HelmIPC", "HelmInput"]),
         .executableTarget(name: "helmctl", dependencies: ["HelmIPC"]),
         .testTarget(name: "HelmCoreTests", dependencies: ["HelmCore", "HelmIPC"]),
     ]
