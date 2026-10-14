@@ -17,6 +17,7 @@ APP=build/HyperSpace.app
 rm -rf $APP
 mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
 cp $BIN/HyperSpace $BIN/hsctl $APP/Contents/MacOS/
+cp Resources/AppIcon.icns $APP/Contents/Resources/ # regenerate with scripts/make-icon.swift
 strip -x $APP/Contents/MacOS/HyperSpace $APP/Contents/MacOS/hsctl # local symbols only: ~40% smaller
 
 cat > $APP/Contents/Info.plist <<EOF
@@ -27,6 +28,7 @@ cat > $APP/Contents/Info.plist <<EOF
     <key>CFBundleIdentifier</key>          <string>$BUNDLE_ID</string>
     <key>CFBundleName</key>                <string>HyperSpace</string>
     <key>CFBundleExecutable</key>          <string>HyperSpace</string>
+    <key>CFBundleIconFile</key>            <string>AppIcon</string>
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>CFBundleShortVersionString</key>  <string>$VERSION</string>
     <key>CFBundleVersion</key>             <string>$VERSION</string>
