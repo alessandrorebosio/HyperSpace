@@ -113,14 +113,18 @@ public enum ConfigLoader {
     # alone = "escape"            # action when tapped alone (default: nothing)
     # tap_timeout_ms = 200        # held longer than this = not a tap, "alone" doesn't fire
 
-    # Caps + key overrides: listed keys do this instead of getting the modifiers above.
+    # Caps + key overrides, in EVERY app: listed keys do this instead of getting the modifiers
+    # above. Good for global shortcuts like opening apps.
     # [keyboard.capslock.map]
     # h = "arrow.left"
     # j = "arrow.down"
     # k = "arrow.up"
     # l = "arrow.right"
 
-    # Per-app Caps + key overrides.
+    # Per-app Caps + key overrides: only while that app is in front; other apps keep the
+    # global behavior. bundle_id identifies the app; to find it:
+    #   helmctl apps                          bundle ids of the running apps
+    #   osascript -e 'id of app "Safari"'     bundle id of any installed app
     # [[keyboard.capslock.app]]
     # bundle_id = "com.microsoft.VSCode"
     # map = { d = "cmd-shift-k" }
@@ -139,7 +143,7 @@ public enum ConfigLoader {
     # button4 = "navigate.forward"  # side button: forward
     # middle = "cmd-w"              # wheel click: close tab
 
-    # Per-app exceptions: these buttons behave differently in one app.
+    # Per-app exceptions: these buttons behave differently in one app (see bundle_id above).
     # [[mouse.app]]
     # bundle_id = "com.google.Chrome"
     # buttons = { button3 = "passthrough", button4 = "passthrough" }
