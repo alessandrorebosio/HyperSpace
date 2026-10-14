@@ -21,7 +21,7 @@ Status: design approved in principle, spike phase next.
 **Non-goals (at least for v1)**
 - No virtual HID driver (DriverKit) like Karabiner: it is the main source of permissions and complexity.
 - No complex editing GUI: minimal UI (status, permissions, reload, config errors).
-- No Logitech proprietary protocol (HID++) in v1, see §5.3.
+- No device *settings* (DPI, SmartShift, lighting): Helm remaps inputs, it doesn't configure hardware.
 - No SIP changes, no scripting additions (AeroSpace doesn't need them, neither do we).
 
 ---
@@ -49,6 +49,8 @@ Remapping is split into **three levels**; we always pick the lowest level that i
 | **L2 — Accessibility API** | `AXUIElement` + `AXObserver` | **Accessibility** (same permission) | Window manager. |
 
 Result: **one permission (Accessibility)**. If only simple remaps are used, **no permissions at all**.
+
+Mouse inputs that the event tap can't see are read through raw HID (§5.2, sources S2/S3). Whether that needs Input Monitoring for pointer devices is verified in the spike; if it does, the permission is requested only when the config actually maps such an input.
 
 WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplicate Carbon `RegisterEventHotKey`).
 
@@ -88,7 +90,8 @@ WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplic
 |---|---|---|
 | `HelmCore` | Config models, TOML parsing, validation, logging (`os.Logger`), permissions | — |
 | `KeyEngine` | Compiles rules into lookup tables; state machine for layers and dual-role keys | Core |
-| `MouseEngine` | Button remapping, scrolling (reverse, linear, speed) per device | Core |
+| `MouseEngine` | Normalizes every source into `MouseInput`; button/scroll rules per device | Core |
+| `HIDInput` | Raw HID reading (S2) and vendor protocols (S3, Logitech HID++ first); starts only when needed | Core, IOKit |
 | `HIDMapper` | Applies/removes L0 `UserKeyMapping` per device, restores it on quit | Core, IOKit |
 | `InputTap` | `CGEventTap` lifecycle, dedicated thread, re-enable on timeout | Key/MouseEngine |
 | `WindowManager` | Tiling tree, virtual workspaces, commands, AX window observation | Core |
@@ -110,14 +113,19 @@ The CLI is called `helmctl`, not `helm`, to avoid clashing with the Kubernetes `
 
 ### 5.1 Keyboard (v1)
 
+**General rule: a remapped key loses its original function.**
+Any key (Caps Lock included) that appears in the config does *only* what it is mapped to. Keys that are not in the config are never touched.
+
 **Caps Lock layer (main requirement)**
+- Once Caps Lock is configured, it **no longer toggles caps lock**: it only does what the config says.
 - While Caps Lock is held, every key can be mapped to an action (key, key combo, shell command, WM command). Each key is configured on its own.
-- **Unmapped keys keep their normal behavior**: if `Caps + Q` has no mapping, the event passes through untouched (as plain `Q`, or with the original modifiers).
-- What Caps Lock does when tapped alone is configurable: `caps_lock` (original toggle, default), `escape`, or nothing.
+- **Unmapped keys keep their normal behavior**: if `Caps + Q` has no mapping, the event passes through untouched (as plain `Q`, with any real modifiers kept).
+- Tapping Caps Lock alone does nothing by default; it can be given its own action (`alone = "escape"`, etc.).
 - Implementation:
-  1. L0 remaps Caps Lock to an unused key (e.g. F18). This removes the caps lock toggle and the built-in Caps Lock delay, and gives L1 a normal key down/up pair to track.
+  1. L0 remaps Caps Lock to an unused key (e.g. F18). This kills the caps lock toggle and the built-in Caps Lock delay at kernel level, and gives L1 a normal key down/up pair to track.
   2. L1 tracks the F18 down/up state and looks up `layer[keycode]` for each key while it's held. A hit emits the mapped action and swallows the original event; a miss passes the event through.
-  3. Tap alone (down → up with no other key in between, within `tap_timeout`) emits the `alone` action. To restore the original toggle, Helm sets the caps lock state through IOKit (`IOHIDSetModifierLockState`). To be verified in the spike.
+  3. Tap alone (down → up with no other key in between, within `tap_timeout`) emits the `alone` action, if any.
+- The same layer mechanism works for any other key used as a layer trigger.
 - Mappings can be overridden per app (bundle id).
 
 **Other keyboard features**
@@ -126,22 +134,46 @@ The CLI is called `helmctl`, not `helm`, to avoid clashing with the Kubernetes `
 - Conditions: frontmost app (bundle id), device (vendor/product id)
 - Simultaneous keys (e.g. `j+k` → Esc): v1.1
 
-### 5.2 Mouse (v1)
+### 5.2 Mouse (v1): generic remapping of any input
+
+**Requirement:** Helm must read and remap **any input coming from any mouse**, regardless of how the device delivers it. No model-specific features: the reference device (Logitech Lift) is just the test case.
+
+**One abstraction: `MouseInput`.** Every source below is normalized into the same event type, so the rule engine doesn't care where an input came from:
+
+```
+MouseInput = button(n) | scroll(axis, delta) | move(dx, dy) | vendor(usagePage, usage)
+             + device id (vendor, product, serial) + down/up + timestamp
+```
+
+**Input sources, from cheapest to most invasive:**
+
+| Source | What it sees | How | Permissions |
+|---|---|---|---|
+| **S1 — Event tap** | Standard buttons 1–32, vertical/horizontal scroll, movement | `CGEventTap` (same tap as the keyboard) | Accessibility (already granted) |
+| **S2 — Raw HID** | Inputs macOS does not turn into events: vendor-specific usages, extra buttons not mapped by the system driver | `IOHIDManager` input value callbacks on pointer devices, no seize | To verify in the spike (expected: none for mice, Input Monitoring only for keyboards) |
+| **S3 — Vendor protocol** | Buttons the firmware handles on its own and never sends to the host (e.g. Logitech buttons that switch DPI/SmartShift). They must be *diverted* to the host first | Logitech **HID++ 2.0**: "Reprogrammable Keys" feature (0x1b04) on the vendor collection (usage page 0xFF00), over Bolt receiver or Bluetooth | Same as S2 |
+
+- S1 is always on. S2/S3 start only if the config maps an input that S1 can't see, so with a plain mouse the cost is zero.
+- S3 is a plugin per vendor (`VendorProtocol`); Logitech HID++ is the first one. HID++ is the same protocol across all modern Logitech mice, so it isn't model-specific.
+- Outputs are generic too: any input can become a key/combo, a mouse button, scroll, a shell command or a WM command.
+
+**Generic rule (same as the keyboard):** a remapped input loses its original function; unmapped inputs pass through untouched.
 
 **Side buttons → back/forward in every app (main requirement)**
-- Side buttons arrive as `otherMouseDown` with button number 3 (back) and 4 (forward).
-- Default strategy: convert them to **⌘[ / ⌘]**, which works in Safari, Finder, Xcode, App Store, System Settings and most native apps.
+- Side buttons arrive through S1 as `otherMouseDown` with button number 3 (back) and 4 (forward).
+- Default action `navigate_back` / `navigate_forward`, sent as **⌘[ / ⌘]**: works in Safari, Finder, Xcode, App Store, System Settings and most native apps.
 - Per-app overrides for apps that use different shortcuts (e.g. VS Code `ctrl+-` / `ctrl+shift+-`) or that already handle the buttons natively (Chrome, Firefox: pass through).
 - Spike alternative: synthesize a **swipe navigation gesture** (like Mac Mouse Fix). Apps that support trackpad swipe-to-go-back would react without per-app rules. If reliable, it becomes the default, with ⌘[ / ⌘] as a fallback.
 
-**Other mouse features**
-- Remap of any extra button to keys, combos or WM commands
-- Scrolling: separate reverse setting for mouse/trackpad, linear scrolling, speed/acceleration per device
-- Device identification via IOHIDManager (match on last active device, as LinearMouse does)
+**Scroll and pointer**
+- Separate reverse setting for mouse/trackpad, linear scrolling, speed/acceleration per device.
+- Device identification: S2/S3 know the device directly; for S1 events, match on the last active device from IOHIDManager (as LinearMouse does).
 
-### 5.3 Logitech
-- Standard buttons (back/forward, middle, horizontal wheel) arrive as normal HID events, so **v1 covers them**.
-- Gesture button, thumb wheel on some models, DPI and SmartShift require Logitech's proprietary **HID++** protocol. That means opening the HID device (possibly the **Input Monitoring** permission) and implementing the protocol per model. **Deferred to v2, optional and off by default.**
+### 5.3 Reference device: Logitech Lift
+Used to validate the generic design, not hard-coded anywhere.
+- Spike: list every input the Lift produces and record which source (S1/S2/S3) sees it, over both Bluetooth and the Bolt receiver.
+- Buttons that only S3 can see get diverted via HID++ when the config maps them, and released (firmware default restored) when Helm quits or the mapping is removed.
+- DPI and other device *settings* (not inputs) are out of scope for v1.
 
 ### 5.4 Window manager (v1): AeroSpace model, optimized
 
@@ -171,8 +203,9 @@ simple = [
   { from = "right_command", to = "right_option", device = { vendor = 0x05ac } },
 ]
 
+# Once configured, Caps Lock no longer toggles caps lock.
 [keyboard.capslock]
-alone = "caps_lock"          # "caps_lock" | "escape" | "none"
+alone = "none"               # action when tapped alone, e.g. "escape"
 tap_timeout_ms = 200
 
 # Caps + key. Keys not listed here keep their normal behavior.
@@ -192,23 +225,27 @@ bundle_id = "com.microsoft.VSCode"
 map = { d = "cmd-shift-k" }
 
 # ── Mouse ────────────────────────────────────────────────
+# Any input from any mouse. Unmapped inputs pass through untouched.
 [mouse.buttons]
-back    = "navigate_back"     # default: swipe or ⌘[ (chosen after the spike)
-forward = "navigate_forward"
+button3 = "navigate_back"     # side buttons; default: swipe or ⌘[ (chosen after the spike)
+button4 = "navigate_forward"
+button2 = { wm = "fullscreen" }
 
 [[mouse.buttons.app]]
 bundle_id = "com.microsoft.VSCode"
-back = "ctrl-minus"
-forward = "ctrl-shift-minus"
+button3 = "ctrl-minus"
+button4 = "ctrl-shift-minus"
 
 [[mouse.buttons.app]]
 bundle_id = "com.google.Chrome"
-back = "passthrough"
-forward = "passthrough"
+button3 = "passthrough"
+button4 = "passthrough"
 
 [[mouse.device]]
 match = { vendor = 0x046d }   # Logitech
 scroll = { reverse = true, linear = true, lines = 3 }
+# Inputs only visible via raw HID / HID++ are named by `helmctl list-inputs`
+buttons = { "hidpp:0x00c4" = "cmd-tab" }
 
 # ── Window manager ───────────────────────────────────────
 [wm]
@@ -246,12 +283,12 @@ layout = "floating"
 
 | Phase | Scope | Expected outcome |
 |---|---|---|
-| **0 — Spike** | Minimal event tap; Caps→F18 via `UserKeyMapping`; caps lock toggle via IOKit; swipe vs ⌘[ for back/forward; AX window enumeration; Logitech device detection | Real permissions and limits confirmed on the target Mac |
+| **0 — Spike** | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
 | **1 — Foundations** | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config |
 | **2 — Keyboard** | L0 + KeyEngine (Caps layer, simple remaps, dual-role, per-app conditions) | Replaces typical Karabiner usage |
-| **3 — Mouse** | MouseEngine: back/forward everywhere, per-device scrolling | Replaces LinearMouse |
+| **3 — Mouse** | MouseEngine (S1), back/forward everywhere, per-device scrolling; then HIDInput (S2, S3 with Logitech HID++), `helmctl list-inputs` | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
-| **5 — Extras** | Simultaneous keys, Logitech HID++ (optional), settings UI, Karabiner rule importer | — |
+| **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |
 
 ---
 
@@ -262,11 +299,10 @@ layout = "floating"
 | 1 | Name | **Helm** (CLI: `helmctl`) |
 | 2 | Config format | **TOML** |
 | 3 | Language | **Swift 6** |
-| 4 | Caps Lock | Per-key layer, unmapped keys keep their normal behavior |
-| 5 | Mouse side buttons | Back/forward in every app (swipe or ⌘[ / ⌘], per-app overrides) |
+| 4 | Caps Lock | Per-key layer; loses the caps lock toggle; unmapped keys keep their normal behavior |
+| 4b | Remapped keys/inputs | Do only what they are mapped to; original function is lost |
+| 5 | Mouse | Generic remapping of any input from any mouse (S1/S2/S3); side buttons → back/forward in every app |
 | 6 | WM | AeroSpace model and commands, with the optimizations in §5.4 |
 | 7 | Documentation | English |
 
-**Still open**
-- Logitech model in use (decides whether HID++ is ever needed).
-- What Caps Lock does when tapped alone (default: original caps lock toggle).
+Reference test mouse: Logitech Lift.
