@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Tiling layout: one tall window on the left, two stacked on the right. -->
+  <rect x="196" y="206" width="300" height="612" rx="64" fill="#FFFFFF"/>
+  <rect x="528" y="206" width="300" height="290" rx="64" fill="#FFFFFF"/>
+  <rect x="528" y="528" width="300" height="290" rx="64" fill="#FFFFFF"/>
+</svg>

@@ -17,7 +17,18 @@ APP=build/HyperSpace.app
 rm -rf $APP
 mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
 cp $BIN/HyperSpace $BIN/hsctl $APP/Contents/MacOS/
-cp Resources/AppIcon.icns $APP/Contents/Resources/ # regenerate with scripts/make-icon.swift
+# Icon: Liquid Glass from the Icon Composer document when Xcode's actool can compile it
+# (adapts to dark/clear/tinted), plus the static AppIcon.icns from scripts/make-icon.sh.
+cp Resources/AppIcon.icns $APP/Contents/Resources/
+XCODE=/Applications/Xcode.app/Contents/Developer
+if [[ -d $XCODE ]] && DEVELOPER_DIR=$XCODE xcrun actool Resources/AppIcon.icon --compile $APP/Contents/Resources \
+     --platform macosx --minimum-deployment-target 15.0 --app-icon AppIcon \
+     --output-partial-info-plist $(mktemp) >/dev/null 2>&1; then
+  ICON_NAME="<key>CFBundleIconName</key>            <string>AppIcon</string>"
+else
+  echo "note: actool unavailable (accept the Xcode license with: sudo xcodebuild -license); using the static icon"
+  ICON_NAME=""
+fi
 strip -x $APP/Contents/MacOS/HyperSpace $APP/Contents/MacOS/hsctl # local symbols only: ~40% smaller
 
 cat > $APP/Contents/Info.plist <<EOF
@@ -29,6 +40,7 @@ cat > $APP/Contents/Info.plist <<EOF
     <key>CFBundleName</key>                <string>HyperSpace</string>
     <key>CFBundleExecutable</key>          <string>HyperSpace</string>
     <key>CFBundleIconFile</key>            <string>AppIcon</string>
+    $ICON_NAME
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>CFBundleShortVersionString</key>  <string>$VERSION</string>
     <key>CFBundleVersion</key>             <string>$VERSION</string>
