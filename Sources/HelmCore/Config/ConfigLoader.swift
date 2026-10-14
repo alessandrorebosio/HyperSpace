@@ -88,13 +88,13 @@ public enum ConfigLoader {
     # Remapped keys and buttons only do what is mapped here; everything else is untouched.
 
     # ── Keyboard ─────────────────────────────────────────────
-    # Keys:      a...z, 0...9, f1...f20, escape, tab, space, return, backspace, delete_forward,
-    #            left_arrow, right_arrow, up_arrow, down_arrow, home, end, page_up, page_down,
-    #            left_/right_ + shift, control, option, command, caps_lock.
-    #            Names are US key positions: symbol keys (open_bracket, minus...) may be
+    # Keys:      a...z, 0...9, f1...f20, escape, tab, space, return, backspace, delete.forward,
+    #            arrow.left/.right/.up/.down, home, end, page.up, page.down, capslock,
+    #            shift.left/.right, control.left/.right, option.left/.right, command.left/.right.
+    #            Names are US key positions: symbol keys (bracket.open, minus...) may be
     #            different characters on other layouts.
     # Modifiers: shift, ctrl, opt, cmd, fn, joined with "-" (e.g. "cmd-shift-k").
-    # Actions:   "left_arrow" / "cmd-left_arrow"  a key or combo
+    # Actions:   "arrow.left" / "cmd-arrow.left"  a key or combo
     #            { shell = "open -a Safari" }     run a shell command
     #            "none"                           do nothing
     #            "passthrough"                    keep the normal behavior (for app exceptions)
@@ -103,7 +103,7 @@ public enum ConfigLoader {
     # key -> combo needs Helm running. "device" limits a remap to one keyboard.
     # [keyboard]
     # simple = [
-    #   { from = "right_command", to = "right_option" },
+    #   { from = "command.right", to = "option.right" },
     #   { from = "f1", to = "cmd-space" },
     # ]
 
@@ -115,10 +115,10 @@ public enum ConfigLoader {
 
     # Caps + key overrides: listed keys do this instead of getting the modifiers above.
     # [keyboard.capslock.map]
-    # h = "left_arrow"
-    # j = "down_arrow"
-    # k = "up_arrow"
-    # l = "right_arrow"
+    # h = "arrow.left"
+    # j = "arrow.down"
+    # k = "arrow.up"
+    # l = "arrow.right"
 
     # Per-app Caps + key overrides.
     # [[keyboard.capslock.app]]

@@ -19,7 +19,7 @@ public struct Key: Sendable, Hashable {
 }
 
 public enum KeyNames {
-    /// Name -> key. Names follow Karabiner where it makes sense; a few short aliases are added.
+    /// Name -> key. Multi-word names are `family.variant` (`arrow.left`, `command.right`, `page.up`).
     public static let table: [String: Key] = {
         var t: [String: Key] = [:]
         func add(_ names: [String], _ code: UInt16, _ usage: UInt32) {
@@ -37,24 +37,24 @@ public enum KeyNames {
         for (i, code) in digits.enumerated() { add(["\(i + 1)"], code, 0x1E + UInt32(i)) }
         add(["0"], 29, 0x27)
 
-        add(["return_or_enter", "return", "enter"], 36, 0x28)
+        add(["return", "enter"], 36, 0x28)
         add(["escape", "esc"], 53, 0x29)
-        add(["delete_or_backspace", "backspace"], 51, 0x2A)
+        add(["backspace"], 51, 0x2A)
         add(["tab"], 48, 0x2B)
-        add(["spacebar", "space"], 49, 0x2C)
-        add(["hyphen", "minus"], 27, 0x2D)
-        add(["equal_sign", "equal"], 24, 0x2E)
-        add(["open_bracket"], 33, 0x2F)
-        add(["close_bracket"], 30, 0x30)
+        add(["space"], 49, 0x2C)
+        add(["minus"], 27, 0x2D)
+        add(["equal"], 24, 0x2E)
+        add(["bracket.open"], 33, 0x2F)
+        add(["bracket.close"], 30, 0x30)
         add(["backslash"], 42, 0x31)
         add(["semicolon"], 41, 0x33)
         add(["quote"], 39, 0x34)
-        add(["grave_accent_and_tilde", "grave"], 50, 0x35)
+        add(["grave"], 50, 0x35)
         add(["comma"], 43, 0x36)
         add(["period"], 47, 0x37)
         add(["slash"], 44, 0x38)
-        add(["caps_lock"], 57, 0x39)
-        add(["non_us_backslash"], 10, 0x64)
+        add(["capslock"], 57, 0x39)
+        add(["backslash.iso"], 10, 0x64) // the extra key next to left shift on ISO keyboards
 
         let fCodes: [UInt16] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
         for (i, code) in fCodes.enumerated() { add(["f\(i + 1)"], code, 0x3A + UInt32(i)) }
@@ -62,24 +62,24 @@ public enum KeyNames {
         for (i, code) in fHighCodes.enumerated() { add(["f\(i + 13)"], code, 0x68 + UInt32(i)) }
 
         add(["home"], 115, 0x4A)
-        add(["page_up"], 116, 0x4B)
-        add(["delete_forward"], 117, 0x4C)
+        add(["page.up"], 116, 0x4B)
+        add(["delete.forward"], 117, 0x4C)
         add(["end"], 119, 0x4D)
-        add(["page_down"], 121, 0x4E)
-        add(["right_arrow", "right"], 124, 0x4F)
-        add(["left_arrow", "left"], 123, 0x50)
-        add(["down_arrow", "down"], 125, 0x51)
-        add(["up_arrow", "up"], 126, 0x52)
-        add(["keypad_enter"], 76, 0x58)
+        add(["page.down"], 121, 0x4E)
+        add(["arrow.right"], 124, 0x4F)
+        add(["arrow.left"], 123, 0x50)
+        add(["arrow.down"], 125, 0x51)
+        add(["arrow.up"], 126, 0x52)
+        add(["keypad.enter"], 76, 0x58)
 
-        add(["left_control"], 59, 0xE0)
-        add(["left_shift"], 56, 0xE1)
-        add(["left_option"], 58, 0xE2)
-        add(["left_command"], 55, 0xE3)
-        add(["right_control"], 62, 0xE4)
-        add(["right_shift"], 60, 0xE5)
-        add(["right_option"], 61, 0xE6)
-        add(["right_command"], 54, 0xE7)
+        add(["control.left"], 59, 0xE0)
+        add(["shift.left"], 56, 0xE1)
+        add(["option.left"], 58, 0xE2)
+        add(["command.left"], 55, 0xE3)
+        add(["control.right"], 62, 0xE4)
+        add(["shift.right"], 60, 0xE5)
+        add(["option.right"], 61, 0xE6)
+        add(["command.right"], 54, 0xE7)
         return t
     }()
 

@@ -21,14 +21,14 @@ struct ConfigTests {
     @Test func fullExampleDecodes() throws {
         let config = try parse("""
         [keyboard]
-        simple = [{ from = "right_command", to = "right_option", device = { vendor = 0x05ac } }]
+        simple = [{ from = "command.right", to = "option.right", device = { vendor = 0x05ac } }]
 
         [keyboard.capslock]
         alone = "escape"
         tap_timeout_ms = 150
 
         [keyboard.capslock.map]
-        h = "left_arrow"
+        h = "arrow.left"
         t = { shell = "open -a Terminal" }
         "1" = { wm = "workspace 1" }
         q = "none"
@@ -62,11 +62,11 @@ struct ConfigTests {
         layout = "floating"
         """)
 
-        #expect(config.keyboard.simple == [SimpleRemap(from: "right_command", to: "right_option", device: DeviceMatch(vendor: 0x05AC))])
+        #expect(config.keyboard.simple == [SimpleRemap(from: "command.right", to: "option.right", device: DeviceMatch(vendor: 0x05AC))])
         let caps = try #require(config.keyboard.capslock)
         #expect(caps.alone == .keys("escape"))
         #expect(caps.tapTimeoutMs == 150)
-        #expect(caps.map["h"] == .keys("left_arrow"))
+        #expect(caps.map["h"] == .keys("arrow.left"))
         #expect(caps.map["t"] == .shell("open -a Terminal"))
         #expect(caps.map["1"] == .wm("workspace 1"))
         #expect(caps.map["q"] == Action.none)

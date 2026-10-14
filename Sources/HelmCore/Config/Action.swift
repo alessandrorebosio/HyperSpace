@@ -2,7 +2,7 @@
 ///
 /// In TOML an action is either a string or an inline table:
 /// ```toml
-/// h = "left_arrow"          # key or combo, e.g. "cmd-shift-k"
+/// h = "arrow.left"          # key or combo, e.g. "cmd-shift-k"
 /// q = "none"                # swallow the input
 /// x = "passthrough"         # keep the original behavior
 /// t = { shell = "open -a Terminal" }

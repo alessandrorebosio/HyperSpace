@@ -207,7 +207,7 @@ Optimizations over AeroSpace:
 # ── Keyboard ─────────────────────────────────────────────
 [keyboard]
 simple = [
-  { from = "right_command", to = "right_option", device = { vendor = 0x05ac } },
+  { from = "command.right", to = "option.right", device = { vendor = 0x05ac } },
 ]
 
 # Once configured, Caps Lock no longer toggles caps lock.
@@ -217,12 +217,12 @@ tap_timeout_ms = 200
 
 # Caps + key. Keys not listed here keep their normal behavior.
 [keyboard.capslock.map]
-h = "left_arrow"
-j = "down_arrow"
-k = "up_arrow"
-l = "right_arrow"
-u = "cmd-left_arrow"
-o = "cmd-right_arrow"
+h = "arrow.left"
+j = "arrow.down"
+k = "arrow.up"
+l = "arrow.right"
+u = "cmd-arrow.left"
+o = "cmd-arrow.right"
 t = { shell = "open -a Terminal" }
 "1" = { wm = "workspace 1" }
 

@@ -33,7 +33,7 @@ public struct Modifiers: OptionSet, Sendable, Hashable {
     }
 }
 
-/// A key plus modifiers, e.g. `cmd-shift-k`, `ctrl-minus`, `left_arrow`.
+/// A key plus modifiers, e.g. `cmd-shift-k`, `ctrl-minus`, `arrow.left`.
 public struct Combo: Sendable, Hashable {
     public var key: Key
     public var modifiers: Modifiers
