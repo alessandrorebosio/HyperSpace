@@ -37,17 +37,40 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 - 3 keyboard services found: built-in keyboard, Bolt receiver, Karabiner virtual keyboard. Helm must skip Karabiner's virtual keyboard.
 - Effect on key events still to verify interactively (see below).
 
+### L1 — Active event tap needs **Accessibility only** ✅
+- With Accessibility granted to the terminal and Input Monitoring *not* granted, the active tap (`kCGSessionEventTap`, `.defaultTap`) was created and saw every key down/up and modifier change. Confirms the single-permission design.
+- Slowest callback over the 40 s run (excluding logging): **284 µs**, below the 1 ms target even in a debug build with a dictionary lookup.
+
+### Caps Lock → F18 (L0 + L1) ✅
+- After `UserKeyMapping` Caps Lock arrives as key code **79 (F18)** with a normal down/up pair. No caps lock toggle (`flagsChanged` code 57) was observed during the whole run.
+- F18 carries the `0x800000` (secondary fn) flag and **auto-repeats** while held: the layer must swallow repeats of the trigger key.
+- Tap-alone detection worked (10 taps, each reported as "Caps tapped alone").
+- While Caps was held, unmapped keys passed through as normal key codes.
+- The keyboard service list during the run had no Karabiner virtual keyboard, so Karabiner wasn't grabbing devices.
+
+### L2 — AX window enumeration: parallel per app is ~10× faster ✅
+| Measure | Time |
+|---|---|
+| AX sequential (6 apps, 5 windows) | 264.5 ms |
+| AX parallel, one thread per app | 25.1 ms |
+| Slowest single app (VS Code) | 121.4 ms |
+| `CGWindowList` snapshot (8 windows, no permission) | 60.2 ms |
+
+- One slow app (VS Code, 121 ms) dominates the sequential time: confirms per-app concurrency and per-app timeouts from DESIGN §5.4.
+- `CGWindowList` is not a cheap shortcut (60 ms here): the window cache should be fed by `AXObserver` notifications, not by snapshots.
+
 ### TCC
 - A binary launched from another app is judged on the *responsible* app's permissions (here: Claude, which has neither Accessibility nor Input Monitoring). The real app must be a proper `.app` bundle so it gets its own TCC entry.
 
 ## Pending (interactive, `run-phase0.sh`)
-- [ ] Active event tap with **Accessibility only**: does it see and modify key events (no Input Monitoring)?
-- [ ] Caps Lock → F18 via L0: no caps toggle, F18 down/up reaches the tap; hjkl layer; unmapped keys pass through.
-- [ ] Side buttons → ⌘[ / ⌘] work in Safari and other apps.
-- [ ] Scroll event fields for the Lift (line vs point deltas, continuous flag).
+- [x] Active event tap with **Accessibility only** sees and modifies key events.
+- [x] Caps Lock → F18 via L0: no caps toggle, F18 down/up reaches the tap, tap-alone, unmapped keys pass through.
+- [ ] Confirm by eye that Caps + hjkl moved the cursor (the log shows the original key codes).
+- [ ] Side buttons → ⌘[ / ⌘] work in Safari and other apps (no mouse events in the run).
+- [ ] Scroll event fields for the Lift (no scroll events in the run).
 - [x] HID++ diversion: middle/back/forward reported as diverted events, restored on exit.
 - [ ] HID++ diversion of the DPI button (`0x00FD`).
 - First interactive run: tap and ax were skipped because the terminal app had no Accessibility. The script now checks this up front and can rerun single steps (`./run-phase0.sh tap ax`).
-- [ ] Tap callback latency (target < 1 ms).
-- [ ] AX window enumeration: sequential vs parallel per app vs CGWindowList.
+- [x] Tap callback latency: 284 µs worst case.
+- [x] AX window enumeration: sequential vs parallel per app vs CGWindowList.
 - [ ] Swipe gesture synthesis for universal back/forward (not implemented yet: needs private CGEvent gesture fields, separate spike).
