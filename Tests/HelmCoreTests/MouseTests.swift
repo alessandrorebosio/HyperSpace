@@ -26,8 +26,8 @@ struct MouseTests {
     @Test func buttonsCompile() throws {
         let p = try plan(config)
         let tables = p.tables(forApp: nil)
-        #expect(tables.buttons[3] == .key(Combo(parsing: "cmd-open_bracket")!))
-        #expect(tables.buttons[4] == .key(Combo(parsing: "cmd-close_bracket")!))
+        #expect(tables.buttons[3] == .navigate(.back))
+        #expect(tables.buttons[4] == .navigate(.forward))
         #expect(tables.buttons[2] == .drop)
         #expect(tables.buttons[5] == .shell("say hi"))
         #expect(tables.buttons[1] == nil)
@@ -51,7 +51,7 @@ struct MouseTests {
     @Test func backButtonFiresOnceAndReleaseIsSwallowed() throws {
         let tables = try plan(config).tables(forApp: nil)
         var e = MouseEngine()
-        #expect(e.button(3, down: true, tables: tables) == .emit(.key(Combo(parsing: "cmd-open_bracket")!)))
+        #expect(e.button(3, down: true, tables: tables) == .emit(.navigate(.back)))
         #expect(e.isSwallowed(3))
         #expect(e.button(3, down: false, tables: tables) == .drop)
         #expect(!e.isSwallowed(3))

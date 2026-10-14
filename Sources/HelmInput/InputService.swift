@@ -11,6 +11,7 @@ public final class InputService {
 
     private let log = Helm.logger("input")
     private let mapper = HIDMapper()
+    private let navigator = Navigator()
     private var tap: InputTap?
     private var plan = InputPlan()
     private var frontmostApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
@@ -57,8 +58,10 @@ public final class InputService {
     private func startTap() {
         guard tap == nil else { return }
         let onWMCommand = onWMCommand
+        let navigator = navigator
         let tap = InputTap { output in
             switch output {
+            case let .navigate(direction): navigator.navigate(direction)
             case let .shell(command): ActionRunner.shell(command)
             case let .wm(command): Task { @MainActor in onWMCommand(command) }
             case .key, .drop: break

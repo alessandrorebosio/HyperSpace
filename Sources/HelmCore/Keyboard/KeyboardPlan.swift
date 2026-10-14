@@ -2,9 +2,35 @@
 public enum Output: Sendable, Equatable {
     /// Swallow the input.
     case drop
+    /// A key code with modifiers. Key names refer to physical positions (US layout).
     case key(Combo)
+    /// Back/forward in the frontmost app, independent of the keyboard layout.
+    case navigate(Navigation)
     case shell(String)
     case wm(String)
+
+    /// Converts a config action. `nil` means passthrough (the input keeps its normal behavior).
+    static func from(_ action: Action) -> Result<Output?, Unparsable> {
+        switch action {
+        case .none: return .success(.drop)
+        case .passthrough: return .success(nil)
+        case let .shell(command): return .success(.shell(command))
+        case let .wm(command): return .success(.wm(command))
+        case .keys("navigate_back"): return .success(.navigate(.back))
+        case .keys("navigate_forward"): return .success(.navigate(.forward))
+        case let .keys(text):
+            guard let combo = Combo(parsing: text) else { return .failure(Unparsable(text: text)) }
+            return .success(.key(combo))
+        }
+    }
+
+    struct Unparsable: Swift.Error {
+        let text: String
+    }
+}
+
+public enum Navigation: Sendable, Equatable {
+    case back, forward
 }
 
 /// Lookup table indexed by virtual key code. `nil` means "not remapped": the key behaves normally.
@@ -145,16 +171,9 @@ public struct KeyboardPlan: Sendable, Equatable {
     }
 
     private func output(_ action: Action, path: String) throws(Error) -> Output? {
-        switch action {
-        case .none: return .drop
-        case .passthrough: return nil
-        case let .shell(command): return .shell(command)
-        case let .wm(command): return .wm(command)
-        case let .keys(text):
-            guard let combo = Combo(parsing: text) else {
-                throw Error(message: "\(path): unknown key or combo '\(text)'")
-            }
-            return .key(combo)
+        switch Output.from(action) {
+        case let .success(output): return output
+        case let .failure(e): throw Error(message: "\(path): unknown key or combo '\(e.text)'")
         }
     }
 }

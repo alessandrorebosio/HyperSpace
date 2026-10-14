@@ -22,12 +22,6 @@ public struct Combo: Sendable, Hashable {
     public var key: Key
     public var modifiers: Modifiers
 
-    /// Named actions that are just shortcuts.
-    static let named: [String: String] = [
-        "navigate_back": "cmd-open_bracket",
-        "navigate_forward": "cmd-close_bracket",
-    ]
-
     public init(key: Key, modifiers: Modifiers = []) {
         self.key = key
         self.modifiers = modifiers
@@ -35,7 +29,6 @@ public struct Combo: Sendable, Hashable {
 
     /// Returns nil if a part isn't a known modifier or key.
     public init?(parsing text: String) {
-        let text = Combo.named[text] ?? text
         var parts = text.lowercased().split(separator: "-", omittingEmptySubsequences: false).map(String.init)
         guard let keyName = parts.popLast(), let key = KeyNames.key(keyName) else { return nil }
         var modifiers: Modifiers = []
