@@ -38,7 +38,7 @@ struct ConfigTests {
         map = { d = "cmd-shift-k" }
 
         [mouse.buttons]
-        button3 = "navigate_back"
+        button3 = "navigate.back"
         forward = "cmd-tab"
 
         [[mouse.app]]
@@ -72,7 +72,7 @@ struct ConfigTests {
         #expect(caps.map["q"] == Action.none)
         #expect(caps.app == [AppKeyMap(bundleID: "com.microsoft.VSCode", map: ["d": .keys("cmd-shift-k")])])
 
-        #expect(config.mouse.buttons["button3"] == .keys("navigate_back"))
+        #expect(config.mouse.buttons["button3"] == .keys("navigate.back"))
         #expect(config.mouse.buttons["forward"] == .keys("cmd-tab"))
         #expect(config.mouse.app.first?.buttons["button3"] == .passthrough)
         #expect(config.mouse.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))

@@ -16,8 +16,8 @@ public enum Output: Sendable, Equatable {
         case .passthrough: return .success(nil)
         case let .shell(command): return .success(.shell(command))
         case let .wm(command): return .success(.wm(command))
-        case .keys("navigate_back"): return .success(.navigate(.back))
-        case .keys("navigate_forward"): return .success(.navigate(.forward))
+        case .keys("navigate.back"): return .success(.navigate(.back))
+        case .keys("navigate.forward"): return .success(.navigate(.forward))
         case let .keys(text):
             guard let combo = Combo(parsing: text) else { return .failure(Unparsable(text: text)) }
             return .success(.key(combo))
