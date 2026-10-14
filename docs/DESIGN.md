@@ -163,11 +163,13 @@ MouseInput = button(n) | scroll(axis, delta) | move(dx, dy) | vendor(usagePage, 
 
 **Generic rule (same as the keyboard):** a remapped input loses its original function; unmapped inputs pass through untouched.
 
-**Side buttons → back/forward in every app (main requirement)**
+**Side buttons → back/forward in every app (main requirement)** ✅
 - Side buttons arrive through S1 as `otherMouseDown` with button number 3 (back) and 4 (forward).
-- Default action `navigate_back` / `navigate_forward`, sent as **⌘[ / ⌘]**: works in Safari, Finder, Xcode, App Store, System Settings and most native apps.
-- Per-app overrides for apps that use different shortcuts (e.g. VS Code `ctrl+-` / `ctrl+shift+-`) or that already handle the buttons natively (Chrome, Firefox: pass through).
-- Spike alternative: synthesize a **swipe navigation gesture** (like Mac Mouse Fix). Apps that support trackpad swipe-to-go-back would react without per-app rules. If reliable, it becomes the default, with ⌘[ / ⌘] as a fallback.
+- `navigate_back` / `navigate_forward` work like LinearMouse's "universal back/forward": apps that support trackpad navigation (Apple apps, Firefox, Opera, ForkLift) get a synthesized **navigation swipe**; every other app gets mouse button 4/5, which browsers and editors handle natively.
+- Rejected approaches (tested on an Italian keyboard):
+  - sending ⌘[ / ⌘] by key code: on non-US layouts those keys are other characters (Italian: `è` / `+`, so Safari zoomed);
+  - pressing the app's Back/Forward menu item via AX: AppKit localizes the shortcut per layout (Safari's Back is ⌘ò on Italian) and Forward failed right after Back.
+- Per-app overrides still work (`[[mouse.app]]`, e.g. `passthrough`).
 
 **Scroll and pointer**
 - Separate reverse setting for mouse/trackpad, linear scrolling, speed/acceleration per device.
@@ -288,7 +290,7 @@ layout = "floating"
 | **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
 | **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
 | **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, simple remaps, per-app overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
-| **3 — Mouse** | MouseEngine (S1), back/forward everywhere, per-device scrolling; then HIDInput (S2, S3 with Logitech HID++), `helmctl list-inputs` | Replaces LinearMouse, remaps any mouse input |
+| **3 — Mouse** (in progress) | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `helmctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
 | **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |
 
