@@ -1,4 +1,4 @@
-/// The whole `hyperspace.toml`. Every section is optional; a missing section means "feature off".
+/// The whole config: keyboard.toml, mouse.toml and wm.toml. A missing file means "feature off".
 public struct Config: Sendable, Equatable {
     public var keyboard = KeyboardConfig()
     public var mouse = MouseConfig()
@@ -96,18 +96,6 @@ public struct WMRule: Sendable, Equatable {
 }
 
 // MARK: - Decoding
-
-extension Config: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case keyboard, mouse, wm }
-
-    public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        keyboard = try c.decode(.keyboard, default: KeyboardConfig())
-        mouse = try c.decode(.mouse, default: MouseConfig())
-        wm = try c.decode(.wm, default: WMConfig())
-    }
-}
 
 extension KeyboardConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case simple, capslock }

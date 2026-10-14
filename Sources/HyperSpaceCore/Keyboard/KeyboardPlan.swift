@@ -32,11 +32,11 @@ public struct KeyboardPlan: Sendable, Equatable {
     public init(_ config: KeyboardConfig) throws(InvalidConfig) {
         let capsLock = KeyNames.key("capslock")!
         for (i, remap) in config.simple.enumerated() {
-            let path = "keyboard.simple[\(i)]"
+            let path = "simple[\(i)]"
             let from = try Compile.key(remap.from, path: "\(path).from")
             let to = try Compile.combo(remap.to, path: "\(path).to")
             if config.capslock != nil, from == capsLock {
-                throw InvalidConfig(message: "\(path).from: capslock is already configured in [keyboard.capslock]")
+                throw InvalidConfig(message: "\(path).from: capslock is already configured in [capslock]")
             }
             if to.modifiers.isEmpty {
                 hid.append(HIDMapping(from: from.usage, to: to.key.usage, device: remap.device))
@@ -57,17 +57,17 @@ public struct KeyboardPlan: Sendable, Equatable {
         var hold: Modifiers = []
         if let text = caps.hold {
             guard let parsed = Modifiers(parsing: text) else {
-                throw InvalidConfig(message: "keyboard.capslock.hold: '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\", \"meh\" or \"hyper\"")
+                throw InvalidConfig(message: "capslock.hold: '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\", \"meh\" or \"hyper\"")
             }
             hold = parsed
         }
-        let base = try KeyboardPlan.table(caps.map, path: "keyboard.capslock.map", over: .keys)
+        let base = try KeyboardPlan.table(caps.map, path: "capslock.map", over: .keys)
         var apps: [String: OutputTable] = [:]
         for (i, app) in caps.app.enumerated() {
-            apps[app.bundleID] = try KeyboardPlan.table(app.map, path: "keyboard.capslock.app[\(i)].map", over: base)
+            apps[app.bundleID] = try KeyboardPlan.table(app.map, path: "capslock.app[\(i)].map", over: base)
         }
         layer = Layer(
-            alone: try Compile.output(caps.alone, path: "keyboard.capslock.alone"),
+            alone: try Compile.output(caps.alone, path: "capslock.alone"),
             hold: hold,
             tapTimeoutNs: UInt64(max(0, caps.tapTimeoutMs)) * 1_000_000,
             base: base,

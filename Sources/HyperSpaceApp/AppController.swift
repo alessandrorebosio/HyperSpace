@@ -7,13 +7,14 @@ import HyperSpaceIPC
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
     private let log = HyperSpace.logger("app")
-    let configURL = ConfigLoader.defaultURL
+    let configDirectory = ConfigLoader.defaultDirectory
     let accessibility = Accessibility()
 
     private(set) var config = Config()
     /// `config` compiled; recompiled only when the config changes.
     private var plan = InputPlan()
-    private(set) var configError: ConfigError?
+    /// One per broken file; those files keep their last good settings.
+    private(set) var configErrors: [ConfigError] = []
     private(set) var input: InputService!
     private var signalSources: [any DispatchSourceSignal] = []
 
@@ -37,7 +38,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu = StatusMenu(controller: self)
         reloadConfig()
 
-        watcher = ConfigWatcher(url: configURL) { [weak self] in self?.reloadConfig() }
+        let files = ConfigFile.allCases.map { ConfigLoader.url($0, in: configDirectory) }
+        watcher = ConfigWatcher(directory: configDirectory, files: files) { [weak self] in self?.reloadConfig() }
         watcher?.start()
 
         let server = IPCServer { [weak self] request in
@@ -82,28 +84,24 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     // MARK: - Config
 
+    /// Reloads every config file; broken files keep their last good settings.
     @discardableResult
-    func reloadConfig() -> Result<Config, ConfigError> {
-        let result = ConfigLoader.load(from: configURL)
-        switch result {
-        case let .success(new):
-            config = new
-            plan = (try? InputPlan(new)) ?? InputPlan() // validated by the loader: can't fail
-            configError = nil
-            log.info("config loaded")
-            applyInput()
-        case let .failure(error):
-            // Keep running with the last good config.
-            configError = error
-            log.error("config error: \(error.description)")
-        }
+    func reloadConfig() -> [ConfigError] {
+        let (new, errors) = ConfigLoader.load(from: configDirectory, previous: config)
+        configErrors = errors
+        for error in errors { log.error("config error: \(error.description)") }
+        config = new
+        plan = (try? InputPlan(new)) ?? InputPlan() // validated by the loader: can't fail
+        applyInput()
+        log.info("config loaded")
         menu?.refresh()
-        return result
+        return errors
     }
 
+    /// Creates any missing file from its template and opens all three.
     func openConfig() {
         do {
-            NSWorkspace.shared.open(try ConfigLoader.createTemplateIfMissing(at: configURL))
+            for url in try ConfigLoader.createTemplatesIfMissing(in: configDirectory) { NSWorkspace.shared.open(url) }
         } catch {
             log.error("cannot create config: \(error)")
         }
@@ -119,19 +117,17 @@ final class AppController: NSObject, NSApplicationDelegate {
     func handle(_ request: IPC.Request) -> IPC.Response {
         switch request.args {
         case ["reload"]:
-            switch reloadConfig() {
-            case .success: return .ok("config reloaded")
-            case let .failure(error): return .error(error.description)
-            }
+            let errors = reloadConfig()
+            return errors.isEmpty ? .ok("config reloaded") : .error(errors.map(\.description).joined(separator: "\n"))
         case ["status"]:
             accessibility.refresh()
             return .ok(statusText)
         case ["config-path"]:
-            return .ok(configURL.path)
+            return .ok(configDirectory.path)
         case ["version"]:
             return .ok(HyperSpace.version)
         case ["apps"]:
-            // Bundle ids for [[keyboard.capslock.app]] and [[mouse.app]].
+            // Bundle ids for [[capslock.app]] in keyboard.toml and [[app]] in mouse.toml.
             let apps = NSWorkspace.shared.runningApplications
                 .filter { $0.activationPolicy == .regular }
                 .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? "?", $0) } }
@@ -147,8 +143,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         """
         version        \(HyperSpace.version)
         accessibility  \(accessibility.isGranted ? "granted" : "missing")
-        config         \(configURL.path)
-        config state   \(configError.map { "error: \($0.message)" } ?? "ok")
+        config         \(configDirectory.path)
+        config state   \(configErrors.isEmpty ? "ok" : configErrors.map { "error in \(($0.path as NSString).lastPathComponent): \($0.message)" }.joined(separator: "\n               "))
         event tap      \(input.tapState.rawValue)
         HID mappings   \(input.mappedKeyboards) keyboard(s)
         login item     \(LoginItem.isEnabled ? "on" : "off")
