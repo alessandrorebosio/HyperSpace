@@ -39,7 +39,7 @@ public struct KeyEngine: Sendable {
         if isRepeat {
             guard let output = inFlight[code] else { return .pass }
             if case let .key(combo) = output { return .rewrite(combo) }
-            return .drop // shell/wm/drop fire once, never on repeat
+            return .drop // other outputs fire once, never on repeat
         }
 
         var output: Output?
@@ -56,7 +56,7 @@ public struct KeyEngine: Sendable {
         switch output {
         case let .key(combo): return .rewrite(combo)
         case .drop: return .drop
-        case .shell, .wm: return .emit(output)
+        case .navigate, .shell, .wm: return .emit(output)
         }
     }
 

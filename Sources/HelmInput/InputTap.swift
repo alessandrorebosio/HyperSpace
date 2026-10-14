@@ -135,6 +135,9 @@ public final class InputTap: @unchecked Sendable {
     }
 
     private func handleButton(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+        if event.getIntegerValueField(.eventSourceUserData) == InputTap.marker {
+            return Unmanaged.passUnretained(event) // Navigator's fallback button
+        }
         let decision = mouse.button(
             Int(event.getIntegerValueField(.mouseEventButtonNumber)),
             down: type == .rightMouseDown || type == .otherMouseDown,

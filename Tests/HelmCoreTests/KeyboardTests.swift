@@ -14,7 +14,6 @@ struct KeyboardPlanTests {
     @Test func combosParse() {
         #expect(Combo(parsing: "cmd-shift-k") == Combo(key: KeyNames.key("k")!, modifiers: [.command, .shift]))
         #expect(Combo(parsing: "ctrl-minus") == Combo(key: KeyNames.key("hyphen")!, modifiers: .control))
-        #expect(Combo(parsing: "navigate_back") == Combo(key: KeyNames.key("open_bracket")!, modifiers: .command))
         #expect(Combo(parsing: "left_arrow")?.modifiers == [])
         #expect(Combo(parsing: "hyper-k") == nil)
         #expect(Combo(parsing: "cmd-") == nil)
