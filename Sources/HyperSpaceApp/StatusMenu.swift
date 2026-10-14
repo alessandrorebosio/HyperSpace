@@ -20,8 +20,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Updates the icon; the menu content is rebuilt in `menuNeedsUpdate`.
     func refresh() {
         let healthy = controller.accessibility.isGranted && controller.configError == nil
-        let symbol = healthy ? "steeringwheel" : "exclamationmark.triangle"
-        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
+        item.button?.image = healthy
+            ? MenuBarIcon.image
+            : NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
