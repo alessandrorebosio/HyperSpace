@@ -91,6 +91,9 @@ public enum ConfigLoader {
     # Once configured, Caps Lock no longer toggles caps lock.
     # [keyboard.capslock]
     # alone = "none"              # action when tapped alone, e.g. "escape"
+    # hold = "meh"                # while held, unmapped keys get these modifiers:
+    #                             # "meh" = shift-ctrl-opt, "hyper" = shift-ctrl-opt-cmd,
+    #                             # or any list like "ctrl-opt"
     #
     # [keyboard.capslock.map]     # Caps + key; unlisted keys behave normally
     # h = "left_arrow"

@@ -46,6 +46,9 @@ public struct KeyEngine: Sendable {
         if layerDown, let layer = tables.layer {
             layerUsed = true
             output = layer.map[code]
+            if output == nil, !layer.hold.isEmpty, let key = KeyNames.key(code: code) {
+                output = .key(Combo(key: key, modifiers: layer.hold)) // e.g. Caps + t = ⇧⌃⌥t
+            }
         }
         if output == nil { output = tables.simple[code] }
         guard let output else {

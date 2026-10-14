@@ -85,8 +85,14 @@ public enum KeyNames {
 
     public static func key(_ name: String) -> Key? { table[name.lowercased()] }
 
-    /// Reverse lookup by virtual key code, for the shortest name.
+    /// Reverse lookup by virtual key code. Array-backed: used on the input thread.
     public static func key(code: UInt16) -> Key? {
-        table.values.first { $0.code == code }
+        code < 128 ? byCode[Int(code)] : nil
     }
+
+    private static let byCode: [Key?] = {
+        var keys = [Key?](repeating: nil, count: 128)
+        for key in table.values where key.code < 128 { keys[Int(key.code)] = key }
+        return keys
+    }()
 }
