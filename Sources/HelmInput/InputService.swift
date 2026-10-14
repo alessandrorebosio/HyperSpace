@@ -77,8 +77,7 @@ public final class InputService {
     private func stopTap() {
         tap?.stop()
         tap = nil
-        if tapState == .running { tapState = .off }
-        if !plan.needsEventTap { tapState = .off }
+        tapState = .off
     }
 
     private func pushTables() {

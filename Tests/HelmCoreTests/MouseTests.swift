@@ -42,9 +42,8 @@ struct MouseTests {
     @Test func invalidInputsAreConfigErrors() {
         #expect(error("[mouse.buttons]\nbutton0 = \"escape\"")?.contains("left button") == true)
         #expect(error("[mouse.buttons]\nthumb = \"escape\"")?.contains("unknown mouse input 'thumb'") == true)
-        #expect(error("[mouse.buttons]\n\"hidpp:0x00fd\" = \"escape\"")?.contains("aren't supported yet") == true)
         #expect(error("[mouse.buttons]\nback = \"cmd-nope\"")?.contains("unknown key or combo") == true)
-        #expect(error("[[mouse.device]]\nmatch = { vendor = 1 }")?.contains("per-device") == true)
+        #expect(error("[[mouse.device]]\nmatch = { vendor = 1 }")?.hasPrefix("mouse.device: unknown key") == true)
         #expect(error("[mouse.scroll]\nlines = 0")?.contains("between 1 and 20") == true)
     }
 

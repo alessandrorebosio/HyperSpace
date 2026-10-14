@@ -15,56 +15,46 @@ public struct KeyEngine: Sendable {
     private var layerDown = false
     private var layerUsed = false
     private var layerDownAt: UInt64 = 0
-    /// Output chosen when a key went down, so its repeat and release match even if the
-    /// layer or the frontmost app changed in the meantime.
-    /// Fixed-size table instead of a dictionary: no allocations on the hot path.
-    private var inFlight = KeyTable()
+    /// Output chosen when a key went down, so its repeats and release match even if the layer
+    /// or the frontmost app changed meanwhile. A fixed table: no allocations on the hot path.
+    private var inFlight = OutputTable.keys
 
     public init() {}
 
     /// - Parameter now: monotonic time in nanoseconds.
     public mutating func handle(code: UInt16, down: Bool, isRepeat: Bool, now: UInt64,
                                 tables: ActiveTables) -> Decision {
-        if let layer = tables.layer, code == layer.trigger {
+        if let layer = tables.layer, code == Layer.trigger.code {
             return handleTrigger(down: down, isRepeat: isRepeat, now: now, layer: layer)
         }
+        let index = Int(code)
 
-        if !down {
-            guard let output = inFlight[code] else { return .pass }
-            inFlight[code] = nil
+        // Repeats and releases follow the press; outputs other than keys fire only once.
+        if !down || isRepeat {
+            guard let output = inFlight[index] else { return .pass }
+            if !down { inFlight[index] = nil }
             if case let .key(combo) = output { return .rewrite(combo) }
             return .drop
-        }
-
-        if isRepeat {
-            guard let output = inFlight[code] else { return .pass }
-            if case let .key(combo) = output { return .rewrite(combo) }
-            return .drop // other outputs fire once, never on repeat
         }
 
         var output: Output?
         if layerDown, let layer = tables.layer {
             layerUsed = true
-            output = layer.map[code]
+            output = tables.layerMap[index]
             if output == nil, !layer.hold.isEmpty, let key = KeyNames.key(code: code) {
                 output = .key(Combo(key: key, modifiers: layer.hold)) // e.g. Caps + t = ⇧⌃⌥t
             }
         }
-        if output == nil { output = tables.simple[code] }
-        guard let output else {
-            inFlight[code] = nil
-            return .pass
-        }
-        inFlight[code] = output
-        switch output {
+        inFlight[index] = output ?? tables.simple[index]
+        switch inFlight[index] {
+        case nil: return .pass
         case let .key(combo): return .rewrite(combo)
         case .drop: return .drop
-        case .navigate, .shell, .wm: return .emit(output)
+        case let output?: return .emit(output)
         }
     }
 
-    private mutating func handleTrigger(down: Bool, isRepeat: Bool, now: UInt64,
-                                        layer: ActiveTables.ActiveLayer) -> Decision {
+    private mutating func handleTrigger(down: Bool, isRepeat: Bool, now: UInt64, layer: Layer) -> Decision {
         if down {
             if !isRepeat, !layerDown {
                 layerDown = true

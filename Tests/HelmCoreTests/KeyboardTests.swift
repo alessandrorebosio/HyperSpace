@@ -24,7 +24,7 @@ struct KeyboardPlanTests {
         let usages = Set(KeyNames.table.values.map(\.usage))
         #expect(codes.count == usages.count, "every key code maps to exactly one HID usage")
         #expect(KeyNames.key("capslock") == Key(code: 57, usage: 0x39))
-        #expect(KeyNames.key("f18") == Key(code: 79, usage: 0x6D))
+        #expect(KeyNames.key("f18") == Key(code: 79, usage: 0x6D, hasFnFlag: true))
     }
 
     @Test func simpleKeyRemapsGoToHIDLevel() throws {
@@ -59,8 +59,9 @@ struct KeyboardPlanTests {
         #expect(layer.base[4] == .key(Combo(parsing: "arrow.left")!))
         #expect(layer.base[12] == .drop)
         #expect(layer.base[7] == nil)
-        #expect(p.tables(forApp: "com.example.app").layer?.map[4] == .key(Combo(parsing: "home")!))
-        #expect(p.tables(forApp: "com.other").layer?.map[4] == .key(Combo(parsing: "arrow.left")!))
+        let plan = InputPlan(keyboard: p)
+        #expect(plan.tables(forApp: "com.example.app").layerMap[4] == .key(Combo(parsing: "home")!))
+        #expect(plan.tables(forApp: "com.other").layerMap[4] == .key(Combo(parsing: "arrow.left")!))
     }
 
     @Test func invalidKeysAreConfigErrors() {
@@ -79,7 +80,7 @@ struct KeyEngineTests {
     let ms: UInt64 = 1_000_000
 
     var tables: ActiveTables {
-        try! KeyboardPlan(ConfigLoader.parse("""
+        try! InputPlan(ConfigLoader.parse("""
         [keyboard]
         simple = [{ from = "f1", to = "cmd-space" }]
         [keyboard.capslock]
@@ -89,7 +90,7 @@ struct KeyEngineTests {
         h = "arrow.left"
         q = "none"
         t = { shell = "open -a Terminal" }
-        """).get().keyboard).tables(forApp: nil)
+        """).get()).tables(forApp: nil)
     }
 
     private func combo(_ s: String) -> KeyEngine.Decision { .rewrite(Combo(parsing: s)!) }
@@ -146,13 +147,13 @@ struct KeyEngineTests {
     }
 
     @Test func holdAddsModifiersToUnmappedKeys() throws {
-        let tables = try KeyboardPlan(ConfigLoader.parse("""
+        let tables = try InputPlan(ConfigLoader.parse("""
         [keyboard.capslock]
         hold = "shift-ctrl-opt"
         alone = "escape"
         [keyboard.capslock.map]
         h = "arrow.left"
-        """).get().keyboard).tables(forApp: nil)
+        """).get()).tables(forApp: nil)
         var e = KeyEngine()
         _ = e.handle(code: trigger, down: true, isRepeat: false, now: 0, tables: tables)
         #expect(e.handle(code: t, down: true, isRepeat: false, now: 1, tables: tables) == combo("shift-ctrl-opt-t"))

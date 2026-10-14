@@ -17,6 +17,7 @@ APP=build/Helm.app
 rm -rf $APP
 mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
 cp $BIN/Helm $BIN/helmctl $APP/Contents/MacOS/
+strip -x $APP/Contents/MacOS/Helm $APP/Contents/MacOS/helmctl # local symbols only: ~40% smaller
 
 cat > $APP/Contents/Info.plist <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

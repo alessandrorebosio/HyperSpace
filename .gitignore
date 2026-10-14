@@ -4,6 +4,5 @@
 DerivedData/
 *.xcuserstate
 xcuserdata/
-phase0.log
 build/
 .signing/

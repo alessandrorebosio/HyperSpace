@@ -35,7 +35,7 @@ public enum ConfigLoader {
             let config = try TOMLDecoder().decode(Config.self, from: text)
             _ = try InputPlan(config) // validates key names, combos and mouse inputs
             return .success(config)
-        } catch let error as ConfigError {
+        } catch let error as InvalidConfig {
             return .failure(ConfigError(path: path, message: error.message))
         } catch let error as DecodingError {
             return .failure(ConfigError(path: path, message: describe(error)))

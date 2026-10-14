@@ -1,6 +1,6 @@
 # Phase 0 — Spike findings
 
-Code: [`Spikes/`](../Spikes) (`helm-spike`, throwaway). Interactive run: `Spikes/run-phase0.sh`.
+Code: the throwaway `helm-spike` tool, removed after phase 0 (see commit `767051f` in the git history). `hidutil property --get UserKeyMapping` shows the L0 mappings it used to print.
 
 Test machine: macOS 27.0.1, Swift 6.4 (Command Line Tools only, no Xcode), Logitech Lift on a Bolt receiver (`046D:C548`).
 Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyboard), LinearMouse, AeroSpace. They must be quit for the interactive tests, since they intercept the same events.

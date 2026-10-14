@@ -11,6 +11,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     let accessibility = Accessibility()
 
     private(set) var config = Config()
+    /// `config` compiled; recompiled only when the config changes.
+    private var plan = InputPlan()
     private(set) var configError: ConfigError?
     private(set) var input: InputService!
     private var signalSources: [any DispatchSourceSignal] = []
@@ -75,8 +77,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func applyInput() {
-        // The config was validated when loaded, so compiling can't fail here.
-        let plan = (try? InputPlan(config)) ?? InputPlan()
         input.apply(plan, accessibilityGranted: accessibility.isGranted)
     }
 
@@ -88,6 +88,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         switch result {
         case let .success(new):
             config = new
+            plan = (try? InputPlan(new)) ?? InputPlan() // validated by the loader: can't fail
             configError = nil
             log.info("config loaded")
             applyInput()
