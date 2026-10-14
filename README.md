@@ -2,7 +2,7 @@
 
 A single lightweight macOS app for:
 - keyboard remapping, including a fully customizable Caps Lock layer (like Karabiner-Elements)
-- mouse button and scroll remapping, including Logitech mice: side buttons as back/forward in every app (like LinearMouse)
+- generic remapping of any input from any mouse, Logitech included: side buttons as back/forward in every app (like LinearMouse)
 - tiling window management (like AeroSpace, more optimized)
 
 Goal: one process, no drivers, one permission (Accessibility).
