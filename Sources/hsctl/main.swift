@@ -7,7 +7,7 @@ let usage = """
 usage: hsctl <command>
   status        show permissions and config state
   reload        reload the config file
-  config-path   print the config file path
+  config-path   print the config directory (keyboard.toml, mouse.toml, wm.toml)
   apps          list running apps with their bundle id (for per-app rules)
   version       print HyperSpace's version
 """

@@ -19,7 +19,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// Updates the icon; the menu content is rebuilt in `menuNeedsUpdate`.
     func refresh() {
-        let healthy = controller.accessibility.isGranted && controller.configError == nil
+        let healthy = controller.accessibility.isGranted && controller.configErrors.isEmpty
         item.button?.image = healthy
             ? MenuBarIcon.image
             : NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
@@ -38,11 +38,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(action("Grant Accessibility…", #selector(grantAccessibility)))
         }
 
-        if let error = controller.configError {
-            menu.addItem(disabled("Config error:"))
-            for line in error.message.split(separator: "\n") { menu.addItem(disabled("  " + line)) }
-        } else {
+        if controller.configErrors.isEmpty {
             menu.addItem(disabled("Config: OK"))
+        } else {
+            for error in controller.configErrors {
+                menu.addItem(disabled("Error in \((error.path as NSString).lastPathComponent):"))
+                for line in error.message.split(separator: "\n") { menu.addItem(disabled("  " + line)) }
+            }
         }
         menu.addItem(action("Reload Config", #selector(reloadConfig), key: "r"))
         menu.addItem(action("Open Config", #selector(openConfig), key: "o"))

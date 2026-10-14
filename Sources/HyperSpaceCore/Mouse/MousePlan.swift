@@ -10,12 +10,12 @@ public struct MousePlan: Sendable, Equatable {
     public init() {}
 
     public init(_ config: MouseConfig) throws(InvalidConfig) {
-        buttons = try MousePlan.table(config.buttons, path: "mouse.buttons", over: .buttons)
+        buttons = try MousePlan.table(config.buttons, path: "buttons", over: .buttons)
         for (i, app) in config.app.enumerated() {
-            apps[app.bundleID] = try MousePlan.table(app.buttons, path: "mouse.app[\(i)].buttons", over: buttons)
+            apps[app.bundleID] = try MousePlan.table(app.buttons, path: "app[\(i)].buttons", over: buttons)
         }
         if let lines = config.scroll?.lines, !(1...20).contains(lines) {
-            throw InvalidConfig(message: "mouse.scroll.lines: must be between 1 and 20")
+            throw InvalidConfig(message: "scroll.lines: must be between 1 and 20")
         }
         scroll = config.scroll
     }
