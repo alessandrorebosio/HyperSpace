@@ -104,7 +104,7 @@ public struct KeyboardPlan: Sendable, Equatable {
             try addSimple(remap, path: "keyboard.simple[\(i)]", capsLockTaken: config.capslock != nil)
         }
         if let caps = config.capslock {
-            hid.append(HIDMapping(from: KeyNames.key("caps_lock")!.usage, to: Layer.trigger.usage, device: nil))
+            hid.append(HIDMapping(from: KeyNames.key("capslock")!.usage, to: Layer.trigger.usage, device: nil))
             var hold: Modifiers = []
             if let text = caps.hold {
                 guard let parsed = Modifiers(parsing: text) else {
@@ -152,8 +152,8 @@ public struct KeyboardPlan: Sendable, Equatable {
         guard let to = Combo(parsing: remap.to) else {
             throw Error(message: "\(path).to: unknown key or combo '\(remap.to)'")
         }
-        if capsLockTaken, remap.from == "caps_lock" {
-            throw Error(message: "\(path).from: caps_lock is already configured in [keyboard.capslock]")
+        if capsLockTaken, from == KeyNames.key("capslock") {
+            throw Error(message: "\(path).from: capslock is already configured in [keyboard.capslock]")
         }
         if to.modifiers.isEmpty {
             hid.append(HIDMapping(from: from.usage, to: to.key.usage, device: remap.device))
@@ -178,7 +178,10 @@ public struct KeyboardPlan: Sendable, Equatable {
     }
 
     private func key(_ name: String, path: String) throws(Error) -> Key {
-        guard let key = KeyNames.key(name) else { throw Error(message: "\(path): unknown key '\(name)'") }
+        guard let key = KeyNames.key(name) else {
+            let hint = name.contains("_") ? " (multi-word names use dots, e.g. arrow.left)" : ""
+            throw Error(message: "\(path): unknown key '\(name)'\(hint)")
+        }
         return key
     }
 
