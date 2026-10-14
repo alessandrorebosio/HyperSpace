@@ -1,159 +1,216 @@
-# Tessera — Mini progettazione
+# Helm — Design
 
-> Un'unica app macOS, leggera e con il minimo dei permessi, che unisce:
-> - **remapping tastiera** (alla Karabiner-Elements)
-> - **remapping/scroll mouse**, incluso Logitech (alla LinearMouse)
-> - **tiling window manager** (alla AeroSpace)
+> One macOS app, lightweight and with the fewest possible permissions, that combines:
+> - **keyboard remapping** (like Karabiner-Elements)
+> - **mouse button and scroll remapping**, including Logitech mice (like LinearMouse)
+> - **tiling window manager** (like AeroSpace, but more optimized)
 
-Stato: bozza da approvare prima di scrivere codice.
-
----
-
-## 1. Obiettivi e non-obiettivi
-
-**Obiettivi**
-- Un solo processo, una sola app in menu bar (`LSUIElement`), nessun Dock icon.
-- **Un solo permesso TCC: Accessibilità.** Nessun driver, nessun daemon root, nessuna password admin.
-- Latenza aggiunta per evento input < 1 ms, CPU ~0% a riposo, RAM < 30 MB.
-- Configurazione testuale (TOML) con hot-reload, versionabile in dotfiles.
-- Avvio al login tramite `SMAppService.mainApp` (nessun LaunchAgent manuale).
-
-**Non-obiettivi (almeno v1)**
-- Niente Virtual HID driver (DriverKit) come Karabiner → è la fonte principale di permessi e complessità.
-- Niente GUI di editing complessa: UI minima (stato, permessi, reload, errori config).
-- Niente supporto a protocolli proprietari Logitech (HID++) in v1 — vedi §5.3.
-- Niente disattivazione SIP, niente scripting addition (AeroSpace non ne usa, noi neanche).
+Status: design approved in principle, spike phase next.
 
 ---
 
-## 2. Come funzionano i tre progetti di riferimento (e cosa prendiamo)
+## 1. Goals and non-goals
 
-| Progetto | Tecnica | Permessi | Cosa prendiamo |
+**Goals**
+- A single process, a single menu bar app (`LSUIElement`), no Dock icon.
+- **A single TCC permission: Accessibility.** No driver, no root daemon, no admin password.
+- Added latency per input event < 1 ms, ~0% CPU when idle, < 30 MB RAM.
+- Text configuration (TOML) with hot reload, easy to keep in dotfiles.
+- Launch at login via `SMAppService.mainApp` (no hand-written LaunchAgent).
+
+**Non-goals (at least for v1)**
+- No virtual HID driver (DriverKit) like Karabiner: it is the main source of permissions and complexity.
+- No complex editing GUI: minimal UI (status, permissions, reload, config errors).
+- No Logitech proprietary protocol (HID++) in v1, see §5.3.
+- No SIP changes, no scripting additions (AeroSpace doesn't need them, neither do we).
+
+---
+
+## 2. How the reference projects work (and what we take)
+
+| Project | Technique | Permissions | What we take |
 |---|---|---|---|
-| **Karabiner-Elements** | Daemon root che fa *seize* dei device HID via IOKit + driver DriverKit che emula una tastiera virtuale | Input Monitoring, estensione di sistema, admin | Il **modello delle regole** (from → to, to_if_alone, simultaneous, condizioni per app). **Non** l'architettura. |
-| **LinearMouse** | `CGEventTap` su eventi mouse/scroll + IOHIDManager per capire da quale device arriva l'evento | Accessibilità | Pipeline eventi mouse, configurazione **per device**, scroll lineare/invertito. |
-| **AeroSpace** | API Accessibility (`AXUIElement`) + workspace "virtuali" (finestre nascoste spostandole fuori schermo), albero di tiling i3-like, config TOML, CLI | Accessibilità | Quasi tutto il modello WM: albero, workspace virtuali, comandi, formato config. |
+| **Karabiner-Elements** | Root daemon that *seizes* HID devices through IOKit + DriverKit driver emulating a virtual keyboard | Input Monitoring, system extension, admin | The **rule model** (from → to, to_if_alone, simultaneous keys, per-app conditions). **Not** the architecture. |
+| **LinearMouse** | `CGEventTap` on mouse/scroll events + IOHIDManager to tell which device an event came from | Accessibility | Mouse event pipeline, **per-device** settings, linear/reversed scrolling. |
+| **AeroSpace** | Accessibility API (`AXUIElement`) + "virtual" workspaces (windows hidden by moving them off-screen), i3-like tiling tree, TOML config, CLI | Accessibility | Most of the WM model: tree, virtual workspaces, commands, config format. |
 
-Licenze: verificare prima di copiare codice (AeroSpace e LinearMouse MIT, Karabiner-Elements Unlicense). Mantenere attribuzioni in `THIRD_PARTY.md`.
+Licenses: check before copying any code (AeroSpace and LinearMouse are MIT, Karabiner-Elements is Unlicense). Keep attributions in `THIRD_PARTY.md`.
 
 ---
 
-## 3. Strategia "minimi permessi" — il punto chiave
+## 3. Fewest-permissions strategy (the key idea)
 
-Separiamo il remapping in **tre livelli**, scegliendo sempre il più basso che basta:
+Remapping is split into **three levels**; we always pick the lowest level that is enough:
 
-| Livello | Meccanismo | Permessi | Uso |
+| Level | Mechanism | Permissions | Use |
 |---|---|---|---|
-| **L0 — HID key mapping** | `IOHIDEventSystemClient` property `UserKeyMapping` (la stessa cosa che fa `hidutil`) | **Nessuno** | Remap 1:1 statici: CapsLock→Esc, swap ⌘/⌥ su tastiera esterna, ecc. Gira nel kernel, costo zero, funziona anche nei campi password. Filtrabile per device (VendorID/ProductID). |
-| **L1 — Event tap** | `CGEventTap` attivo (`kCGSessionEventTap`, head insert) | **Accessibilità** | Remap complessi: dual-role (Caps = Esc se premuto da solo, Ctrl se tenuto), layer, combo, regole per app, tasti mouse, scroll, hotkey del WM. |
-| **L2 — Accessibility API** | `AXUIElement` + `AXObserver` | **Accessibilità** (stesso permesso) | Window manager. |
+| **L0 — HID key mapping** | `IOHIDEventSystemClient` property `UserKeyMapping` (what `hidutil` does) | **None** | Static 1:1 remaps (e.g. swap ⌘/⌥ on an external keyboard) and turning Caps Lock into a free key for L1 (see §5.1). Runs in the kernel, zero cost, works in password fields too. Can be filtered per device (VendorID/ProductID). |
+| **L1 — Event tap** | Active `CGEventTap` (`kCGSessionEventTap`, head insert) | **Accessibility** | Complex remaps: Caps Lock layer, dual-role keys, per-app rules, mouse buttons, scrolling, WM hotkeys. |
+| **L2 — Accessibility API** | `AXUIElement` + `AXObserver` | **Accessibility** (same permission) | Window manager. |
 
-Risultato: **un solo permesso (Accessibilità)**, e se l'utente usa solo remap semplici, **zero permessi**.
+Result: **one permission (Accessibility)**. If only simple remaps are used, **no permissions at all**.
 
-Hotkey del WM: passano nello stesso event tap di L1 (un solo tap per tastiera, niente Carbon `RegisterEventHotKey` duplicato).
+WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplicate Carbon `RegisterEventHotKey`).
 
-### Limiti noti di questa scelta (accettati consapevolmente)
-- **Secure Input** (campi password, Terminal con "Secure Keyboard Entry"): il tap L1 non vede i tasti. Mitigazione: i remap critici (es. CapsLock) vanno in L0, che funziona sempre.
-- Un `CGEventTap` vede eventi già "tradotti" da macOS: alcuni tasti speciali (fn/Globe, tasti media) sono più limitati rispetto a Karabiner.
-- Se il tap è lento, macOS lo disattiva (`kCGEventTapDisabledByTimeout`) → va riattivato e il callback deve essere minimale.
+### Known limits of this choice (accepted on purpose)
+- **Secure Input** (password fields, Terminal with "Secure Keyboard Entry"): the L1 tap doesn't see key events. L0 remaps keep working; the Caps Lock layer does not.
+- A `CGEventTap` sees events already processed by macOS: some special keys (fn/Globe, media keys) are more limited than in Karabiner.
+- If the tap callback is slow, macOS disables it (`kCGEventTapDisabledByTimeout`): it must be re-enabled and the callback must stay minimal.
 
 ---
 
-## 4. Architettura
+## 4. Architecture
 
 ```
-┌──────────────────────── Tessera.app (un processo) ─────────────────────────┐
+┌──────────────────────── Helm.app (one process) ──────────────────────────────┐
 │                                                                              │
-│  Main thread (UI)            Input thread (RT, QoS userInteractive)          │
+│  Main thread (UI)            Input thread (QoS userInteractive)              │
 │  ┌──────────────┐            ┌─────────────────────────────────────────┐     │
 │  │ MenuBar/UI   │            │ CGEventTap ──► EventPipeline             │     │
-│  │ Permissions  │            │   ├─ KeyEngine   (regole compilate)      │     │
-│  │ ConfigLoader │──snapshot─►│   ├─ MouseEngine (per-device, scroll)    │     │
-│  │ (FSEvents)   │  immutab.  │   └─ HotkeyRouter ──► WM command queue ──┼──┐  │
+│  │ Permissions  │            │   ├─ KeyEngine   (compiled rules)        │     │
+│  │ ConfigLoader │──snapshot─►│   ├─ MouseEngine (per device, scroll)    │     │
+│  │ (FSEvents)   │ immutable  │   └─ HotkeyRouter ──► WM command queue ──┼──┐  │
 │  └──────────────┘            └─────────────────────────────────────────┘  │  │
 │         │                                                                  │  │
-│         ▼                    WM actor (thread dedicato)                    │  │
+│         ▼                    WM actor (dedicated thread)                   │  │
 │  ┌──────────────┐            ┌─────────────────────────────────────────┐  │  │
-│  │ HIDMapper L0 │            │ WindowManager: albero, workspace,        │◄─┘  │
-│  │ (no perms)   │            │ layout, AXObserver per app               │     │
+│  │ HIDMapper L0 │            │ WindowManager: tree, workspaces,         │◄─┘  │
+│  │ (no perms)   │            │ layout, per-app AXObserver               │     │
 │  └──────────────┘            └─────────────────────────────────────────┘     │
 │                                         ▲                                    │
-│                         Unix socket ────┘  (CLI `tessera`, opzionale)        │
+│                         Unix socket ────┘  (`helmctl` CLI, optional)         │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Moduli (Swift Package, target separati)
+### Modules (Swift Package, separate targets)
 
-| Target | Responsabilità | Dipende da |
+| Target | Responsibility | Depends on |
 |---|---|---|
-| `TesseraCore` | Modelli config, parser TOML, validazione, logging (`os.Logger`), permessi | — |
-| `KeyEngine` | Compila le regole in tabelle di lookup; macchina a stati per dual-role/layer/combo | Core |
-| `MouseEngine` | Remap pulsanti, scroll (inversione, linearizzazione, velocità) per device | Core |
-| `HIDMapper` | Applica/rimuove `UserKeyMapping` L0 per device | Core, IOKit |
-| `InputTap` | Gestione `CGEventTap`, thread dedicato, riattivazione su timeout | Key/MouseEngine |
-| `WindowManager` | Albero tiling, workspace virtuali, comandi, osservazione finestre AX | Core |
-| `TesseraApp` | App menu bar, onboarding permessi, login item | tutti |
-| `tessera` (CLI) | Client socket per comandi WM e `reload` | Core |
+| `HelmCore` | Config models, TOML parsing, validation, logging (`os.Logger`), permissions | — |
+| `KeyEngine` | Compiles rules into lookup tables; state machine for layers and dual-role keys | Core |
+| `MouseEngine` | Button remapping, scrolling (reverse, linear, speed) per device | Core |
+| `HIDMapper` | Applies/removes L0 `UserKeyMapping` per device, restores it on quit | Core, IOKit |
+| `InputTap` | `CGEventTap` lifecycle, dedicated thread, re-enable on timeout | Key/MouseEngine |
+| `WindowManager` | Tiling tree, virtual workspaces, commands, AX window observation | Core |
+| `HelmApp` | Menu bar app, permission onboarding, login item | all |
+| `helmctl` | Socket client for WM commands and `reload` | Core |
 
-### Principi di performance
-- **Config compilata**: il callback del tap non legge TOML/dizionari; usa array indicizzati per keycode (`[UInt16: Action]` → array fisso da 256 slot).
-- **Snapshot immutabili**: la config viene sostituita atomicamente (swap di riferimento), nessun lock nel percorso caldo.
-- **Zero allocazioni** nel callback dove possibile; niente log sincroni nel percorso caldo.
-- **Il WM non gira mai nel callback**: l'hotkey accoda un comando e il tap ritorna subito. Le chiamate AX (lente, possono bloccare) stanno sul loro thread.
-- Nessun polling: tutto event-driven (event tap, `AXObserver`, `NSWorkspace` notifications, FSEvents).
+The CLI is called `helmctl`, not `helm`, to avoid clashing with the Kubernetes `helm` CLI.
+
+### Performance principles
+- **Compiled config**: the tap callback never touches TOML or dictionaries; it uses fixed arrays indexed by keycode (256 slots).
+- **Immutable snapshots**: config is swapped atomically (reference swap), no locks on the hot path.
+- **Zero allocations** in the callback where possible; no synchronous logging on the hot path.
+- **The WM never runs inside the callback**: a hotkey enqueues a command and the tap returns immediately. AX calls (slow, can block) live on their own thread.
+- No polling: everything is event-driven (event tap, `AXObserver`, `NSWorkspace` notifications, FSEvents).
 
 ---
 
-## 5. Funzionalità per modulo
+## 5. Features per module
 
-### 5.1 Tastiera (v1)
-- Remap semplice (→ L0 automaticamente se possibile)
-- Dual-role / `to_if_alone` con timeout configurabile
-- Layer (es. tenendo Space o Caps si attiva un layer hjkl→frecce)
-- Combinazioni simultanee (es. `j+k` → Esc) — v1.1
-- Condizioni: app in primo piano (bundle id), device (vendor/product id)
+### 5.1 Keyboard (v1)
+
+**Caps Lock layer (main requirement)**
+- While Caps Lock is held, every key can be mapped to an action (key, key combo, shell command, WM command). Each key is configured on its own.
+- **Unmapped keys keep their normal behavior**: if `Caps + Q` has no mapping, the event passes through untouched (as plain `Q`, or with the original modifiers).
+- What Caps Lock does when tapped alone is configurable: `caps_lock` (original toggle, default), `escape`, or nothing.
+- Implementation:
+  1. L0 remaps Caps Lock to an unused key (e.g. F18). This removes the caps lock toggle and the built-in Caps Lock delay, and gives L1 a normal key down/up pair to track.
+  2. L1 tracks the F18 down/up state and looks up `layer[keycode]` for each key while it's held. A hit emits the mapped action and swallows the original event; a miss passes the event through.
+  3. Tap alone (down → up with no other key in between, within `tap_timeout`) emits the `alone` action. To restore the original toggle, Helm sets the caps lock state through IOKit (`IOHIDSetModifierLockState`). To be verified in the spike.
+- Mappings can be overridden per app (bundle id).
+
+**Other keyboard features**
+- Simple 1:1 remaps (pushed to L0 when possible)
+- Dual-role keys (`to_if_alone`) with a configurable timeout
+- Conditions: frontmost app (bundle id), device (vendor/product id)
+- Simultaneous keys (e.g. `j+k` → Esc): v1.1
 
 ### 5.2 Mouse (v1)
-- Remap pulsanti 3/4/5… → tasti, combinazioni o comandi WM
-- Scroll: inversione separata per mouse/trackpad, scroll lineare, velocità/accelerazione per device
-- Identificazione device via IOHIDManager (match dell'ultimo device attivo, come LinearMouse)
 
-### 5.3 Logitech — punto da chiarire
-- I pulsanti "standard" (back/forward, middle, rotella orizzontale) arrivano come normali eventi HID → **coperti dal v1**.
-- Pulsante gesture, thumb wheel su alcuni modelli, DPI, SmartShift richiedono il protocollo proprietario **HID++** → serve aprire il device HID (potenziale permesso **Input Monitoring**) e implementare il protocollo per modello. **Rimandato a v2, opzionale e disattivato di default.** Prima uno spike per capire quali tasti del *tuo* mouse servono.
+**Side buttons → back/forward in every app (main requirement)**
+- Side buttons arrive as `otherMouseDown` with button number 3 (back) and 4 (forward).
+- Default strategy: convert them to **⌘[ / ⌘]**, which works in Safari, Finder, Xcode, App Store, System Settings and most native apps.
+- Per-app overrides for apps that use different shortcuts (e.g. VS Code `ctrl+-` / `ctrl+shift+-`) or that already handle the buttons natively (Chrome, Firefox: pass through).
+- Spike alternative: synthesize a **swipe navigation gesture** (like Mac Mouse Fix). Apps that support trackpad swipe-to-go-back would react without per-app rules. If reliable, it becomes the default, with ⌘[ / ⌘] as a fallback.
 
-### 5.4 Window manager (v1, sottoinsieme di AeroSpace)
-- Tiling ad albero (h/v split, accordion), focus/move/resize, float per app
-- Workspace virtuali (no Spaces di macOS, niente SIP), assegnazione workspace per monitor
-- Regole per app (es. Finder floating, Slack → workspace 9)
-- Comandi richiamabili da hotkey e da CLI
+**Other mouse features**
+- Remap of any extra button to keys, combos or WM commands
+- Scrolling: separate reverse setting for mouse/trackpad, linear scrolling, speed/acceleration per device
+- Device identification via IOHIDManager (match on last active device, as LinearMouse does)
+
+### 5.3 Logitech
+- Standard buttons (back/forward, middle, horizontal wheel) arrive as normal HID events, so **v1 covers them**.
+- Gesture button, thumb wheel on some models, DPI and SmartShift require Logitech's proprietary **HID++** protocol. That means opening the HID device (possibly the **Input Monitoring** permission) and implementing the protocol per model. **Deferred to v2, optional and off by default.**
+
+### 5.4 Window manager (v1): AeroSpace model, optimized
+
+Same concepts and command names as AeroSpace, so moving an existing config over is easy:
+- Tiling tree (h/v tiles, accordion), focus/move/resize/join, floating per app
+- Virtual workspaces (not macOS Spaces, no SIP changes), workspace-to-monitor assignment
+- App rules (e.g. Finder floating, Slack → workspace 9)
+- Commands from hotkeys and from `helmctl`
+
+Optimizations over AeroSpace:
+- **Window state cache**: frames, app and window ids live in memory and are updated from `AXObserver` notifications. The WM doesn't query AX on every command (AX calls are slow, and some apps take tens of ms to answer).
+- **Diff-based layout**: after each command only the windows whose frame actually changed get an AX `setFrame`. Unchanged windows aren't touched.
+- **Batched workspace switch**: all hide/show moves are computed first, then applied concurrently per app. Today they are applied one after the other.
+- **Per-app timeouts** (`AXUIElementSetMessagingTimeout`): a frozen app can't block the whole WM.
+- **WM actor off the input thread**: hotkeys never wait for the WM.
 
 ---
 
-## 6. Configurazione (bozza)
+## 6. Configuration (draft)
 
-`~/.config/tessera/tessera.toml`, ricaricata automaticamente al salvataggio.
+`~/.config/helm/helm.toml`, reloaded automatically on save.
 
 ```toml
+# ── Keyboard ─────────────────────────────────────────────
 [keyboard]
 simple = [
-  { from = "caps_lock", to = "escape" },           # → L0, nessun permesso
+  { from = "right_command", to = "right_option", device = { vendor = 0x05ac } },
 ]
 
-[[keyboard.rule]]
-from = "caps_lock"
-to = "left_control"
-to_if_alone = "escape"
+[keyboard.capslock]
+alone = "caps_lock"          # "caps_lock" | "escape" | "none"
+tap_timeout_ms = 200
 
-[[keyboard.layer]]
-trigger = "space"                 # tenuto = layer, premuto da solo = space
-map = { h = "left_arrow", j = "down_arrow", k = "up_arrow", l = "right_arrow" }
+# Caps + key. Keys not listed here keep their normal behavior.
+[keyboard.capslock.map]
+h = "left_arrow"
+j = "down_arrow"
+k = "up_arrow"
+l = "right_arrow"
+u = "cmd-left_arrow"
+o = "cmd-right_arrow"
+t = { shell = "open -a Terminal" }
+"1" = { wm = "workspace 1" }
+
+# Per-app override of the Caps layer
+[[keyboard.capslock.app]]
+bundle_id = "com.microsoft.VSCode"
+map = { d = "cmd-shift-k" }
+
+# ── Mouse ────────────────────────────────────────────────
+[mouse.buttons]
+back    = "navigate_back"     # default: swipe or ⌘[ (chosen after the spike)
+forward = "navigate_forward"
+
+[[mouse.buttons.app]]
+bundle_id = "com.microsoft.VSCode"
+back = "ctrl-minus"
+forward = "ctrl-shift-minus"
+
+[[mouse.buttons.app]]
+bundle_id = "com.google.Chrome"
+back = "passthrough"
+forward = "passthrough"
 
 [[mouse.device]]
-match = { vendor = 0x046d }       # Logitech
+match = { vendor = 0x046d }   # Logitech
 scroll = { reverse = true, linear = true, lines = 3 }
-buttons = { button4 = "cmd-[", button5 = "cmd-]" }
 
+# ── Window manager ───────────────────────────────────────
 [wm]
 enabled = true
 gaps = { inner = 8, outer = 8 }
@@ -171,33 +228,45 @@ layout = "floating"
 
 ---
 
-## 7. Stack tecnico
+## 7. Tech stack
 
-- **Swift 6** (strict concurrency), Swift Package Manager + piccolo progetto Xcode solo per bundle/firma.
-- **AppKit** per menu bar e onboarding; SwiftUI solo per la finestra impostazioni.
+- **Swift 6** (strict concurrency), Swift Package Manager plus a small Xcode project only for bundling and signing.
+  - All the APIs we need are Apple frameworks (CoreGraphics, IOKit, ApplicationServices); Swift calls them directly, with no binding layer.
+  - AeroSpace and LinearMouse are Swift too, so their logic can be studied and reused directly.
+  - Native code with no garbage collector; with an allocation-free hot path, latency stays predictable.
+- **AppKit** for the menu bar and onboarding; SwiftUI only for the settings window.
 - Target: **macOS 15+**.
-- **Non sandboxed** (App Sandbox impedisce di controllare finestre di altre app via AX) → distribuzione fuori App Store, firmata Developer ID + notarizzata.
-- Dipendenze esterne: solo un parser TOML (es. `TOMLKit`) — tutto il resto è framework di sistema.
-- Test: unit test su KeyEngine/MouseEngine (pure, senza IO) e sull'algoritmo di layout del WM.
+- **Not sandboxed** (App Sandbox blocks controlling other apps' windows via AX), so distribution is outside the App Store, signed with Developer ID and notarized.
+- External dependencies: only a TOML parser (e.g. `TOMLKit`). Everything else is system frameworks.
+- Tests: unit tests for KeyEngine/MouseEngine (pure, no IO) and for the WM layout algorithm.
 
 ---
 
 ## 8. Roadmap
 
-| Fase | Contenuto | Esito atteso |
+| Phase | Scope | Expected outcome |
 |---|---|---|
-| **0 — Spike** | Event tap minimale, `UserKeyMapping` via IOKit, enumerazione finestre AX, lettura device Logitech | Conferma limiti/permessi reali sul tuo Mac |
-| **1 — Fondamenta** | Package, app menu bar, onboarding Accessibilità, config TOML + hot-reload, CLI | App che parte, chiede 1 permesso, ricarica config |
-| **2 — Tastiera** | L0 + KeyEngine (remap, dual-role, layer, condizioni app) | Sostituisce il 90% dell'uso tipico di Karabiner |
-| **3 — Mouse** | MouseEngine per-device, pulsanti, scroll | Sostituisce LinearMouse |
-| **4 — WM** | Albero, workspace virtuali, comandi, regole | Sostituisce AeroSpace per uso quotidiano |
-| **5 — Extra** | Combo simultanee, HID++ Logitech (opzionale), UI impostazioni | — |
+| **0 — Spike** | Minimal event tap; Caps→F18 via `UserKeyMapping`; caps lock toggle via IOKit; swipe vs ⌘[ for back/forward; AX window enumeration; Logitech device detection | Real permissions and limits confirmed on the target Mac |
+| **1 — Foundations** | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config |
+| **2 — Keyboard** | L0 + KeyEngine (Caps layer, simple remaps, dual-role, per-app conditions) | Replaces typical Karabiner usage |
+| **3 — Mouse** | MouseEngine: back/forward everywhere, per-device scrolling | Replaces LinearMouse |
+| **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
+| **5 — Extras** | Simultaneous keys, Logitech HID++ (optional), settings UI, Karabiner rule importer | — |
 
 ---
 
-## 9. Decisioni aperte
+## 9. Decisions
 
-1. **Nome**: "Tessera" è provvisorio (tessere = tiling + tasti).
-2. **Formato config**: TOML (come AeroSpace) vs JSON (come Karabiner, importabile). Proposta: TOML + importer per le regole semplici di Karabiner.
-3. **Logitech**: quali pulsanti/modello? Determina se HID++ serve davvero.
-4. **WM**: replicare AeroSpace 1:1 nei comandi (riuso config esistente) o sottoinsieme semplificato?
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Name | **Helm** (CLI: `helmctl`) |
+| 2 | Config format | **TOML** |
+| 3 | Language | **Swift 6** |
+| 4 | Caps Lock | Per-key layer, unmapped keys keep their normal behavior |
+| 5 | Mouse side buttons | Back/forward in every app (swipe or ⌘[ / ⌘], per-app overrides) |
+| 6 | WM | AeroSpace model and commands, with the optimizations in §5.4 |
+| 7 | Documentation | English |
+
+**Still open**
+- Logitech model in use (decides whether HID++ is ever needed).
+- What Caps Lock does when tapped alone (default: original caps lock toggle).
