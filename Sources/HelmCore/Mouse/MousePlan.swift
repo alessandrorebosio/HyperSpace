@@ -75,7 +75,7 @@ public struct MousePlan: Sendable, Equatable {
     private static func output(_ action: Action, path: String) throws(Error) -> Output? {
         switch Output.from(action) {
         case let .success(output): return output
-        case let .failure(e): throw Error(message: "\(path): unknown key or combo '\(e.text)'")
+        case let .failure(e): throw Error(message: "\(path): unknown key or combo '\(e.text)'\(e.hint)")
         }
     }
 }
