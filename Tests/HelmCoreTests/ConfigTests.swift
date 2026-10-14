@@ -39,15 +39,16 @@ struct ConfigTests {
 
         [mouse.buttons]
         button3 = "navigate_back"
-        "hidpp:0x00fd" = "cmd-tab"
+        forward = "cmd-tab"
 
         [[mouse.app]]
         bundle_id = "com.google.Chrome"
         buttons = { button3 = "passthrough" }
 
-        [[mouse.device]]
-        match = { vendor = 0x046d }
-        scroll = { reverse = true, linear = true, lines = 3 }
+        [mouse.scroll]
+        reverse = true
+        linear = true
+        lines = 3
 
         [wm]
         enabled = true
@@ -72,10 +73,9 @@ struct ConfigTests {
         #expect(caps.app == [AppKeyMap(bundleID: "com.microsoft.VSCode", map: ["d": .keys("cmd-shift-k")])])
 
         #expect(config.mouse.buttons["button3"] == .keys("navigate_back"))
-        #expect(config.mouse.buttons["hidpp:0x00fd"] == .keys("cmd-tab"))
+        #expect(config.mouse.buttons["forward"] == .keys("cmd-tab"))
         #expect(config.mouse.app.first?.buttons["button3"] == .passthrough)
-        #expect(config.mouse.device.first?.match.vendor == 0x046D)
-        #expect(config.mouse.device.first?.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))
+        #expect(config.mouse.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))
 
         #expect(config.wm.enabled)
         #expect(config.wm.gaps == Gaps(inner: 8, outer: 4))

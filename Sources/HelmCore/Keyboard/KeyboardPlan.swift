@@ -42,6 +42,8 @@ public struct Layer: Sendable, Equatable {
 public struct ActiveTables: Sendable, Equatable {
     public var simple = KeyTable()
     public var layer: ActiveLayer?
+    public var buttons = ButtonTable()
+    public var scroll: ScrollConfig?
 
     public struct ActiveLayer: Sendable, Equatable {
         public var trigger: UInt16
