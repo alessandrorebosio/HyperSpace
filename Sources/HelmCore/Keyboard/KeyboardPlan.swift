@@ -26,6 +26,7 @@ public enum Output: Sendable, Equatable {
 
     struct Unparsable: Swift.Error {
         let text: String
+        var hint: String { text.contains("_") ? " (multi-word names use dots, e.g. arrow.left)" : "" }
     }
 }
 
@@ -188,7 +189,7 @@ public struct KeyboardPlan: Sendable, Equatable {
     private func output(_ action: Action, path: String) throws(Error) -> Output? {
         switch Output.from(action) {
         case let .success(output): return output
-        case let .failure(e): throw Error(message: "\(path): unknown key or combo '\(e.text)'")
+        case let .failure(e): throw Error(message: "\(path): unknown key or combo '\(e.text)'\(e.hint)")
         }
     }
 }
