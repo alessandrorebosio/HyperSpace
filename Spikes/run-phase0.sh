@@ -1,39 +1,65 @@
 #!/bin/zsh
-# Interactive phase 0 run. Writes everything to phase0.log next to this script.
-# Run it from Terminal (not from an IDE) after quitting Karabiner-Elements and LinearMouse.
+# Interactive phase 0 run. Appends everything to phase0.log next to this script.
+# Run it from a terminal app that has Accessibility, after quitting Karabiner-Elements and LinearMouse.
+#   ./run-phase0.sh            all steps
+#   ./run-phase0.sh tap ax     only some steps (perms, tap, hidpp, hid, ax)
 set -u
 cd "${0:A:h}"
 swift build -q || exit 1
 B=.build/debug/helm-spike
 LOG=phase0.log
-: > $LOG
+STEPS=(${@:-perms tap hidpp hid ax})
+
+wants() { (( ${STEPS[(Ie)$1]} )) }
 
 step() {
   print -P "\n%B== $1%b"
-  print "== $1" >> $LOG
+  print "\n== $1 ($(date +%T))" >> $LOG
   [[ -n "${2:-}" ]] && { print "$2"; read -r "?Press Enter to start... " }
 }
 run() { "$@" 2>&1 | tee -a $LOG }
 
+needs_accessibility() {
+  if ! $B perms | grep -q "AXIsProcessTrusted *= true"; then
+    print -P "%F{red}This terminal app ($TERM_PROGRAM) has no Accessibility permission.%f"
+    print "System Settings > Privacy & Security > Accessibility: enable it, quit and reopen the terminal, then run: $0 $1"
+    print "SKIPPED $1: no Accessibility" >> $LOG
+    return 1
+  fi
+}
+
 trap '$B capslock clear >/dev/null 2>&1' EXIT INT TERM
 
-step "perms"
-run $B perms
+if wants perms; then
+  step "perms"
+  run $B perms
+fi
 
-step "tap (active, remapping)" "For 40s: press both side buttons in Safari (should go back/forward),
-hold Caps Lock + h/j/k/l (arrows), Caps + another key (normal key), tap Caps alone,
-scroll the wheel up/down and left/right."
-run $B capslock set
-run $B tap 40 --remap
-run $B capslock clear
+if wants tap && needs_accessibility tap; then
+  step "tap (active, remapping)" "For 40s, KEYBOARD and MOUSE:
+  - hold Caps Lock + h / j / k / l     -> should move like the arrow keys
+  - hold Caps Lock + another key       -> should type that key normally
+  - tap Caps Lock alone                -> should do nothing (no caps lock)
+  - in Safari, press the side buttons  -> back / forward
+  - scroll the wheel up/down and left/right"
+  run $B capslock set
+  run $B tap 40 --remap
+  run $B capslock clear
+fi
 
-step "hidpp (Logitech, no permissions expected)" "For 20s: press middle, back, forward and the DPI button on top."
-run $B hidpp 20
+if wants hidpp; then
+  step "hidpp (Logitech, no permissions expected)" "For 20s: press middle, back, forward and the DPI button (below the wheel)."
+  run $B hidpp 20
+fi
 
-step "hid (raw HID values)" "For 15s: press every mouse button and scroll."
-run $B hid 15
+if wants hid; then
+  step "hid (raw HID values)" "For 15s: press every mouse button and scroll."
+  run $B hid 15
+fi
 
-step "ax (window enumeration)"
-run $B ax
+if wants ax && needs_accessibility ax; then
+  step "ax (window enumeration)"
+  run $B ax
+fi
 
 print "\nDone. Results are in $PWD/$LOG"

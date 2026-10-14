@@ -23,6 +23,8 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 | `0x00D7` | Virtual gesture button (flags `0xA0` = virtual) | yes | no |
 
 - Conclusion: the DPI button can only be remapped through S3, which confirms the design. S3 costs no permissions.
+- **Diversion works** (interactive run): after `setCidReporting(0x03)` middle/back/forward are no longer delivered to macOS and arrive as `divertedButtons` events instead, ~1 ms apart from the physical press. Events carry the full set of held CIDs (up to 4), so chords like back+forward+middle are visible. `setCidReporting(0x02)` restored all 5 controls on exit.
+- DPI button `0x00FD`: diverted OK but no event was recorded in the run. To confirm whether it wasn't pressed or the Lift doesn't report it.
 - The first request to a sleeping device can take > 0.4 s: HID++ calls need a ~2 s timeout and must never run on the input thread.
 - Another process was talking HID++ to the receiver at the same time (different software id). Helm must tolerate shared access and match responses by software id.
 
@@ -43,7 +45,9 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 - [ ] Caps Lock → F18 via L0: no caps toggle, F18 down/up reaches the tap; hjkl layer; unmapped keys pass through.
 - [ ] Side buttons → ⌘[ / ⌘] work in Safari and other apps.
 - [ ] Scroll event fields for the Lift (line vs point deltas, continuous flag).
-- [ ] HID++ diversion: DPI button and others reported as diverted events, restored on exit.
+- [x] HID++ diversion: middle/back/forward reported as diverted events, restored on exit.
+- [ ] HID++ diversion of the DPI button (`0x00FD`).
+- First interactive run: tap and ax were skipped because the terminal app had no Accessibility. The script now checks this up front and can rerun single steps (`./run-phase0.sh tap ax`).
 - [ ] Tap callback latency (target < 1 ms).
 - [ ] AX window enumeration: sequential vs parallel per app vs CGWindowList.
 - [ ] Swipe gesture synthesis for universal back/forward (not implemented yet: needs private CGEvent gesture fields, separate spike).
