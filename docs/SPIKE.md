@@ -24,7 +24,7 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 
 - Conclusion: the DPI button can only be remapped through S3, which confirms the design. S3 costs no permissions.
 - **Diversion works** (interactive run): after `setCidReporting(0x03)` middle/back/forward are no longer delivered to macOS and arrive as `divertedButtons` events instead, ~1 ms apart from the physical press. Events carry the full set of held CIDs (up to 4), so chords like back+forward+middle are visible. `setCidReporting(0x02)` restored all 5 controls on exit.
-- DPI button `0x00FD`: diverted OK but no event was recorded in the run. To confirm whether it wasn't pressed or the Lift doesn't report it.
+- DPI button `0x00FD`: confirmed in the second run, see below.
 - The first request to a sleeping device can take > 0.4 s: HID++ calls need a ~2 s timeout and must never run on the input thread.
 - Another process was talking HID++ to the receiver at the same time (different software id). Helm must tolerate shared access and match responses by software id.
 
@@ -40,6 +40,16 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 ### L1 — Active event tap needs **Accessibility only** ✅
 - With Accessibility granted to the terminal and Input Monitoring *not* granted, the active tap (`kCGSessionEventTap`, `.defaultTap`) was created and saw every key down/up and modifier change. Confirms the single-permission design.
 - Slowest callback over the 40 s run (excluding logging): **284 µs**, below the 1 ms target even in a debug build with a dictionary lookup.
+
+- **Cold start:** the second run reported a 60 ms worst case. It's the first `CGEvent(keyboardEventSource:)` call in the process: measured separately at ~100 ms the first time, 0.002 ms afterwards. Helm must **pre-warm** event creation at startup (create and drop one event of each kind) so the first remapped key isn't slow.
+
+### Mouse through the event tap (S1) ✅
+- Lift buttons arrive as `otherMouseDown/Up` with button **2 = middle, 3 = back, 4 = forward**, subtype 0.
+- Back/forward were swallowed and replaced with ⌘[ / ⌘].
+- Scroll: the Lift sends line-based wheel events (`lines = ±1`, `points = ±1`, `continuous = 0`, no phase): it's a notched wheel, so linear/smooth scrolling has to be synthesized by Helm.
+
+### DPI button via HID++ (S3) ✅
+- After diversion the DPI button arrives as CID `0x00FD` press/release events, like the other buttons. It never reaches macOS on its own, so S3 is the only way to remap it, with no permission needed.
 
 ### Caps Lock → F18 (L0 + L1) ✅
 - After `UserKeyMapping` Caps Lock arrives as key code **79 (F18)** with a normal down/up pair. No caps lock toggle (`flagsChanged` code 57) was observed during the whole run.
@@ -65,11 +75,11 @@ Also running on the machine: Karabiner-Elements (with its DriverKit virtual keyb
 ## Pending (interactive, `run-phase0.sh`)
 - [x] Active event tap with **Accessibility only** sees and modifies key events.
 - [x] Caps Lock → F18 via L0: no caps toggle, F18 down/up reaches the tap, tap-alone, unmapped keys pass through.
-- [ ] Confirm by eye that Caps + hjkl moved the cursor (the log shows the original key codes).
-- [ ] Side buttons → ⌘[ / ⌘] work in Safari and other apps (no mouse events in the run).
-- [ ] Scroll event fields for the Lift (no scroll events in the run).
+- [x] Caps + hjkl while F18 is held is remapped (3 rounds in the second run).
+- [x] Side buttons reach the tap and are replaced by ⌘[ / ⌘].
+- [x] Scroll event fields for the Lift (line-based, non-continuous).
 - [x] HID++ diversion: middle/back/forward reported as diverted events, restored on exit.
-- [ ] HID++ diversion of the DPI button (`0x00FD`).
+- [x] HID++ diversion of the DPI button (`0x00FD`).
 - First interactive run: tap and ax were skipped because the terminal app had no Accessibility. The script now checks this up front and can rerun single steps (`./run-phase0.sh tap ax`).
 - [x] Tap callback latency: 284 µs worst case.
 - [x] AX window enumeration: sequential vs parallel per app vs CGWindowList.
