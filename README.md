@@ -19,7 +19,7 @@ open build/Helm.app
 scripts/test.sh            # runs the tests
 ```
 
-Without a signing certificate the app is signed ad hoc, and macOS forgets the Accessibility permission after every rebuild. To keep it, create a self-signed certificate once: Keychain Access → Certificate Assistant → Create a Certificate…, name **Helm Dev**, identity type *Self Signed Root*, certificate type *Code Signing*. `scripts/bundle.sh` picks it up automatically (or set `HELM_SIGN_IDENTITY`).
+The app is signed with a self-signed "Helm Dev" identity that `scripts/signing.sh` creates on the first build, in a keychain file private to this checkout (`.signing/`, git-ignored; the login keychain isn't touched). A stable signature means macOS keeps the Accessibility permission across rebuilds. Set `HELM_SIGN_IDENTITY` to sign with another identity.
 
 ## Config
 

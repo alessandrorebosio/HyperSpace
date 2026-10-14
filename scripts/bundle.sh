@@ -1,9 +1,8 @@
 #!/bin/zsh
 # Builds build/Helm.app (release) with helmctl inside Contents/MacOS.
 #
-# Signing: a stable identity keeps the Accessibility permission across rebuilds. Uses
-# $HELM_SIGN_IDENTITY, else a "Helm Dev" certificate if present, else ad hoc (macOS then ties
-# the permission to that exact build, and it must be granted again after every rebuild).
+# Signing: always with a stable identity, so macOS keeps the Accessibility permission across
+# rebuilds (an ad hoc signature changes on every build and the permission would be lost).
 set -euo pipefail
 cd "${0:A:h}/.."
 
@@ -37,13 +36,15 @@ cat > $APP/Contents/Info.plist <<EOF
 </plist>
 EOF
 
-# Use the stable "Helm Dev" certificate when it exists (see README), else ad hoc.
-if [[ -z "${HELM_SIGN_IDENTITY:-}" ]] && security find-identity -p codesigning | grep -q '"Helm Dev"'; then
-  HELM_SIGN_IDENTITY="Helm Dev"
+# Identity: $HELM_SIGN_IDENTITY, else the project's own "Helm Dev" keychain (created on first
+# run by scripts/signing.sh). Both are stable, so the Accessibility permission survives rebuilds.
+SIGN=(--sign "${HELM_SIGN_IDENTITY:-}")
+if [[ -z "${HELM_SIGN_IDENTITY:-}" ]]; then
+  KEYCHAIN=$(scripts/signing.sh)
+  SIGN=(--keychain "$KEYCHAIN" --sign "Helm Dev")
 fi
-IDENTITY=${HELM_SIGN_IDENTITY:--}
-codesign --force --options runtime --sign "$IDENTITY" $APP/Contents/MacOS/helmctl
-codesign --force --options runtime --sign "$IDENTITY" --identifier "$BUNDLE_ID" $APP
+codesign --force --options runtime "${SIGN[@]}" $APP/Contents/MacOS/helmctl
+codesign --force --options runtime "${SIGN[@]}" --identifier "$BUNDLE_ID" $APP
 codesign --verify --strict $APP
 
-echo "Built $APP (signed: ${HELM_SIGN_IDENTITY:-ad hoc})"
+echo "Built $APP (signed: ${HELM_SIGN_IDENTITY:-Helm Dev, project keychain})"
