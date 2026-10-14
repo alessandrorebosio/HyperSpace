@@ -25,6 +25,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        controller.accessibility.refresh()
         menu.removeAllItems()
 
         menu.addItem(disabled("Helm \(Helm.version)"))
