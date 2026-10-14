@@ -1,9 +1,9 @@
 #!/bin/zsh
 # Builds build/Helm.app (release) with helmctl inside Contents/MacOS.
 #
-# Signing: set HELM_SIGN_IDENTITY to a code signing identity to keep the Accessibility
-# permission across rebuilds. Without it the app is signed ad hoc, and macOS ties the
-# permission to that exact build: after every rebuild it must be granted again.
+# Signing: a stable identity keeps the Accessibility permission across rebuilds. Uses
+# $HELM_SIGN_IDENTITY, else a "Helm Dev" certificate if present, else ad hoc (macOS then ties
+# the permission to that exact build, and it must be granted again after every rebuild).
 set -euo pipefail
 cd "${0:A:h}/.."
 
@@ -37,6 +37,10 @@ cat > $APP/Contents/Info.plist <<EOF
 </plist>
 EOF
 
+# Use the stable "Helm Dev" certificate when it exists (see README), else ad hoc.
+if [[ -z "${HELM_SIGN_IDENTITY:-}" ]] && security find-identity -p codesigning | grep -q '"Helm Dev"'; then
+  HELM_SIGN_IDENTITY="Helm Dev"
+fi
 IDENTITY=${HELM_SIGN_IDENTITY:--}
 codesign --force --options runtime --sign "$IDENTITY" $APP/Contents/MacOS/helmctl
 codesign --force --options runtime --sign "$IDENTITY" --identifier "$BUNDLE_ID" $APP

@@ -1,13 +1,17 @@
 import ApplicationServices
 import Foundation
 
-/// The single TCC permission Helm needs. Tracks changes without polling: macOS posts
-/// `com.apple.accessibility.api` whenever the Accessibility list changes.
+/// The single TCC permission Helm needs. macOS posts `com.apple.accessibility.api` when the
+/// Accessibility list changes, but not reliably to every process, so while the permission is
+/// missing we also re-check every 2 s. Once granted, nothing runs.
 @MainActor
 public final class Accessibility {
     public private(set) var isGranted = AXIsProcessTrusted()
-    public var onChange: ((Bool) -> Void)?
+    public var onChange: ((Bool) -> Void)? {
+        didSet { updatePolling() }
+    }
     private var observer: (any NSObjectProtocol)?
+    private var poll: Task<Void, Never>?
 
     public init() {
         observer = DistributedNotificationCenter.default().addObserver(
@@ -32,6 +36,21 @@ public final class Accessibility {
         let granted = AXIsProcessTrusted()
         guard granted != isGranted else { return }
         isGranted = granted
+        updatePolling()
         onChange?(granted)
+    }
+
+    private func updatePolling() {
+        if isGranted {
+            poll?.cancel()
+            poll = nil
+        } else if poll == nil {
+            poll = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2))
+                    self?.refresh()
+                }
+            }
+        }
     }
 }

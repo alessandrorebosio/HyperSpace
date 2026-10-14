@@ -123,6 +123,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             case let .failure(error): return .error(error.description)
             }
         case ["status"]:
+            accessibility.refresh()
             return .ok(statusText)
         case ["config-path"]:
             return .ok(configURL.path)
