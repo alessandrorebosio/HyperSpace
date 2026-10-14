@@ -16,6 +16,7 @@ public final class InputTap: @unchecked Sendable {
     // Input thread only.
     private var engine = KeyEngine()
     private var mouse = MouseEngine()
+    private var navigation = NavigationSender()
     private var port: CFMachPort?
     private var runLoop: CFRunLoop?
 
@@ -125,18 +126,14 @@ public final class InputTap: @unchecked Sendable {
             event.flags = InputTap.flags(for: combo, physical: event.flags)
             return Unmanaged.passUnretained(event)
         case let .emit(output):
-            if case let .key(combo) = output {
-                InputTap.post(combo)
-            } else {
-                perform(output)
-            }
+            emit(output, for: event)
             return nil
         }
     }
 
     private func handleButton(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         if event.getIntegerValueField(.eventSourceUserData) == InputTap.marker {
-            return Unmanaged.passUnretained(event) // Navigator's fallback button
+            return Unmanaged.passUnretained(event) // NavigationSender's button
         }
         let decision = mouse.button(
             Int(event.getIntegerValueField(.mouseEventButtonNumber)),
@@ -149,12 +146,20 @@ public final class InputTap: @unchecked Sendable {
         case .drop:
             return nil
         case let .emit(output):
-            if case let .key(combo) = output {
-                InputTap.post(combo)
-            } else {
-                perform(output)
-            }
+            emit(output, for: event)
             return nil
+        }
+    }
+
+    private func emit(_ output: Output, for event: CGEvent) {
+        switch output {
+        case let .key(combo):
+            InputTap.post(combo)
+        case let .navigate(direction):
+            let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
+            navigation.send(direction, targetPID: pid, location: event.location)
+        case .shell, .wm, .drop:
+            perform(output)
         }
     }
 
