@@ -96,7 +96,8 @@ WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplic
 | `InputTap` | `CGEventTap` lifecycle, dedicated thread, re-enable on timeout | Key/MouseEngine |
 | `WindowManager` | Tiling tree, virtual workspaces, commands, AX window observation | Core |
 | `HelmApp` | Menu bar app, permission onboarding, login item | all |
-| `helmctl` | Socket client for WM commands and `reload` | Core |
+| `HelmIPC` | `helmctl` ↔ app protocol (JSON lines over a Unix socket); no dependencies | — |
+| `helmctl` | Socket client for WM commands and `reload`; links only `HelmIPC` (~150 KB) | HelmIPC |
 
 The CLI is called `helmctl`, not `helm`, to avoid clashing with the Kubernetes `helm` CLI.
 
@@ -194,7 +195,7 @@ Optimizations over AeroSpace:
 
 ## 6. Configuration (draft)
 
-`~/.config/helm/helm.toml`, reloaded automatically on save.
+`$XDG_CONFIG_HOME/helm/helm.toml` (default `~/.config/helm/helm.toml`), reloaded automatically on save. Unknown keys are errors, so typos don't fail silently. On an error Helm keeps the last good config and shows the error in the menu and in `helmctl status`.
 
 ```toml
 # ── Keyboard ─────────────────────────────────────────────
@@ -231,15 +232,13 @@ button3 = "navigate_back"     # side buttons; default: swipe or ⌘[ (chosen aft
 button4 = "navigate_forward"
 button2 = { wm = "fullscreen" }
 
-[[mouse.buttons.app]]
+[[mouse.app]]
 bundle_id = "com.microsoft.VSCode"
-button3 = "ctrl-minus"
-button4 = "ctrl-shift-minus"
+buttons = { button3 = "ctrl-minus", button4 = "ctrl-shift-minus" }
 
-[[mouse.buttons.app]]
+[[mouse.app]]
 bundle_id = "com.google.Chrome"
-button3 = "passthrough"
-button4 = "passthrough"
+buttons = { button3 = "passthrough", button4 = "passthrough" }
 
 [[mouse.device]]
 match = { vendor = 0x046d }   # Logitech
@@ -283,8 +282,8 @@ layout = "floating"
 
 | Phase | Scope | Expected outcome |
 |---|---|---|
-| **0 — Spike** | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
-| **1 — Foundations** | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config |
+| **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
+| **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
 | **2 — Keyboard** | L0 + KeyEngine (Caps layer, simple remaps, dual-role, per-app conditions) | Replaces typical Karabiner usage |
 | **3 — Mouse** | MouseEngine (S1), back/forward everywhere, per-device scrolling; then HIDInput (S2, S3 with Logitech HID++), `helmctl list-inputs` | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
