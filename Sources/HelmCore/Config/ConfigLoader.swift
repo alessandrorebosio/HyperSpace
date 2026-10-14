@@ -88,18 +88,42 @@ public enum ConfigLoader {
     # Remapped keys and buttons only do what is mapped here; everything else is untouched.
 
     # ── Keyboard ─────────────────────────────────────────────
-    # Once configured, Caps Lock no longer toggles caps lock.
+    # Keys:      a...z, 0...9, f1...f20, escape, tab, space, return, backspace, delete_forward,
+    #            left_arrow, right_arrow, up_arrow, down_arrow, home, end, page_up, page_down,
+    #            left_/right_ + shift, control, option, command, caps_lock.
+    #            Names are US key positions: symbol keys (open_bracket, minus...) may be
+    #            different characters on other layouts.
+    # Modifiers: shift, ctrl, opt, cmd, fn, joined with "-" (e.g. "cmd-shift-k").
+    # Actions:   "left_arrow" / "cmd-left_arrow"  a key or combo
+    #            { shell = "open -a Safari" }     run a shell command
+    #            "none"                           do nothing
+    #            "passthrough"                    keep the normal behavior (for app exceptions)
+
+    # Simple remaps, always active. key -> key works everywhere, even in password fields;
+    # key -> combo needs Helm running. "device" limits a remap to one keyboard.
+    # [keyboard]
+    # simple = [
+    #   { from = "right_command", to = "right_option" },
+    #   { from = "f1", to = "cmd-space" },
+    # ]
+
+    # Caps Lock. Once this section exists, Caps Lock no longer toggles caps lock.
     # [keyboard.capslock]
-    # alone = "none"              # action when tapped alone, e.g. "escape"
-    # hold = "meh"                # while held, unmapped keys get these modifiers:
-    #                             # "meh" = shift-ctrl-opt, "hyper" = shift-ctrl-opt-cmd,
-    #                             # or any list like "ctrl-opt"
-    #
-    # [keyboard.capslock.map]     # Caps + key; unlisted keys behave normally
+    # hold = "shift-ctrl-opt"     # while held, Caps Lock acts as these modifiers
+    # alone = "escape"            # action when tapped alone (default: nothing)
+    # tap_timeout_ms = 200        # held longer than this = not a tap, "alone" doesn't fire
+
+    # Caps + key overrides: listed keys do this instead of getting the modifiers above.
+    # [keyboard.capslock.map]
     # h = "left_arrow"
     # j = "down_arrow"
     # k = "up_arrow"
     # l = "right_arrow"
+
+    # Per-app Caps + key overrides.
+    # [[keyboard.capslock.app]]
+    # bundle_id = "com.microsoft.VSCode"
+    # map = { d = "cmd-shift-k" }
 
     # ── Mouse ────────────────────────────────────────────────
     # Buttons: button1 = right, button2 (or middle) = wheel click,
