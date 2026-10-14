@@ -8,6 +8,7 @@ usage: helmctl <command>
   status        show permissions and config state
   reload        reload the config file
   config-path   print the config file path
+  apps          list running apps with their bundle id (for per-app rules)
   version       print Helm's version
 """
 

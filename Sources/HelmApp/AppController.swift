@@ -130,6 +130,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             return .ok(configURL.path)
         case ["version"]:
             return .ok(Helm.version)
+        case ["apps"]:
+            // Bundle ids for [[keyboard.capslock.app]] and [[mouse.app]].
+            let apps = NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular }
+                .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? "?", $0) } }
+                .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+            let width = apps.map(\.0.count).max() ?? 0
+            return .ok(apps.map { $0.0.padding(toLength: width + 2, withPad: " ", startingAt: 0) + $0.1 }.joined(separator: "\n"))
         default:
             return .error("helm: unknown command '\(request.args.joined(separator: " "))'. Run `helmctl --help`.")
         }

@@ -31,5 +31,6 @@ The app is signed with a self-signed "Helm Dev" identity that `scripts/signing.s
 helmctl status        # permissions and config state
 helmctl reload        # reload the config
 helmctl config-path
+helmctl apps          # running apps and their bundle ids, for per-app rules
 helmctl version
 ```
