@@ -33,9 +33,9 @@ public enum ConfigLoader {
     public static func parse(_ text: String, path: String = "helm.toml") -> Result<Config, ConfigError> {
         do {
             let config = try TOMLDecoder().decode(Config.self, from: text)
-            _ = try KeyboardPlan(config.keyboard) // validates key names and combos
+            _ = try InputPlan(config) // validates key names, combos and mouse inputs
             return .success(config)
-        } catch let error as KeyboardPlan.Error {
+        } catch let error as ConfigError {
             return .failure(ConfigError(path: path, message: error.message))
         } catch let error as DecodingError {
             return .failure(ConfigError(path: path, message: describe(error)))
@@ -99,9 +99,18 @@ public enum ConfigLoader {
     # l = "right_arrow"
 
     # ── Mouse ────────────────────────────────────────────────
-    # [mouse.buttons]
+    # [mouse.buttons]             # button2 = middle, button3 = back, button4 = forward
     # button3 = "navigate_back"
     # button4 = "navigate_forward"
+    #
+    # [[mouse.app]]               # per-app exceptions
+    # bundle_id = "com.google.Chrome"
+    # buttons = { button3 = "passthrough", button4 = "passthrough" }
+    #
+    # [mouse.scroll]              # wheel only; trackpads are never touched
+    # reverse = true
+    # linear = true
+    # lines = 3
 
     # ── Window manager ───────────────────────────────────────
     # [wm]

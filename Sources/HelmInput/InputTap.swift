@@ -15,6 +15,7 @@ public final class InputTap: @unchecked Sendable {
 
     // Input thread only.
     private var engine = KeyEngine()
+    private var mouse = MouseEngine()
     private var port: CFMachPort?
     private var runLoop: CFRunLoop?
 
@@ -57,7 +58,13 @@ public final class InputTap: @unchecked Sendable {
     }
 
     private func installTap() -> Bool {
-        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        let types: [CGEventType] = [
+            .keyDown, .keyUp,
+            .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+            .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+            .scrollWheel,
+        ]
+        let mask = types.reduce(0) { $0 | (1 << $1.rawValue) }
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: CGEventMask(mask), callback: tapCallback,
@@ -80,6 +87,18 @@ public final class InputTap: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         case .keyDown, .keyUp:
             break
+        case .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+            return handleButton(type, event)
+        case .rightMouseDragged, .otherMouseDragged:
+            if mouse.isSwallowed(Int(event.getIntegerValueField(.mouseEventButtonNumber))) {
+                event.type = .mouseMoved
+            }
+            return Unmanaged.passUnretained(event)
+        case .scrollWheel:
+            if let scroll = tables.withLock({ $0.scroll }), event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0 {
+                InputTap.adjust(event, scroll)
+            }
+            return Unmanaged.passUnretained(event)
         default:
             return Unmanaged.passUnretained(event)
         }
@@ -112,6 +131,58 @@ public final class InputTap: @unchecked Sendable {
                 perform(output)
             }
             return nil
+        }
+    }
+
+    private func handleButton(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+        let decision = mouse.button(
+            Int(event.getIntegerValueField(.mouseEventButtonNumber)),
+            down: type == .rightMouseDown || type == .otherMouseDown,
+            tables: tables.withLock { $0 }
+        )
+        switch decision {
+        case .pass:
+            return Unmanaged.passUnretained(event)
+        case .drop:
+            return nil
+        case let .emit(output):
+            if case let .key(combo) = output {
+                InputTap.post(combo)
+            } else {
+                perform(output)
+            }
+            return nil
+        }
+    }
+
+    /// Wheel scrolling only (notched mice): reverse it and/or make it a fixed number of lines
+    /// per notch, without macOS acceleration.
+    static func adjust(_ event: CGEvent, _ scroll: ScrollConfig) {
+        let axes: [(CGEventField, CGEventField, CGEventField)] = [
+            (.scrollWheelEventDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventPointDeltaAxis1),
+            (.scrollWheelEventDeltaAxis2, .scrollWheelEventFixedPtDeltaAxis2, .scrollWheelEventPointDeltaAxis2),
+        ]
+        for (lineField, fixedField, pointField) in axes {
+            var lines = event.getIntegerValueField(lineField)
+            var fixed = event.getDoubleValueField(fixedField)
+            var points = event.getIntegerValueField(pointField)
+            guard lines != 0 || fixed != 0 || points != 0 else { continue }
+
+            if scroll.linear {
+                let direction: Int64 = (lines != 0 ? lines.signum() : points != 0 ? points.signum() : fixed < 0 ? -1 : 1)
+                    * (scroll.reverse ? -1 : 1)
+                let perNotch = Int64(scroll.lines ?? 3)
+                lines = direction * perNotch
+                fixed = Double(lines)
+                points = lines * 10
+            } else if scroll.reverse {
+                lines = -lines
+                fixed = -fixed
+                points = -points
+            }
+            event.setIntegerValueField(lineField, value: lines)
+            event.setDoubleValueField(fixedField, value: fixed)
+            event.setIntegerValueField(pointField, value: points)
         }
     }
 

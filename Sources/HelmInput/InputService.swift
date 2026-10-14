@@ -1,18 +1,18 @@
 import AppKit
 import HelmCore
 
-/// Applies a `KeyboardPlan`: L0 mappings through `HIDMapper`, L1 through `InputTap`,
-/// and keeps the tap's tables in sync with the frontmost app.
+/// Applies an `InputPlan`: L0 key mappings through `HIDMapper`, keyboard and mouse remapping
+/// through `InputTap`, and keeps the tap's tables in sync with the frontmost app.
 @MainActor
-public final class KeyboardService {
+public final class InputService {
     public enum TapState: String, Sendable {
         case off, running, failed
     }
 
-    private let log = Helm.logger("keyboard")
+    private let log = Helm.logger("input")
     private let mapper = HIDMapper()
     private var tap: InputTap?
-    private var plan = KeyboardPlan()
+    private var plan = InputPlan()
     private var frontmostApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     private var appObserver: (any NSObjectProtocol)?
     private let onWMCommand: @MainActor @Sendable (String) -> Void
@@ -34,7 +34,7 @@ public final class KeyboardService {
         }
     }
 
-    public func apply(_ plan: KeyboardPlan, accessibilityGranted: Bool) {
+    public func apply(_ plan: InputPlan, accessibilityGranted: Bool) {
         self.plan = plan
         if plan.needsEventTap, accessibilityGranted {
             startTap()
@@ -44,7 +44,8 @@ public final class KeyboardService {
         // Caps Lock -> F18 only while the tap is there to give F18 a meaning;
         // otherwise Caps Lock would just go dead.
         let layerMapping = Layer.trigger.usage
-        mapper.apply(tapState == .running ? plan.hid : plan.hid.filter { $0.to != layerMapping })
+        let hid = plan.keyboard.hid
+        mapper.apply(tapState == .running ? hid : hid.filter { $0.to != layerMapping })
         pushTables()
     }
 

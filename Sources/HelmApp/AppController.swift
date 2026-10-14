@@ -12,7 +12,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private(set) var config = Config()
     private(set) var configError: ConfigError?
-    private(set) var keyboard: KeyboardService!
+    private(set) var input: InputService!
     private var signalSources: [any DispatchSourceSignal] = []
 
     private var watcher: ConfigWatcher?
@@ -28,7 +28,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             exit(0)
         }
 
-        keyboard = KeyboardService { [weak self] command in
+        input = InputService { [weak self] command in
             self?.log.info("WM command '\(command)' ignored: the window manager isn't implemented yet")
         }
         terminateOnSignals()
@@ -50,14 +50,14 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         accessibility.onChange = { [weak self] granted in
             self?.log.info("Accessibility \(granted ? "granted" : "revoked")")
-            self?.applyKeyboard()
+            self?.applyInput()
             self?.menu?.refresh()
         }
         if !accessibility.isGranted { accessibility.prompt() }
     }
 
     func applicationWillTerminate(_: Notification) {
-        keyboard.shutdown() // restores the keyboards' original HID mappings
+        input.shutdown() // restores the keyboards' original HID mappings
         server?.stop()
         watcher?.stop()
     }
@@ -74,10 +74,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func applyKeyboard() {
+    private func applyInput() {
         // The config was validated when loaded, so compiling can't fail here.
-        let plan = (try? KeyboardPlan(config.keyboard)) ?? KeyboardPlan()
-        keyboard.apply(plan, accessibilityGranted: accessibility.isGranted)
+        let plan = (try? InputPlan(config)) ?? InputPlan()
+        input.apply(plan, accessibilityGranted: accessibility.isGranted)
     }
 
     // MARK: - Config
@@ -90,7 +90,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             config = new
             configError = nil
             log.info("config loaded")
-            applyKeyboard()
+            applyInput()
         case let .failure(error):
             // Keep running with the last good config.
             configError = error
@@ -140,8 +140,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         accessibility  \(accessibility.isGranted ? "granted" : "missing")
         config         \(configURL.path)
         config state   \(configError.map { "error: \($0.message)" } ?? "ok")
-        event tap      \(keyboard.tapState.rawValue)
-        HID mappings   \(keyboard.mappedKeyboards) keyboard(s)
+        event tap      \(input.tapState.rawValue)
+        HID mappings   \(input.mappedKeyboards) keyboard(s)
         login item     \(LoginItem.isEnabled ? "on" : "off")
         """
     }

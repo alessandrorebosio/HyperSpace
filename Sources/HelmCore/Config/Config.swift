@@ -52,6 +52,8 @@ public struct MouseConfig: Sendable, Equatable {
     /// Input name (e.g. `button3`, `hidpp:0x00fd`) -> action, for every mouse.
     public var buttons: [String: Action] = [:]
     public var app: [AppMouseMap] = []
+    /// Wheel scrolling (notched mice). Trackpads and smooth-scrolling mice are never touched.
+    public var scroll: ScrollConfig?
     public var device: [MouseDevice] = []
 
     public init() {}
@@ -172,13 +174,14 @@ extension DeviceMatch: Decodable {
 }
 
 extension MouseConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, device }
+    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, scroll, device }
 
     public init(from decoder: any Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         buttons = try c.decode(.buttons, default: [:])
         app = try c.decode(.app, default: [])
+        scroll = try c.decodeIfPresent(ScrollConfig.self, forKey: .scroll)
         device = try c.decode(.device, default: [])
     }
 }
