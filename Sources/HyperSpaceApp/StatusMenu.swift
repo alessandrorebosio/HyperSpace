@@ -1,5 +1,5 @@
 import AppKit
-import HelmCore
+import HyperSpaceCore
 
 /// Menu bar item. The menu is rebuilt only when it's about to open, so idle cost is zero.
 @MainActor
@@ -21,14 +21,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func refresh() {
         let healthy = controller.accessibility.isGranted && controller.configError == nil
         let symbol = healthy ? "steeringwheel" : "exclamationmark.triangle"
-        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Helm")
+        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         controller.accessibility.refresh()
         menu.removeAllItems()
 
-        menu.addItem(disabled("Helm \(Helm.version)"))
+        menu.addItem(disabled("HyperSpace \(HyperSpace.version)"))
         menu.addItem(.separator())
 
         if controller.accessibility.isGranted {
@@ -52,7 +52,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         login.isEnabled = LoginItem.isAvailable
         menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(action("Quit Helm", #selector(quit), key: "q"))
+        menu.addItem(action("Quit HyperSpace", #selector(quit), key: "q"))
     }
 
     private func disabled(_ title: String) -> NSMenuItem {

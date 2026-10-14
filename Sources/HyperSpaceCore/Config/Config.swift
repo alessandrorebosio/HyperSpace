@@ -1,4 +1,4 @@
-/// The whole `helm.toml`. Every section is optional; a missing section means "feature off".
+/// The whole `hyperspace.toml`. Every section is optional; a missing section means "feature off".
 public struct Config: Sendable, Equatable {
     public var keyboard = KeyboardConfig()
     public var mouse = MouseConfig()

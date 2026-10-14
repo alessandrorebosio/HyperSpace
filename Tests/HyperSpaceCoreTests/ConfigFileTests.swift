@@ -1,11 +1,11 @@
 import Foundation
-@testable import HelmCore
+@testable import HyperSpaceCore
 import Testing
 
 struct ConfigFileTests {
     private func tempConfigURL() -> URL {
         FileManager.default.temporaryDirectory
-            .appending(path: "helm-tests-\(UUID().uuidString)/helm/helm.toml")
+            .appending(path: "hyperspace-tests-\(UUID().uuidString)/hyperspace/hyperspace.toml")
     }
 
     @Test func missingFileMeansDefaultConfig() throws {

@@ -1,12 +1,12 @@
 import AppKit
-import HelmCore
-import HelmInput
-import HelmIPC
+import HyperSpaceCore
+import HyperSpaceInput
+import HyperSpaceIPC
 
 /// Owns the app state: config, permission, file watcher, IPC server and menu bar item.
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
-    private let log = Helm.logger("app")
+    private let log = HyperSpace.logger("app")
     let configURL = ConfigLoader.defaultURL
     let accessibility = Accessibility()
 
@@ -23,10 +23,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         // Two instances would fight over the event tap, the HID mappings and the socket.
-        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Helm.bundleID)
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: HyperSpace.bundleID)
             .filter { $0 != .current }
         if !others.isEmpty {
-            log.info("Helm is already running (pid \(others[0].processIdentifier)), exiting")
+            log.info("HyperSpace is already running (pid \(others[0].processIdentifier)), exiting")
             exit(0)
         }
 
@@ -41,7 +41,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         watcher?.start()
 
         let server = IPCServer { [weak self] request in
-            self?.handle(request) ?? .error("helm: shutting down")
+            self?.handle(request) ?? .error("hyperspace: shutting down")
         }
         do {
             try server.start()
@@ -114,7 +114,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(Accessibility.settingsURL)
     }
 
-    // MARK: - helmctl
+    // MARK: - hsctl
 
     func handle(_ request: IPC.Request) -> IPC.Response {
         switch request.args {
@@ -129,7 +129,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case ["config-path"]:
             return .ok(configURL.path)
         case ["version"]:
-            return .ok(Helm.version)
+            return .ok(HyperSpace.version)
         case ["apps"]:
             // Bundle ids for [[keyboard.capslock.app]] and [[mouse.app]].
             let apps = NSWorkspace.shared.runningApplications
@@ -139,13 +139,13 @@ final class AppController: NSObject, NSApplicationDelegate {
             let width = apps.map(\.0.count).max() ?? 0
             return .ok(apps.map { $0.0.padding(toLength: width + 2, withPad: " ", startingAt: 0) + $0.1 }.joined(separator: "\n"))
         default:
-            return .error("helm: unknown command '\(request.args.joined(separator: " "))'. Run `helmctl --help`.")
+            return .error("hyperspace: unknown command '\(request.args.joined(separator: " "))'. Run `hsctl --help`.")
         }
     }
 
     var statusText: String {
         """
-        version        \(Helm.version)
+        version        \(HyperSpace.version)
         accessibility  \(accessibility.isGranted ? "granted" : "missing")
         config         \(configURL.path)
         config state   \(configError.map { "error: \($0.message)" } ?? "ok")

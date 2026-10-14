@@ -3,7 +3,7 @@
 ## LinearMouse — MIT License, Copyright (c) 2021-2026 LinearMouse
 https://github.com/linearmouse/linearmouse
 
-`Sources/HelmInput/Navigation.swift` follows LinearMouse's "universal back/forward"
+`Sources/HyperSpaceInput/Navigation.swift` follows LinearMouse's "universal back/forward"
 (`UniversalBackForwardTransformer`, `GestureKit`): navigation swipe gesture events for apps
 that support them, mouse buttons 4/5 for the others.
 

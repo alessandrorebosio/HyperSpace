@@ -1,15 +1,15 @@
 import CoreGraphics
 import Foundation
-import HelmCore
+import HyperSpaceCore
 import Synchronization
 
 /// L1: one active CGEventTap on its own high-priority thread. The callback only does table
 /// lookups and in-place event rewrites; anything slow (shell, WM) is handed off.
 public final class InputTap: @unchecked Sendable {
-    /// Marks events Helm posts itself, so the tap lets them through.
-    static let marker: Int64 = 0x4845_4C4D // "HELM"
+    /// Marks events HyperSpace posts itself, so the tap lets them through.
+    static let marker: Int64 = 0x4859_5350 // "HYSP"
 
-    private let log = Helm.logger("input-tap")
+    private let log = HyperSpace.logger("input-tap")
     /// Swapped as a whole by the main thread; reading it costs one retain, not a table copy.
     private final class Snapshot: Sendable {
         let tables: ActiveTables
@@ -48,7 +48,7 @@ public final class InputTap: @unchecked Sendable {
             ready.signal()
             if ok { CFRunLoopRun() }
         }
-        thread.name = "helm.input"
+        thread.name = "hyperspace.input"
         thread.qualityOfService = .userInteractive
         thread.start()
         ready.wait()

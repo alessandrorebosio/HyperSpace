@@ -1,6 +1,6 @@
 import AppKit
 import CoreGraphics
-import HelmCore
+import HyperSpaceCore
 
 /// Universal back/forward, as LinearMouse does it (MIT, see THIRD_PARTY.md).
 ///

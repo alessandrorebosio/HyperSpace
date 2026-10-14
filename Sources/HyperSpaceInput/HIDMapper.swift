@@ -1,5 +1,5 @@
 import AppKit
-import HelmCore
+import HyperSpaceCore
 import IOKit
 import IOKit.hidsystem
 
@@ -8,11 +8,11 @@ import IOKit.hidsystem
 /// and restores each keyboard's previous mapping on `restore()`.
 @MainActor
 public final class HIDMapper {
-    private let log = Helm.logger("hid-mapper")
+    private let log = HyperSpace.logger("hid-mapper")
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     private let property = "UserKeyMapping" as CFString
     private var mappings: [HIDMapping] = []
-    /// Mapping found on each service (by registry id) before Helm touched it.
+    /// Mapping found on each service (by registry id) before HyperSpace touched it.
     private var original: [UInt64: CFTypeRef?] = [:]
     private var notifyPort: IONotificationPortRef?
     private var iterator: io_iterator_t = 0

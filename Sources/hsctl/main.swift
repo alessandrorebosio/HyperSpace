@@ -1,15 +1,15 @@
 import Foundation
-import HelmIPC
+import HyperSpaceIPC
 
 let args = Array(CommandLine.arguments.dropFirst())
 
 let usage = """
-usage: helmctl <command>
+usage: hsctl <command>
   status        show permissions and config state
   reload        reload the config file
   config-path   print the config file path
   apps          list running apps with their bundle id (for per-app rules)
-  version       print Helm's version
+  version       print HyperSpace's version
 """
 
 if args.isEmpty || args == ["-h"] || args == ["--help"] {
@@ -23,9 +23,9 @@ case let .success(response):
     if !response.stderr.isEmpty { FileHandle.standardError.write(Data((response.stderr + "\n").utf8)) }
     exit(response.exitCode)
 case .failure(.notRunning):
-    FileHandle.standardError.write(Data("helmctl: Helm is not running\n".utf8))
+    FileHandle.standardError.write(Data("hsctl: HyperSpace is not running\n".utf8))
     exit(2)
 case let .failure(error):
-    FileHandle.standardError.write(Data("helmctl: communication with Helm failed (\(error))\n".utf8))
+    FileHandle.standardError.write(Data("hsctl: communication with HyperSpace failed (\(error))\n".utf8))
     exit(3)
 }

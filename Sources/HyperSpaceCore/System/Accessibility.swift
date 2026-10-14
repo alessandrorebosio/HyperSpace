@@ -1,7 +1,7 @@
 import ApplicationServices
 import Foundation
 
-/// The single TCC permission Helm needs. macOS posts `com.apple.accessibility.api` when the
+/// The single TCC permission HyperSpace needs. macOS posts `com.apple.accessibility.api` when the
 /// Accessibility list changes, but not reliably to every process, so while the permission is
 /// missing we also re-check every 2 s. Once granted, nothing runs.
 @MainActor
@@ -27,7 +27,7 @@ public final class Accessibility {
 
     public static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
 
-    /// Adds Helm to the Accessibility list and shows the system prompt (first time only).
+    /// Adds HyperSpace to the Accessibility list and shows the system prompt (first time only).
     public func prompt() {
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }

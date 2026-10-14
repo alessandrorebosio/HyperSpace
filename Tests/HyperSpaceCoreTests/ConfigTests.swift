@@ -1,4 +1,4 @@
-@testable import HelmCore
+@testable import HyperSpaceCore
 import Testing
 
 struct ConfigTests {

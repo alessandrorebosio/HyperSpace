@@ -9,7 +9,7 @@ import Foundation
 public final class ConfigWatcher: @unchecked Sendable {
     private let url: URL
     private let onChange: @MainActor @Sendable () -> Void
-    private let queue = DispatchQueue(label: "helm.config-watcher")
+    private let queue = DispatchQueue(label: "hyperspace.config-watcher")
     private var directorySource: (any DispatchSourceFileSystemObject)?
     private var fileSource: (any DispatchSourceFileSystemObject)?
     private var pending: DispatchWorkItem?

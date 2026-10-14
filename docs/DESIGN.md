@@ -1,4 +1,4 @@
-# Helm — Design
+# HyperSpace — Design
 
 > One macOS app, lightweight and with the fewest possible permissions, that combines:
 > - **keyboard remapping** (like Karabiner-Elements)
@@ -21,7 +21,7 @@ Status: design approved in principle, spike phase next.
 **Non-goals (at least for v1)**
 - No virtual HID driver (DriverKit) like Karabiner: it is the main source of permissions and complexity.
 - No complex editing GUI: minimal UI (status, permissions, reload, config errors).
-- No device *settings* (DPI, SmartShift, lighting): Helm remaps inputs, it doesn't configure hardware.
+- No device *settings* (DPI, SmartShift, lighting): HyperSpace remaps inputs, it doesn't configure hardware.
 - No SIP changes, no scripting additions (AeroSpace doesn't need them, neither do we).
 
 ---
@@ -64,7 +64,7 @@ WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplic
 ## 4. Architecture
 
 ```
-┌──────────────────────── Helm.app (one process) ──────────────────────────────┐
+┌──────────────────────── HyperSpace.app (one process) ──────────────────────────────┐
 │                                                                              │
 │  Main thread (UI)            Input thread (QoS userInteractive)              │
 │  ┌──────────────┐            ┌─────────────────────────────────────────┐     │
@@ -80,7 +80,7 @@ WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplic
 │  │ (no perms)   │            │ layout, per-app AXObserver               │     │
 │  └──────────────┘            └─────────────────────────────────────────┘     │
 │                                         ▲                                    │
-│                         Unix socket ────┘  (`helmctl` CLI, optional)         │
+│                         Unix socket ────┘  (`hsctl` CLI, optional)         │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,18 +88,18 @@ WM hotkeys go through the same L1 event tap (one tap for the keyboard, no duplic
 
 | Target | Responsibility | Depends on |
 |---|---|---|
-| `HelmCore` | Config models, TOML parsing, validation, logging (`os.Logger`), permissions | — |
+| `HyperSpaceCore` | Config models, TOML parsing, validation, logging (`os.Logger`), permissions | — |
 | `KeyEngine` | Compiles rules into lookup tables; state machine for layers and dual-role keys | Core |
 | `MouseEngine` | Normalizes every source into `MouseInput`; button/scroll rules per device | Core |
 | `HIDInput` | Raw HID reading (S2) and vendor protocols (S3, Logitech HID++ first); starts only when needed | Core, IOKit |
 | `HIDMapper` | Applies/removes L0 `UserKeyMapping` per device, restores it on quit | Core, IOKit |
 | `InputTap` | `CGEventTap` lifecycle, dedicated thread, re-enable on timeout | Key/MouseEngine |
 | `WindowManager` | Tiling tree, virtual workspaces, commands, AX window observation | Core |
-| `HelmApp` | Menu bar app, permission onboarding, login item | all |
-| `HelmIPC` | `helmctl` ↔ app protocol (JSON lines over a Unix socket); no dependencies | — |
-| `helmctl` | Socket client for WM commands and `reload`; links only `HelmIPC` (~150 KB) | HelmIPC |
+| `HyperSpaceApp` | Menu bar app, permission onboarding, login item | all |
+| `HyperSpaceIPC` | `hsctl` ↔ app protocol (JSON lines over a Unix socket); no dependencies | — |
+| `hsctl` | Socket client for WM commands and `reload`; links only `HyperSpaceIPC` (~150 KB) | HyperSpaceIPC |
 
-The CLI is called `helmctl`, not `helm`, to avoid clashing with the Kubernetes `helm` CLI.
+The CLI is called `hsctl`: a `hyperspace` binary next to `HyperSpace` in `Contents/MacOS` would clash on macOS's case-insensitive file system.
 
 ### Performance principles
 - **Compiled config**: the tap callback never touches TOML or dictionaries; it uses fixed arrays indexed by keycode (256 slots).
@@ -129,8 +129,8 @@ Any key (Caps Lock included) that appears in the config does *only* what it is m
   3. Tap alone (down → up with no other key in between, within `tap_timeout`) emits the `alone` action, if any.
 - The same layer mechanism works for any other key used as a layer trigger.
 - Caps Lock → F18 is applied at L0 **only while the event tap is running**: without Accessibility the layer can't work, and Caps Lock would otherwise go dead.
-- L0 mappings replace any `hidutil` mapping on the same keyboard while Helm runs; the previous mapping is restored on quit (also on `SIGTERM`/`SIGINT`) and re-applied when a keyboard is plugged in or the Mac wakes.
-- Only one Helm instance can run at a time (bundle id check + live socket check).
+- L0 mappings replace any `hidutil` mapping on the same keyboard while HyperSpace runs; the previous mapping is restored on quit (also on `SIGTERM`/`SIGINT`) and re-applied when a keyboard is plugged in or the Mac wakes.
+- Only one HyperSpace instance can run at a time (bundle id check + live socket check).
 - Mappings can be overridden per app (bundle id).
 
 **Other keyboard features**
@@ -141,7 +141,7 @@ Any key (Caps Lock included) that appears in the config does *only* what it is m
 
 ### 5.2 Mouse (v1): generic remapping of any input
 
-**Requirement:** Helm must read and remap **any input coming from any mouse**, regardless of how the device delivers it. No model-specific features: the reference device (Logitech Lift) is just the test case.
+**Requirement:** HyperSpace must read and remap **any input coming from any mouse**, regardless of how the device delivers it. No model-specific features: the reference device (Logitech Lift) is just the test case.
 
 **One abstraction: `MouseInput`.** Every source below is normalized into the same event type, so the rule engine doesn't care where an input came from:
 
@@ -179,7 +179,7 @@ MouseInput = button(n) | scroll(axis, delta) | move(dx, dy) | vendor(usagePage, 
 ### 5.3 Reference device: Logitech Lift
 Used to validate the generic design, not hard-coded anywhere.
 - Spike: list every input the Lift produces and record which source (S1/S2/S3) sees it, over both Bluetooth and the Bolt receiver.
-- Buttons that only S3 can see get diverted via HID++ when the config maps them, and released (firmware default restored) when Helm quits or the mapping is removed.
+- Buttons that only S3 can see get diverted via HID++ when the config maps them, and released (firmware default restored) when HyperSpace quits or the mapping is removed.
 - DPI and other device *settings* (not inputs) are out of scope for v1.
 
 ### 5.4 Window manager (v1): AeroSpace model, optimized
@@ -188,7 +188,7 @@ Same concepts and command names as AeroSpace, so moving an existing config over 
 - Tiling tree (h/v tiles, accordion), focus/move/resize/join, floating per app
 - Virtual workspaces (not macOS Spaces, no SIP changes), workspace-to-monitor assignment
 - App rules (e.g. Finder floating, Slack → workspace 9)
-- Commands from hotkeys and from `helmctl`
+- Commands from hotkeys and from `hsctl`
 
 Optimizations over AeroSpace:
 - **Window state cache**: frames, app and window ids live in memory and are updated from `AXObserver` notifications. The WM doesn't query AX on every command (AX calls are slow, and some apps take tens of ms to answer).
@@ -201,7 +201,7 @@ Optimizations over AeroSpace:
 
 ## 6. Configuration (draft)
 
-`$XDG_CONFIG_HOME/helm/helm.toml` (default `~/.config/helm/helm.toml`), reloaded automatically on save. Unknown keys are errors, so typos don't fail silently. On an error Helm keeps the last good config and shows the error in the menu and in `helmctl status`.
+`$XDG_CONFIG_HOME/hyperspace/hyperspace.toml` (default `~/.config/hyperspace/hyperspace.toml`), reloaded automatically on save. Unknown keys are errors, so typos don't fail silently. On an error HyperSpace keeps the last good config and shows the error in the menu and in `hsctl status`.
 
 ```toml
 # ── Keyboard ─────────────────────────────────────────────
@@ -249,7 +249,7 @@ buttons = { button3 = "passthrough", button4 = "passthrough" }
 [[mouse.device]]
 match = { vendor = 0x046d }   # Logitech
 scroll = { reverse = true, linear = true, lines = 3 }
-# Inputs only visible via raw HID / HID++ are named by `helmctl list-inputs`
+# Inputs only visible via raw HID / HID++ are named by `hsctl list-inputs`
 buttons = { "hidpp:0x00c4" = "cmd-tab" }
 
 # ── Window manager ───────────────────────────────────────
@@ -289,9 +289,9 @@ layout = "floating"
 | Phase | Scope | Expected outcome |
 |---|---|---|
 | **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
-| **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `helmctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
+| **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `hsctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
 | **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, simple remaps, per-app overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
-| **3 — Mouse** (in progress) | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `helmctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
+| **3 — Mouse** (in progress) | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `hsctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
 | **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |
 
@@ -301,7 +301,7 @@ layout = "floating"
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Name | **Helm** (CLI: `helmctl`) |
+| 1 | Name | **HyperSpace** (CLI: `hsctl`) |
 | 2 | Config format | **TOML** |
 | 3 | Language | **Swift 6** |
 | 4 | Caps Lock | Per-key layer; loses the caps lock toggle; unmapped keys keep their normal behavior |
