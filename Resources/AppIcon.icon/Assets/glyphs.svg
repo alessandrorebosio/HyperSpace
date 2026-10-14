@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g fill="none" stroke="#2A3A9E" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Command symbol, top right tile -->
+    <rect x="652" y="325" width="52" height="52"/>
+    <circle cx="633" cy="306" r="19"/>
+    <circle cx="723" cy="306" r="19"/>
+    <circle cx="633" cy="396" r="19"/>
+    <circle cx="723" cy="396" r="19"/>
+    <!-- Mouse, bottom right tile -->
+    <rect x="634" y="598" width="88" height="150" rx="44"/>
+    <line x1="678" y1="602" x2="678" y2="650"/>
+  </g>
+</svg>
