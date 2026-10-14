@@ -129,11 +129,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             return .ok(configURL.path)
         case ["version"]:
             return .ok(Helm.version)
-        case let args where args.first == "debug-menu" && args.count == 2:
-            // Menu shortcuts of a running app, by bundle id or pid. For diagnosing navigation.
-            let pid = pid_t(args[1]) ?? NSRunningApplication.runningApplications(withBundleIdentifier: args[1]).first?.processIdentifier
-            guard let pid else { return .error("no running app '\(args[1])'") }
-            return .ok(Navigator.dumpMenu(pid: pid))
         default:
             return .error("helm: unknown command '\(request.args.joined(separator: " "))'. Run `helmctl --help`.")
         }
