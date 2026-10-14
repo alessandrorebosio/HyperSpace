@@ -1,5 +1,6 @@
 import AppKit
 import HelmCore
+import HelmInput
 import HelmIPC
 
 /// Owns the app state: config, permission, file watcher, IPC server and menu bar item.
@@ -11,12 +12,26 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private(set) var config = Config()
     private(set) var configError: ConfigError?
+    private(set) var keyboard: KeyboardService!
+    private var signalSources: [any DispatchSourceSignal] = []
 
     private var watcher: ConfigWatcher?
     private var server: IPCServer?
     private var menu: StatusMenu?
 
     func applicationDidFinishLaunching(_: Notification) {
+        // Two instances would fight over the event tap, the HID mappings and the socket.
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Helm.bundleID)
+            .filter { $0 != .current }
+        if !others.isEmpty {
+            log.info("Helm is already running (pid \(others[0].processIdentifier)), exiting")
+            exit(0)
+        }
+
+        keyboard = KeyboardService { [weak self] command in
+            self?.log.info("WM command '\(command)' ignored: the window manager isn't implemented yet")
+        }
+        terminateOnSignals()
         menu = StatusMenu(controller: self)
         reloadConfig()
 
@@ -35,14 +50,34 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         accessibility.onChange = { [weak self] granted in
             self?.log.info("Accessibility \(granted ? "granted" : "revoked")")
+            self?.applyKeyboard()
             self?.menu?.refresh()
         }
         if !accessibility.isGranted { accessibility.prompt() }
     }
 
     func applicationWillTerminate(_: Notification) {
+        keyboard.shutdown() // restores the keyboards' original HID mappings
         server?.stop()
         watcher?.stop()
+    }
+
+    /// `kill`/Ctrl-C must also go through `applicationWillTerminate`, otherwise Caps Lock
+    /// would stay remapped to F18 until the next reboot.
+    private func terminateOnSignals() {
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { NSApp.terminate(nil) }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    private func applyKeyboard() {
+        // The config was validated when loaded, so compiling can't fail here.
+        let plan = (try? KeyboardPlan(config.keyboard)) ?? KeyboardPlan()
+        keyboard.apply(plan, accessibilityGranted: accessibility.isGranted)
     }
 
     // MARK: - Config
@@ -55,6 +90,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             config = new
             configError = nil
             log.info("config loaded")
+            applyKeyboard()
         case let .failure(error):
             // Keep running with the last good config.
             configError = error
@@ -103,6 +139,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         accessibility  \(accessibility.isGranted ? "granted" : "missing")
         config         \(configURL.path)
         config state   \(configError.map { "error: \($0.message)" } ?? "ok")
+        event tap      \(keyboard.tapState.rawValue)
+        HID mappings   \(keyboard.mappedKeyboards) keyboard(s)
         login item     \(LoginItem.isEnabled ? "on" : "off")
         """
     }

@@ -32,7 +32,11 @@ public enum ConfigLoader {
 
     public static func parse(_ text: String, path: String = "helm.toml") -> Result<Config, ConfigError> {
         do {
-            return .success(try TOMLDecoder().decode(Config.self, from: text))
+            let config = try TOMLDecoder().decode(Config.self, from: text)
+            _ = try KeyboardPlan(config.keyboard) // validates key names and combos
+            return .success(config)
+        } catch let error as KeyboardPlan.Error {
+            return .failure(ConfigError(path: path, message: error.message))
         } catch let error as DecodingError {
             return .failure(ConfigError(path: path, message: describe(error)))
         } catch {
