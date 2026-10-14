@@ -165,7 +165,7 @@ MouseInput = button(n) | scroll(axis, delta) | move(dx, dy) | vendor(usagePage, 
 
 **Side buttons → back/forward in every app (main requirement)** ✅
 - Side buttons arrive through S1 as `otherMouseDown` with button number 3 (back) and 4 (forward).
-- `navigate_back` / `navigate_forward` work like LinearMouse's "universal back/forward": apps that support trackpad navigation (Apple apps, Firefox, Opera, ForkLift) get a synthesized **navigation swipe**; every other app gets mouse button 4/5, which browsers and editors handle natively.
+- `navigate.back` / `navigate.forward` work like LinearMouse's "universal back/forward": apps that support trackpad navigation (Apple apps, Firefox, Opera, ForkLift) get a synthesized **navigation swipe**; every other app gets mouse button 4/5, which browsers and editors handle natively.
 - Rejected approaches (tested on an Italian keyboard):
   - sending ⌘[ / ⌘] by key code: on non-US layouts those keys are other characters (Italian: `è` / `+`, so Safari zoomed);
   - pressing the app's Back/Forward menu item via AX: AppKit localizes the shortcut per layout (Safari's Back is ⌘ò on Italian) and Forward failed right after Back.
@@ -233,8 +233,8 @@ map = { d = "cmd-shift-k" }
 # ── Mouse ────────────────────────────────────────────────
 # Any input from any mouse. Unmapped inputs pass through untouched.
 [mouse.buttons]
-button3 = "navigate_back"     # side buttons; default: swipe or ⌘[ (chosen after the spike)
-button4 = "navigate_forward"
+button3 = "navigate.back"     # side buttons; default: swipe or ⌘[ (chosen after the spike)
+button4 = "navigate.forward"
 button2 = { wm = "fullscreen" }
 
 [[mouse.app]]

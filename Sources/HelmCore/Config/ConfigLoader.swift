@@ -100,8 +100,8 @@ public enum ConfigLoader {
 
     # ── Mouse ────────────────────────────────────────────────
     # [mouse.buttons]             # button2 = middle, button3 = back, button4 = forward
-    # button3 = "navigate_back"
-    # button4 = "navigate_forward"
+    # button3 = "navigate.back"
+    # button4 = "navigate.forward"
     #
     # [[mouse.app]]               # per-app exceptions
     # bundle_id = "com.google.Chrome"

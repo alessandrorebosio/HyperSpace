@@ -13,8 +13,8 @@ struct MouseTests {
 
     private let config = """
     [mouse.buttons]
-    button3 = "navigate_back"
-    forward = "navigate_forward"
+    button3 = "navigate.back"
+    forward = "navigate.forward"
     middle = "none"
     button5 = { shell = "say hi" }
 

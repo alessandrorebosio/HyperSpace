@@ -11,7 +11,7 @@
 public enum Action: Sendable, Equatable {
     case none
     case passthrough
-    /// A key, a combo or a named action (e.g. `navigate_back`). Resolved by the engines.
+    /// A key, a combo or a named action (e.g. `navigate.back`). Resolved by the engines.
     case keys(String)
     case shell(String)
     case wm(String)
