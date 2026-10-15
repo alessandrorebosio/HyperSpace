@@ -9,6 +9,8 @@ struct WindowRecord: @unchecked Sendable {
     let element: AXUIElement
     let floating: Bool
     let frame: CGRect?
+    /// Kept up to date through title notifications, for rules and `list-windows`.
+    var title: String
 }
 
 /// One running app as the window manager sees it. Every AX call to the app runs on the
@@ -22,6 +24,7 @@ final class AXApp: @unchecked Sendable {
         case focusChanged
         case minimized(WindowID, Bool)
         case moved(WindowID)
+        case titleChanged(WindowID)
     }
 
     /// Seconds an AX call may take before the app counts as unresponsive.
@@ -79,11 +82,13 @@ final class AXApp: @unchecked Sendable {
             // The window id rides along as the refcon: destroyed elements can't be queried.
             let refcon = UnsafeMutableRawPointer(bitPattern: UInt(id))
             for notification in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
-                                 kAXWindowDeminiaturizedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification] {
+                                 kAXWindowDeminiaturizedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification,
+                                 kAXTitleChangedNotification] {
                 AXObserverAddNotification(observer, window, notification as CFString, refcon)
             }
         }
-        return WindowRecord(id: id, element: window, floating: floating, frame: AX.frame(window))
+        return WindowRecord(id: id, element: window, floating: floating, frame: AX.frame(window),
+                            title: AX.string(window, kAXTitleAttribute) ?? "")
     }
 
     func windows() -> [AXUIElement] {
@@ -100,6 +105,7 @@ final class AXApp: @unchecked Sendable {
         case kAXWindowMiniaturizedNotification where id != 0: .minimized(id, true)
         case kAXWindowDeminiaturizedNotification where id != 0: .minimized(id, false)
         case kAXWindowMovedNotification where id != 0, kAXWindowResizedNotification where id != 0: .moved(id)
+        case kAXTitleChangedNotification where id != 0: .titleChanged(id) // read on the app's queue, not here
         default: nil
         }
         if let event { events(self, event) }

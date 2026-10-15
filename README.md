@@ -7,7 +7,7 @@ A single lightweight macOS app for:
 
 Goal: one process, no drivers, one permission (Accessibility).
 
-Status: phases 1–4 built: menu bar app, TOML config with hot reload, `hsctl`, keyboard remapping (Caps Lock and other layers, dual-role keys, double taps, per-app and per-device remaps), mouse remapping (buttons, Logitech controls over HID++, wheel and gesture actions while a button is held, smooth scrolling, pointer speed and acceleration), system actions (media keys, Mission Control, windows, clicks, apps, text), and a tiling window manager with AeroSpace's model and commands (wm.toml, off by default). See [docs/DESIGN.md](docs/DESIGN.md) and the spike results in [docs/SPIKE.md](docs/SPIKE.md).
+Status: phases 1–4 built: menu bar app, TOML config with hot reload, `hsctl`, keyboard remapping (Caps Lock and other layers, dual-role keys, double taps, per-app and per-device remaps), mouse remapping (buttons, Logitech controls over HID++, wheel and gesture actions while a button is held, smooth scrolling, pointer speed and acceleration), system actions (media keys, Mission Control, windows, clicks, apps, text), and a tiling window manager compatible with AeroSpace: wm.toml takes an `~/.aerospace.toml` as is, `hsctl` takes AeroSpace's commands (empty wm.toml = off). See [docs/DESIGN.md](docs/DESIGN.md) and the spike results in [docs/SPIKE.md](docs/SPIKE.md).
 
 ## Build
 

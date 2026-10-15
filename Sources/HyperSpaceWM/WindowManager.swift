@@ -3,39 +3,48 @@ import AppKit
 import HyperSpaceCore
 import Synchronization
 
-/// The tiling window manager: AeroSpace's model (`WMModel`) driven by Accessibility.
+/// The tiling window manager: AeroSpace's model (`WMModel`), config and commands, driven by
+/// Accessibility.
 ///
 /// How it stays fast:
 /// - **Event-driven state.** Windows are read once when they appear and then followed
 ///   through AX notifications; no command or notification re-reads every app's windows.
-/// - **Diffs only.** `apply()` compares the layout with the frames already set and touches
-///   only windows that change, and per window only the attribute that changes.
+/// - **Diffs only.** `apply()` compares the layout with the frames already requested and
+///   touches only windows that change, and per window only the attribute that changes.
 /// - **Concurrent apps.** Each app has its own AX queue (`AXApp`), so frames are set in
 ///   parallel and a frozen app can't stall the others; superseded frames are skipped.
 /// - **Off the input thread.** Hotkeys arrive as commands; the tap never waits for AX.
 @MainActor
 public final class WindowManager {
     public struct Handlers {
-        public var exec: (String) -> Void
         public var reloadConfig: () -> Void
         public var enable: (Bool?) -> Void
+        /// The binding mode changed: the tap must use that mode's hotkeys.
+        public var modeChanged: (String) -> Void
+        /// A media key (`volume up`...), sent like the keyboard's.
+        public var mediaKey: (SystemAction) -> Void
         /// The focused workspace changed (for the menu bar).
         public var changed: () -> Void
 
-        public init(exec: @escaping (String) -> Void, reloadConfig: @escaping () -> Void,
-                    enable: @escaping (Bool?) -> Void, changed: @escaping () -> Void) {
-            self.exec = exec
+        public init(reloadConfig: @escaping () -> Void, enable: @escaping (Bool?) -> Void,
+                    modeChanged: @escaping (String) -> Void, mediaKey: @escaping (SystemAction) -> Void,
+                    changed: @escaping () -> Void) {
             self.reloadConfig = reloadConfig
             self.enable = enable
+            self.modeChanged = modeChanged
+            self.mediaKey = mediaKey
             self.changed = changed
         }
     }
+
+    private typealias FocusState = (window: WindowID?, workspace: String, monitor: UInt32)
 
     private let log = HyperSpace.logger("wm")
     private let handlers: Handlers
     private var model: WMModel?
     private var settings = WMSettings()
     private var observers: [any NSObjectProtocol] = []
+    public private(set) var mode = "main"
 
     /// Every window seen, managed or not right now (minimized, hidden app).
     private var records: [WindowID: (app: AXApp, record: WindowRecord)] = [:]
@@ -48,8 +57,13 @@ public final class WindowManager {
     private var setAt: [WindowID: ContinuousClock.Instant] = [:]
     /// Windows parked off-screen, with the frame to give back to floating ones.
     private var parked: [WindowID: CGRect] = [:]
-    /// Pending "a tiled window was dragged" checks.
     private var snapChecks: [WindowID: Task<Void, Never>] = [:]
+
+    /// Apps still reading their windows at startup: `after-startup-command` runs after.
+    private var startingApps = 0
+    private var isStartingUp = true
+    /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
+    private var inCallback = false
 
     public init(handlers: Handlers) {
         self.handlers = handlers
@@ -57,6 +71,7 @@ public final class WindowManager {
 
     public var isRunning: Bool { model != nil }
     public var focusedWorkspace: String? { model?.focusedWorkspace.name }
+    public var focusFollowsMouse: Bool { model != nil && settings.focusFollowsMouse }
 
     // MARK: - Lifecycle
 
@@ -64,14 +79,19 @@ public final class WindowManager {
         self.settings = settings
         if let model {
             model.settings = settings
+            if settings.modes[mode] == nil { setMode("main") }
             apply()
             return
         }
         // One timeout for every AX call: a frozen app answers nothing for 6 s by default.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), AXApp.timeout)
         model = WMModel(monitors: WindowManager.monitors(), settings: settings)
+        isStartingUp = true
         observe()
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular { watch(app) }
+        let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        startingApps = apps.count
+        for app in apps { watch(app) }
+        if apps.isEmpty { finishStartup() }
         log.info("window manager started")
         handlers.changed()
     }
@@ -99,53 +119,330 @@ public final class WindowManager {
         setAt = [:]
         parked = [:]
         model = nil
+        setMode("main")
         log.info("window manager stopped")
         handlers.changed()
     }
 
-    /// Runs a command, e.g. from a hotkey or `hsctl`. Returns an error message for the user.
+    // MARK: - Commands
+
+    /// Runs commands from a hotkey or a callback, AeroSpace shell syntax included
+    /// (`a; b`, `a && b`, `a || b`). Returns an error message for the user, if any.
     @discardableResult
-    public func run(_ text: String) -> String? {
-        guard let model else { return "the window manager is off (wm.toml: enabled = true)" }
+    public func run(_ text: String, window: WindowID? = nil) -> String? {
         do {
-            let command = try WMCommand(parsing: text)
-            let focusedBefore = model.focused
-            let workspaceBefore = model.focusedWorkspace.name
-            switch try model.run(command) {
-            case .none: break
-            case let .close(id): close(id)
-            case let .exec(shell): handlers.exec(shell)
-            case .reloadConfig: handlers.reloadConfig()
-            case let .enable(on): handlers.enable(on)
-            }
-            apply()
-            if model.focused != focusedBefore || model.focusedWorkspace.name != workspaceBefore { focusNative() }
-            if model.focusedWorkspace.name != workspaceBefore { handlers.changed() }
-            return nil
+            return execute(try WMScript(parsing: text), window: window).error
         } catch {
             return error.message
         }
     }
 
-    /// `hsctl list-workspaces`-style summary.
-    public var summary: String {
-        guard let model else { return "window manager off" }
-        return model.workspaceNames.map { name in
-            let workspace = model.workspace(name)
-            let shown = model.visible.values.contains(name) ? (name == model.focusedWorkspace.name ? "*" : "+") : " "
-            return "\(shown) \(name)  \(workspace.windows.count) window(s)"
-        }.joined(separator: "\n")
+    /// Runs one command from `hsctl`, with its words as given (no shell parsing, so quoted
+    /// arguments arrive intact).
+    public func run(words: [String]) -> (ok: Bool, output: String, error: String?) {
+        do {
+            let result = execute(.command(try WMCommand(words: words)), window: nil)
+            return (result.ok, result.output, result.error)
+        } catch {
+            return (false, "", error.message)
+        }
     }
 
-    /// `hsctl list-windows`: every window seen, how it's managed, and the focused one.
-    public var windowList: String {
-        guard let model else { return "window manager off" }
-        return records.sorted { $0.key < $1.key }.map { id, entry in
-            let name = NSRunningApplication(processIdentifier: entry.app.pid)?.localizedName ?? "?"
-            let state = model.windows[id].map { $0.floating ? "floating" : "tiled" } ?? "not managed"
-            let workspace = model.workspace(of: id)?.name ?? "-"
-            return "\(model.focused == id ? "*" : " ") \(id)  \(name)  workspace \(workspace)  \(state)"
-        }.joined(separator: "\n")
+    private struct Result {
+        var ok = true
+        var output = ""
+        var error: String?
+    }
+
+    private var focusState: FocusState? {
+        model.map { ($0.focused, $0.focusedWorkspace.name, $0.focusedMonitor) }
+    }
+
+    private func execute(_ script: WMScript, window: WindowID?) -> Result {
+        var result = Result()
+        guard let before = focusState else {
+            result.ok = false
+            result.error = "the window manager is off (wm.toml is empty)"
+            return result
+        }
+        result.ok = script.run { command in
+            do throws(InvalidConfig) {
+                let (ok, output) = try perform(command, window: window)
+                if let output, !output.isEmpty { result.output += (result.output.isEmpty ? "" : "\n") + output }
+                return ok
+            } catch {
+                result.error = error.message
+                return false
+            }
+        }
+        afterCommands(since: before)
+        return result
+    }
+
+    /// One command. The model handles the tree, workspaces and monitors; the rest talks to
+    /// other processes or the system and is done here.
+    private func perform(_ command: WMCommand, window: WindowID?) throws(InvalidConfig) -> (Bool, String?) {
+        guard let model else { return (false, nil) }
+        switch command {
+        case let .exec(script):
+            exec(["/bin/bash", "-c", script], extra: window.map { ["AEROSPACE_WINDOW_ID": String($0)] } ?? [:])
+        case .reloadConfig:
+            handlers.reloadConfig()
+        case let .enable(on, failIfNoop):
+            if failIfNoop, on == true { return (false, nil) } // already on: we're running
+            handlers.enable(on)
+        case let .mode(name):
+            guard settings.modes[name] != nil else { throw InvalidConfig(message: "there is no binding mode '\(name)'") }
+            setMode(name)
+        case let .triggerBinding(binding, mode):
+            guard let script = settings.modes[mode]?[binding] else { throw InvalidConfig(message: "no binding '\(binding)' in mode '\(mode)'") }
+            return (execute(script, window: window).ok, nil)
+        case let .volume(volume):
+            switch volume {
+            case .up: handlers.mediaKey(.volumeUp)
+            case .down: handlers.mediaKey(.volumeDown)
+            case .muteToggle: handlers.mediaKey(.volumeMute)
+            case .muteOn: exec(["/usr/bin/osascript", "-e", "set volume output muted true"])
+            case .muteOff: exec(["/usr/bin/osascript", "-e", "set volume output muted false"])
+            case let .set(level): exec(["/usr/bin/osascript", "-e", "set volume output volume \(level)"])
+            }
+        case let .moveMouse(position, failIfNoop):
+            return (moveMouse(position) || !failIfNoop, nil)
+        case let .list(query):
+            return (true, list(query))
+        case let .test(lhs, op, rhs, negate):
+            let subject = window ?? model.focused
+            let left = interpolate(lhs, window: subject), right = interpolate(rhs, window: subject)
+            let result = switch op {
+            case .equals: left == right
+            case .matches: left.range(of: right, options: [.regularExpression, .caseInsensitive]) != nil
+            }
+            return (result != negate, nil)
+        case let .result(value):
+            return (value, nil)
+        case let .echo(text):
+            return (true, interpolate(text, window: window ?? model.focused))
+        default:
+            let (ok, effect) = try model.run(command, window: window)
+            perform(effect)
+            return (ok, nil)
+        }
+        return (true, nil)
+    }
+
+    private func perform(_ effect: WMEffect) {
+        switch effect {
+        case .none:
+            break
+        case let .close(ids, quitIfLastWindow):
+            for id in ids {
+                guard let (app, record) = records[id] else { continue }
+                let appWindows = records.values.filter { $0.app.pid == app.pid }.count
+                if quitIfLastWindow, appWindows == 1 {
+                    NSRunningApplication(processIdentifier: app.pid)?.terminate()
+                } else {
+                    nonisolated(unsafe) let element = record.element
+                    app.queue.async { AX.close(element) }
+                }
+            }
+        case let .minimize(id):
+            guard let (app, record) = records[id] else { return }
+            nonisolated(unsafe) let element = record.element
+            app.queue.async { AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanTrue) }
+        case let .nativeFullscreen(id, on):
+            guard let (app, record) = records[id] else { return }
+            nonisolated(unsafe) let element = record.element
+            app.queue.async {
+                let wanted = on ?? !(AX.bool(element, "AXFullScreen") ?? false)
+                AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, wanted as CFBoolean)
+            }
+        }
+    }
+
+    /// After commands: apply the layout, sync macOS focus, fire the focus callbacks.
+    private func afterCommands(since before: FocusState) {
+        guard let model else { return }
+        apply()
+        let workspace = model.focusedWorkspace.name
+        if model.focused != before.window || workspace != before.workspace { focusNative() }
+        focusChanged(since: before)
+        if workspace != before.workspace { handlers.changed() }
+    }
+
+    private func focusChanged(since before: FocusState) {
+        guard let model, !inCallback else { return }
+        inCallback = true
+        defer { inCallback = false }
+        let workspace = model.focusedWorkspace.name
+        if model.focused != before.window || workspace != before.workspace, let script = settings.onFocusChanged {
+            _ = execute(script, window: model.focused)
+        }
+        if model.focusedMonitor != before.monitor, let script = settings.onFocusedMonitorChanged {
+            _ = execute(script, window: model.focused)
+        }
+        if workspace != before.workspace, !settings.execOnWorkspaceChange.isEmpty {
+            exec(settings.execOnWorkspaceChange, extra: ["AEROSPACE_FOCUSED_WORKSPACE": workspace, "AEROSPACE_PREV_WORKSPACE": before.workspace])
+        }
+    }
+
+    private func setMode(_ name: String) {
+        guard name != mode else { return }
+        mode = name
+        handlers.modeChanged(name)
+        if !inCallback, let script = settings.onModeChanged {
+            inCallback = true
+            _ = execute(script, window: nil)
+            inCallback = false
+        }
+    }
+
+    /// Spawns a process with `exec.env-vars` (Homebrew on the PATH by default).
+    private func exec(_ argv: [String], extra: [String: String] = [:]) {
+        guard let path = argv.first else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = Array(argv.dropFirst())
+        let inherited = settings.execInheritEnvVars ? ProcessInfo.processInfo.environment : [:]
+        let current = ProcessInfo.processInfo.environment
+        var environment = inherited
+        for (key, value) in settings.execEnvVars {
+            // ${VAR} expands from HyperSpace's environment, like AeroSpace.
+            environment[key] = value.replacing(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/) { current[String($0.1)] ?? "" }
+        }
+        environment.merge(extra) { $1 }
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { log.error("exec failed: \(error)") }
+    }
+
+    // MARK: - Queries
+
+    /// `%{name}` variables of AeroSpace's `--format`, `test` and `echo`.
+    private func variables(window: WindowID?, workspace name: String? = nil) -> [String: String] {
+        guard let model else { return [:] }
+        var values: [String: String] = [:]
+        let workspace = name.map { model.workspace($0) } ?? window.flatMap { model.workspace(of: $0) } ?? model.focusedWorkspace
+        values["workspace"] = workspace.name
+        values["workspace-is-focused"] = String(workspace.name == model.focusedWorkspace.name)
+        values["workspace-is-visible"] = String(model.isVisible(workspace.name))
+        let monitorID = model.visible.first { $0.value == workspace.name }?.key ?? model.assignedMonitor(workspace.name)
+        if let index = model.monitors.firstIndex(where: { $0.id == monitorID }) {
+            values["monitor-id"] = String(index + 1)
+            values["monitor-name"] = model.monitors[index].name
+        }
+        if let window, let (app, record) = records[window] {
+            values["window-id"] = String(window)
+            values["window-title"] = record.title
+            values["window-is-fullscreen"] = String(workspace.fullscreen == window)
+            values["window-layout"] = model.windows[window]?.floating == true ? "floating" : "tiling"
+            values["app-name"] = NSRunningApplication(processIdentifier: app.pid)?.localizedName ?? ""
+            values["app-bundle-id"] = app.bundleID ?? ""
+            values["app-pid"] = String(app.pid)
+        }
+        return values
+    }
+
+    private func interpolate(_ text: String, window: WindowID?) -> String {
+        guard text.contains("%{") else { return text }
+        let values = variables(window: window)
+        return text.replacing(/%\{([a-z-]+)\}/) { values[String($0.1)] ?? "" }
+    }
+
+    private func list(_ query: WMCommand.ListQuery) -> String {
+        guard let model else { return "" }
+        let filters = query.filters
+        switch query.kind {
+        case .workspaces:
+            var names = model.workspaceNames
+            if filters["--focused"] != nil { names = [model.focusedWorkspace.name] }
+            if let monitors = filters["--monitor"] {
+                let ids = Set(monitors.compactMap { monitorID($0) })
+                names = names.filter { model.assignedMonitor($0).map(ids.contains) ?? false }
+            }
+            if let visible = filters["--visible"] { names = names.filter { model.isVisible($0) != (visible == ["no"]) } }
+            if let empty = filters["--empty"] { names = names.filter { (model.workspaces[$0]?.isEmpty ?? true) != (empty == ["no"]) } }
+            return format(names.map { variables(window: nil, workspace: $0) }, query, default: "%{workspace}")
+        case .windows:
+            var ids: [WindowID]
+            if filters["--focused"] != nil {
+                ids = model.focused.map { [$0] } ?? []
+            } else if let names = filters["--workspace"] {
+                ids = names.flatMap { name in
+                    model.workspaces[name == "focused" ? model.focusedWorkspace.name : name]?.windows ?? []
+                }
+            } else if let monitors = filters["--monitor"] {
+                let monitorIDs = Set(monitors.compactMap { monitorID($0) })
+                ids = model.visible.filter { monitorIDs.contains($0.key) }.flatMap { model.workspace($0.value).windows }
+            } else {
+                ids = model.workspaceNames.flatMap { model.workspaces[$0]?.windows ?? [] }
+            }
+            if let pid = filters["--pid"]?.first.flatMap(Int32.init) { ids = ids.filter { records[$0]?.app.pid == pid } }
+            if let bundle = filters["--app-bundle-id"]?.first { ids = ids.filter { records[$0]?.app.bundleID == bundle } }
+            return format(ids.map { variables(window: $0) }, query, default: "%{window-id} | %{app-name} | %{window-title}")
+        case .monitors:
+            var monitors = model.monitors
+            if filters["--focused"] != nil { monitors = monitors.filter { $0.id == model.focusedMonitor } }
+            let rows = monitors.map { monitor in
+                ["monitor-id": String((model.monitors.firstIndex { $0.id == monitor.id } ?? 0) + 1), "monitor-name": monitor.name]
+            }
+            return format(rows, query, default: "%{monitor-id} | %{monitor-name}")
+        case .apps:
+            let rows = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map { app in
+                ["app-pid": String(app.processIdentifier), "app-bundle-id": app.bundleIdentifier ?? "", "app-name": app.localizedName ?? ""]
+            }
+            return format(rows, query, default: "%{app-pid} | %{app-bundle-id} | %{app-name}")
+        case .modes:
+            let modes = filters["--current"] != nil ? [mode] : settings.modes.keys.sorted()
+            return format(modes.map { ["mode-id": $0] }, query, default: "%{mode-id}")
+        }
+    }
+
+    private func format(_ rows: [[String: String]], _ query: WMCommand.ListQuery, default fallback: String) -> String {
+        if query.count { return String(rows.count) }
+        if query.json {
+            guard let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) else { return "[]" }
+            return String(decoding: data, as: UTF8.self)
+        }
+        let format = query.format ?? fallback
+        return rows.map { row in format.replacing(/%\{([a-z-]+)\}/) { row[String($0.1)] ?? "" } }.joined(separator: "\n")
+    }
+
+    private func monitorID(_ pattern: String) -> UInt32? {
+        guard let model else { return nil }
+        if pattern == "focused" { return model.focusedMonitor }
+        return model.monitors.first { WMMonitor.matches(pattern, $0, in: model.monitors) }?.id
+    }
+
+    // MARK: - Mouse
+
+    /// Warps the pointer to the focused monitor or window ("lazy": only if it's elsewhere).
+    private func moveMouse(_ position: WMCommand.MousePosition) -> Bool {
+        guard let model else { return false }
+        let mouse = CGEvent(source: nil)?.location ?? .zero
+        let rect: CGRect? = switch position {
+        case .monitorLazyCenter, .monitorForceCenter: model.monitors.first { $0.id == model.focusedMonitor }?.visible
+        case .windowLazyCenter, .windowForceCenter: model.focused.flatMap { targets[$0] ?? frames[$0] }
+        }
+        guard let rect else { return false }
+        let lazy = position == .monitorLazyCenter || position == .windowLazyCenter
+        if lazy, rect.contains(mouse) { return false }
+        CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+        CGAssociateMouseAndMouseCursorPosition(1)
+        return true
+    }
+
+    /// `focus-follows-mouse`: the window under the pointer gets focus.
+    public func mouseMoved(to point: CGPoint) {
+        guard let model, settings.focusFollowsMouse, let before = focusState else { return }
+        let layout = model.layout()
+        let under = layout.floating.keys.first { frames[$0]?.contains(point) == true }
+            ?? layout.tiled.first { $0.value.contains(point) }?.key
+        guard let under, under != model.focused else { return }
+        model.nativeFocus(under)
+        focusNative()
+        focusChanged(since: before)
     }
 
     // MARK: - System events
@@ -163,7 +460,14 @@ public final class WindowManager {
         }
         on(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in self?.forget(app: app.processIdentifier) }
         on(NSWorkspace.didActivateApplicationNotification) { [weak self] app in self?.syncFocus(app.processIdentifier) }
-        on(NSWorkspace.didHideApplicationNotification) { [weak self] app in self?.setHidden(app.processIdentifier, true) }
+        on(NSWorkspace.didHideApplicationNotification) { [weak self] app in
+            guard let self else { return }
+            if self.settings.automaticallyUnhideMacosHiddenApps {
+                app.unhide()
+            } else {
+                self.setHidden(app.processIdentifier, true)
+            }
+        }
         on(NSWorkspace.didUnhideApplicationNotification) { [weak self] app in self?.setHidden(app.processIdentifier, false) }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -177,7 +481,10 @@ public final class WindowManager {
 
     private func watch(_ running: NSRunningApplication) {
         let pid = running.processIdentifier
-        guard AXApp.live[pid] == nil, pid != ProcessInfo.processInfo.processIdentifier else { return }
+        guard AXApp.live[pid] == nil, pid != ProcessInfo.processInfo.processIdentifier else {
+            appStarted()
+            return
+        }
         let app = AXApp(running) { [weak self] app, event in self?.handle(app, event) }
         AXApp.live[pid] = app
         let hidden = running.isHidden
@@ -186,7 +493,20 @@ public final class WindowManager {
             for record in records { self.add(record, of: app, managed: !hidden) }
             self.syncFocus(NSWorkspace.shared.frontmostApplication?.processIdentifier)
             self.apply()
+            self.appStarted()
         }
+    }
+
+    private func appStarted() {
+        guard isStartingUp else { return }
+        startingApps -= 1
+        if startingApps <= 0 { finishStartup() }
+    }
+
+    private func finishStartup() {
+        guard isStartingUp else { return }
+        isStartingUp = false
+        if let script = settings.afterStartup { _ = execute(script, window: nil) }
     }
 
     private func handle(_ app: AXApp, _ event: AXApp.Event) {
@@ -213,21 +533,57 @@ public final class WindowManager {
             apply()
         case let .moved(id):
             moved(id)
+        case let .titleChanged(id):
+            guard let (app, record) = records[id] else { return }
+            nonisolated(unsafe) let element = record.element
+            app.queue.async { [weak self] in
+                let title = AX.string(element, kAXTitleAttribute) ?? ""
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.records[id]?.record.title = title } }
+            }
         }
     }
 
     private func add(_ record: WindowRecord, of app: AXApp, managed: Bool) {
         records[record.id] = (app, record)
         frames[record.id] = record.frame
-        if managed { manage(record.id) }
+        guard managed else { return }
+        manage(record.id)
+        windowDetected(record.id)
     }
 
     private func manage(_ id: WindowID) {
         guard let model, let (app, record) = records[id] else { return }
-        let monitor = record.frame.flatMap { frame in
+        // At startup windows stay on the monitor they're on; later ones join the focused workspace.
+        let monitor = isStartingUp ? record.frame.flatMap { frame in
             model.monitors.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?.id
-        }
+        } : nil
         model.add(WMWindowInfo(id: id, pid: app.pid, bundleID: app.bundleID, floating: record.floating), monitor: monitor)
+    }
+
+    /// `on-window-detected`: the first matching callback runs on the new window (and the
+    /// next ones too while `check-further-callbacks` is set).
+    private func windowDetected(_ id: WindowID) {
+        guard let model, !settings.onWindowDetected.isEmpty else { return }
+        let values = variables(window: id)
+        let appName = values["app-name"] ?? "", title = values["window-title"] ?? ""
+        for rule in settings.onWindowDetected {
+            let matches: Bool
+            switch rule.condition {
+            case .always:
+                matches = true
+            case let .script(script):
+                matches = execute(script, window: id).ok
+            case let .legacy(appID, appNameRegex, titleRegex, workspace, duringStartup):
+                matches = (appID.map { $0 == values["app-bundle-id"] } ?? true)
+                    && (appNameRegex.map { appName.range(of: $0, options: [.regularExpression, .caseInsensitive]) != nil } ?? true)
+                    && (titleRegex.map { title.range(of: $0, options: [.regularExpression, .caseInsensitive]) != nil } ?? true)
+                    && (workspace.map { $0 == model.workspace(of: id)?.name } ?? true)
+                    && (duringStartup.map { $0 == isStartingUp } ?? true)
+            }
+            guard matches else { continue }
+            if let error = execute(rule.run, window: id).error { log.error("on-window-detected: \(error)") }
+            if !rule.checkFurtherCallbacks { break }
+        }
     }
 
     private func setManaged(_ id: WindowID, _ managed: Bool) {
@@ -265,14 +621,13 @@ public final class WindowManager {
             let id = window.flatMap(AX.windowID)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, let model = self.model else { return }
-                    let workspace = model.focusedWorkspace.name
-                    // Still nothing we manage: the app's most recently focused window will do.
+                    guard let self, let model = self.model, let before = self.focusState else { return }
+                    // Still nothing we manage: one of the app's managed windows will do.
                     let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
                         ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
-                    self.log.debug("focus: pid \(pid) window \(id.map(String.init) ?? "none") -> \(known.map(String.init) ?? "none")")
                     if model.nativeFocus(known) { self.apply() }
-                    if model.focusedWorkspace.name != workspace { self.handlers.changed() }
+                    self.focusChanged(since: before)
+                    if model.focusedWorkspace.name != before.workspace { self.handlers.changed() }
                 }
             }
         }
@@ -354,12 +709,6 @@ public final class WindowManager {
         }
     }
 
-    private func close(_ id: WindowID) {
-        guard let (app, record) = records[id] else { return }
-        nonisolated(unsafe) let element = record.element
-        app.queue.async { AX.close(element) }
-    }
-
     /// Displays in AX coordinates: origin at the top left of the main display, y down.
     static func monitors() -> [WMMonitor] {
         guard let main = NSScreen.screens.first else { return [] }
@@ -368,7 +717,8 @@ public final class WindowManager {
         }
         return NSScreen.screens.map { screen in
             let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            return WMMonitor(id: id, frame: ax(screen.frame), visible: ax(screen.visibleFrame))
+            return WMMonitor(id: id, name: screen.localizedName, isMain: screen == main,
+                             frame: ax(screen.frame), visible: ax(screen.visibleFrame))
         }
     }
 }

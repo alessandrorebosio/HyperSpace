@@ -23,7 +23,9 @@ The window manager (`Sources/HyperSpaceCore/WM`, `Sources/HyperSpaceWM`) follows
 AeroSpace's model and command set: the normalized tiling tree, `move`/`join-with`
 semantics, accordion padding, virtual workspaces parked in a screen corner, window
 classification heuristics (which windows tile, which float) and the focus sequence
-(main attribute, raise, activate). The code is a rewrite around an event-driven cache.
+(main attribute, raise, activate). wm.toml uses AeroSpace's config format, and its
+template is AeroSpace's `default-config.toml`, commented out. The code is a rewrite around
+an event-driven cache.
 
 ## TOMLDecoder — MIT License, Copyright (c) Daniel Duan
 https://github.com/dduan/TOMLDecoder

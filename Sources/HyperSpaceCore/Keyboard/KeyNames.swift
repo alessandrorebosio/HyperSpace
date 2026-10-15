@@ -65,6 +65,15 @@ public enum KeyNames {
         add(["arrow.down"], 125, 0x51, fn: true)
         add(["arrow.up"], 126, 0x52, fn: true)
         add(["keypad.enter"], 76, 0x58)
+        let keypadDigits: [UInt16] = [82, 83, 84, 85, 86, 87, 88, 89, 91, 92] // 0...9
+        for (i, code) in keypadDigits.enumerated() { add(["keypad.\(i)"], code, i == 0 ? 0x62 : 0x58 + UInt32(i)) }
+        add(["keypad.decimal"], 65, 0x63)
+        add(["keypad.multiply"], 67, 0x55)
+        add(["keypad.plus"], 69, 0x57)
+        add(["keypad.clear"], 71, 0x53)
+        add(["keypad.divide"], 75, 0x54)
+        add(["keypad.minus"], 78, 0x56)
+        add(["keypad.equal"], 81, 0x67)
 
         add(["control.left"], 59, 0xE0)
         add(["shift.left"], 56, 0xE1)

@@ -304,17 +304,32 @@ speed = 0.6
 swipe = ["com.example."]
 buttons = ["com.apple.Xcode"]
 
-# ── wm.toml (not implemented yet) ────────────────────────
-enabled = true
-gaps = { inner = 8, outer = 8 }
+# ── wm.toml ──────────────────────────────────────────────
+# AeroSpace's format, key for key: an ~/.aerospace.toml works unchanged.
+# Supported: config-version, after-startup-command, start-at-login, auto-reload-config,
+# normalizations, accordion-padding, default-root-container-*, on-focus-changed,
+# on-focused-monitor-changed, on-mode-changed, exec-on-workspace-change, exec.*,
+# automatically-unhide-macos-hidden-apps, persistent-workspaces, focus-follows-mouse,
+# key-mapping (presets and notation), gaps (per side, per monitor),
+# workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected
+# (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except
+# subscribe, config and debug-windows; shell syntax ; && || ( ) without pipes.
+config-version = 2
+persistent-workspaces = ['1', '2', 'Develop']
+gaps.inner.horizontal = 5
+gaps.outer.top = [{ monitor.main = 16 }, 24]
 
-[bindings]
-"alt-h" = "focus left"
-"alt-1" = "workspace 1"
+[mode.main.binding]
+    ctrl-alt-shift-h = 'focus left'
+    ctrl-alt-shift-cmd-1 = 'move-node-to-workspace 1'
+    ctrl-alt-shift-period = 'mode service'
 
-[[rule]]
-app = "com.apple.finder"
-layout = "floating"
+[mode.service.binding]
+    esc = ['reload-config', 'mode main']
+
+[[on-window-detected]]
+    if.app-id = 'com.microsoft.VSCode'
+    run = ['move-node-to-workspace Develop']
 ```
 
 ---

@@ -15,16 +15,11 @@ usage: hsctl <command>
   apps          list running apps with their bundle id (for per-app rules)
   version       print HyperSpace's version
 
-window manager (same commands as AeroSpace):
-  list-workspaces                     workspaces and their windows (* focused, + visible)
-  list-windows                        windows, their workspace and state (* focused)
-  focus|move|join-with left|right|up|down
-  workspace <name>|next|prev          workspace-back-and-forth
-  move-node-to-workspace <name>|next|prev [--focus-follows-window]
-  layout tiles|accordion|horizontal|vertical|h_tiles|v_tiles|h_accordion|v_accordion|tiling|floating
-  resize smart|width|height [+|-]<n>  balance-sizes  flatten-workspace-tree
-  fullscreen [on|off]                 close
-  focus-monitor|move-node-to-monitor|move-workspace-to-monitor left|right|up|down|next|prev
+window manager: every AeroSpace command, as with the `aerospace` CLI
+(https://nikitabobko.github.io/AeroSpace/commands), e.g.
+  workspace 2 | move-node-to-workspace Develop | focus left | layout tiles accordion
+  list-windows --all --format '%{window-id} | %{app-name} | %{workspace}'
+  list-workspaces --all | list-monitors | list-modes | list-apps
 """
 
 if args.isEmpty || args == ["-h"] || args == ["--help"] {

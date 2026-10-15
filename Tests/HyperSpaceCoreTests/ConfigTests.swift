@@ -85,22 +85,80 @@ struct ConfigTests {
         #expect(mouse.scroll == ScrollConfig(reverse: .vertical, linear: true, lines: 3))
     }
 
-    @Test func wmFileDecodes() throws {
+    @Test func wmFileDecodesAeroSpaceFormat() throws {
         let wm = try ConfigLoader.parse(WMConfig.self, """
-        enabled = true
-        gaps = { inner = 8, outer = 4 }
+        config-version = 2
+        after-startup-command = []
+        start-at-login = true
+        auto-reload-config = false
+        enable-normalization-flatten-containers = true
+        enable-normalization-opposite-orientation-for-nested-containers = true
+        accordion-padding = 5
+        default-root-container-layout = 'tiles'
+        default-root-container-orientation = 'auto'
+        on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
+        automatically-unhide-macos-hidden-apps = false
+        persistent-workspaces = ['1', '2', 'Develop']
+        on-mode-changed = []
+        focus-follows-mouse.enabled = false
+        key-mapping.preset = 'qwerty'
+        gaps.inner.horizontal = 5
+        gaps.inner.vertical =   5
+        gaps.outer.left =       5
+        gaps.outer.bottom =     5
+        gaps.outer.top =        [{ monitor.main = 16 }, 24]
+        gaps.outer.right =      5
 
-        [bindings]
-        "alt-h" = "focus left"
+        [workspace-to-monitor-force-assignment]
+            1 = '^built-in retina display$'
+            2 = ['secondary', 'dell']
 
-        [[rule]]
-        app = "com.apple.finder"
-        layout = "floating"
+        [mode.main.binding]
+            ctrl-alt-shift-h = 'focus left'
+            ctrl-alt-shift-1 = 'workspace 1'
+            ctrl-alt-shift-period = 'mode service'
+
+        [mode.service.binding]
+            esc = ['reload-config', 'mode main']
+
+        [[on-window-detected]]
+            if.app-id = 'com.apple.Terminal'
+            run = ['move-node-to-workspace Shell']
+
+        [[on-window-detected]]
+            if = 'test %{app-bundle-id} = com.spotify.client'
+            check-further-callbacks = true
+            run = 'move-node-to-workspace Music'
         """).get()
-        #expect(wm.enabled)
-        #expect(wm.gaps == Gaps(inner: 8, outer: 4))
-        #expect(wm.bindings["alt-h"] == ["focus left"])
-        #expect(wm.rule == [WMRule(app: "com.apple.finder", layout: "floating", workspace: nil)])
+        #expect(!wm.isEmpty)
+        #expect(wm.accordionPadding == 5)
+        #expect(wm.autoReloadConfig == false)
+        #expect(wm.persistentWorkspaces == ["1", "2", "Develop"])
+        #expect(wm.gaps.outerTop.fallback == 24)
+        #expect(wm.gaps.outerTop.perMonitor.first?.pattern == "main")
+        #expect(wm.workspaceToMonitorForceAssignment["2"] == ["secondary", "dell"])
+        #expect(wm.modes["service"]?["esc"] == ["reload-config", "mode main"])
+        #expect(wm.onWindowDetected.count == 2)
+        #expect(wm.onWindowDetected[1].checkFurtherCallbacks)
+
+        let settings = try WMSettings(wm)
+        #expect(settings.persistentWorkspaces == ["1", "2", "Develop"])
+        #expect(settings.hotkeys["main"]?[Hotkeys.index(code: 4, modifiers: [.control, .option, .shift])] == .wm("focus left"))
+        #expect(settings.hotkeys["service"]?[Hotkeys.index(code: 53, modifiers: [])] == .sequence([.wm("reload-config"), .wm("mode main")]))
+    }
+
+    @Test func emptyWMFileMeansOff() throws {
+        #expect(try ConfigLoader.parse(WMConfig.self, "# only comments").get().isEmpty)
+    }
+
+    @Test func wmFileErrors() {
+        #expect(error(WMConfig.self, "gaps = 3") == "gaps: expected a table")
+        #expect(error(WMConfig.self, "[mode.main.binding]\nalt-h = 'focus sideways'")?.contains("focus") == true)
+        #expect(error(WMConfig.self, "[mode.main.binding]\nalt-h = 'mode nowhere'")?.contains("no [mode.nowhere.binding]") == true)
+        #expect(error(WMConfig.self, "[mode.main.binding]\nsuper-h = 'focus left'")?.contains("unknown modifier") == true)
+        #expect(error(WMConfig.self, "persistent-workspaces = ['1']")?.contains("config-version = 2") == true)
+        #expect(error(WMConfig.self, "[[on-window-detected]]\nrun = 'layout floating'")?.contains("omitting 'if'") == true)
+        #expect(error(WMConfig.self, "default-root-container-layout = 'grid'")?.contains("tiles or accordion") == true)
     }
 
     @Test func capsLockDefaults() throws {
@@ -117,8 +175,7 @@ struct ConfigTests {
 
     @Test func wrongTypeIsReportedWithItsPath() {
         // TOMLDecoder reports the line; our own messages add the key path.
-        #expect(error(WMConfig.self, "enabled = \"yes\"") == "(Line 1) Invalid boolean value for key 'enabled'.")
-        #expect(error(WMConfig.self, "gaps = 3") == "gaps: expected a table")
+        #expect(error(WMConfig.self, "auto-reload-config = \"yes\"")?.contains("auto-reload-config") == true)
     }
 
     @Test func perAppTablesUseTheirFileNames() {

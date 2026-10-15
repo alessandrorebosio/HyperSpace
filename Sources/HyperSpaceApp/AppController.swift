@@ -41,9 +41,10 @@ final class AppController: NSObject, NSApplicationDelegate {
             if let error = self?.wm.run(command) { self?.log.error("wm: \(error)") }
         }
         wm = WindowManager(handlers: .init(
-            exec: { [weak self] shell in _ = self?.input.run(.shell(shell)) },
             reloadConfig: { [weak self] in self?.reloadConfig() },
             enable: { [weak self] on in self?.setEnabled(on ?? !(self?.isEnabled ?? true)) },
+            modeChanged: { [weak self] mode in self?.input.setMode(mode) },
+            mediaKey: { [weak self] key in _ = self?.input.run(.system(key)) },
             changed: { [weak self] in self?.menu?.refresh() }
         ))
         terminateOnSignals()
@@ -51,7 +52,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         reloadConfig()
 
         let files = ConfigFile.allCases.map { ConfigLoader.url($0, in: configDirectory) }
-        watcher = ConfigWatcher(directory: configDirectory, files: files) { [weak self] in self?.reloadConfig() }
+        watcher = ConfigWatcher(directory: configDirectory, files: files) { [weak self] in self?.reloadConfig(automatic: true) }
         watcher?.start()
 
         let server = IPCServer { [weak self] request in
@@ -94,12 +95,19 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Applies the config to the input layers and the window manager, or undoes everything
     /// while HyperSpace is disabled.
     private func applyInput() {
-        input.apply(isEnabled ? plan : InputPlan(), accessibilityGranted: accessibility.isGranted)
-        if isEnabled, config.wm.enabled, accessibility.isGranted, let settings = try? WMSettings(config.wm) {
+        let settings = config.wm.isEmpty ? nil : try? WMSettings(config.wm)
+        let runWM = isEnabled && accessibility.isGranted && settings != nil
+        if runWM, let settings {
             wm.start(settings)
+            if let login = settings.startAtLogin, login != LoginItem.isEnabled, LoginItem.isAvailable { LoginItem.toggle() }
         } else {
             wm.stop()
         }
+        var trackMouse: (@MainActor @Sendable (CGPoint) -> Void)?
+        if runWM, settings?.focusFollowsMouse == true {
+            trackMouse = { [weak self] point in self?.wm.mouseMoved(to: point) }
+        }
+        input.apply(isEnabled ? plan : InputPlan(), accessibilityGranted: accessibility.isGranted, trackMouse: trackMouse)
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -115,8 +123,14 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Reloads every config file; broken files keep their last good settings.
     @discardableResult
-    func reloadConfig() -> [ConfigError] {
-        let (new, errors) = ConfigLoader.load(from: configDirectory, previous: config)
+    /// - Parameter automatic: a save in the editor, as opposed to `reload-config` or the menu.
+    ///   wm.toml's `auto-reload-config = false` keeps its last loaded settings on saves.
+    func reloadConfig(automatic: Bool = false) -> [ConfigError] {
+        var (new, errors) = ConfigLoader.load(from: configDirectory, previous: config)
+        if automatic, !config.wm.isEmpty, !config.wm.autoReloadConfig {
+            new.wm = config.wm
+            errors.removeAll { $0.path.hasSuffix(ConfigFile.wm.fileName) }
+        }
         configErrors = errors
         for error in errors { log.error("config error: \(error.description)") }
         config = new
@@ -164,10 +178,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             } catch {
                 return .error("hyperspace: \(error.message)")
             }
-        case ["list-workspaces"]:
-            return .ok(wm.summary)
-        case ["list-windows"]:
-            return .ok(wm.windowList)
         case ["config-path"]:
             return .ok(configDirectory.path)
         case ["version"]:
@@ -181,14 +191,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             let width = apps.map(\.0.count).max() ?? 0
             return .ok(apps.map { $0.0.padding(toLength: width + 2, withPad: " ", startingAt: 0) + $0.1 }.joined(separator: "\n"))
         default:
-            // Anything else is a window manager command, as in AeroSpace: `hsctl workspace 2`.
-            let command = request.args.joined(separator: " ")
-            do {
-                _ = try WMCommand(parsing: command)
-            } catch {
-                return .error("hyperspace: \(error.message). Run `hsctl --help`.")
-            }
-            return wm.run(command).map { .error("hyperspace: \($0)") } ?? .ok("")
+            // Anything else is a window manager command, as with AeroSpace's CLI:
+            // `hsctl workspace 2`, `hsctl list-windows --all --format '%{app-name}'`.
+            let result = wm.run(words: request.args)
+            if let error = result.error { return .error("hyperspace: \(error). Run `hsctl --help`.") }
+            return result.ok ? .ok(result.output) : IPC.Response(exitCode: 1, stdout: result.output, stderr: "")
         }
     }
 
