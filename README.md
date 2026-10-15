@@ -33,6 +33,8 @@ last good settings.
 
 ```sh
 hsctl status        # permissions and config state
+hsctl disable       # undo every remap, HyperSpace stays open (also from the menu)
+hsctl enable        # turn it back on; `hsctl toggle` switches
 hsctl reload        # reload the config
 hsctl config-path
 hsctl apps          # running apps and their bundle ids, for per-app rules

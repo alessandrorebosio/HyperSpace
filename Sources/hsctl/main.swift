@@ -6,6 +6,9 @@ let args = Array(CommandLine.arguments.dropFirst())
 let usage = """
 usage: hsctl <command>
   status        show permissions and config state
+  enable        turn remapping on
+  disable       turn remapping off (HyperSpace stays open)
+  toggle        switch between enabled and disabled
   reload        reload the config file
   config-path   print the config directory (keyboard.toml, mouse.toml, wm.toml)
   apps          list running apps with their bundle id (for per-app rules)

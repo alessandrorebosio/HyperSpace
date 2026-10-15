@@ -16,6 +16,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// One per broken file; those files keep their last good settings.
     private(set) var configErrors: [ConfigError] = []
     private(set) var input: InputService!
+    /// Off = every remap is undone (keyboards restored, event tap stopped) while the app stays
+    /// open, so it can be turned back on from the menu or `hsctl enable`. Remembered across launches.
+    private(set) var isEnabled = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true
     private var signalSources: [any DispatchSourceSignal] = []
 
     private var watcher: ConfigWatcher?
@@ -79,7 +82,16 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func applyInput() {
-        input.apply(plan, accessibilityGranted: accessibility.isGranted)
+        input.apply(isEnabled ? plan : InputPlan(), accessibilityGranted: accessibility.isGranted)
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        guard enabled != isEnabled else { return }
+        isEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "enabled")
+        applyInput()
+        log.info("HyperSpace \(enabled ? "enabled" : "disabled")")
+        menu?.refresh()
     }
 
     // MARK: - Config
@@ -122,6 +134,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         case ["status"]:
             accessibility.refresh()
             return .ok(statusText)
+        case ["enable"], ["disable"]:
+            setEnabled(request.args == ["enable"])
+            return .ok("HyperSpace \(isEnabled ? "enabled" : "disabled")")
+        case ["toggle"]:
+            setEnabled(!isEnabled)
+            return .ok("HyperSpace \(isEnabled ? "enabled" : "disabled")")
         case ["config-path"]:
             return .ok(configDirectory.path)
         case ["version"]:
@@ -142,6 +160,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     var statusText: String {
         """
         version        \(HyperSpace.version)
+        state          \(isEnabled ? "enabled" : "disabled")
         accessibility  \(accessibility.isGranted ? "granted" : "missing")
         config         \(configDirectory.path)
         config state   \(configErrors.isEmpty ? "ok" : configErrors.map { "error in \(($0.path as NSString).lastPathComponent): \($0.message)" }.joined(separator: "\n               "))
