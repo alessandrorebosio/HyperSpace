@@ -166,6 +166,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         case ["list-workspaces"]:
             return .ok(wm.summary)
+        case ["list-windows"]:
+            return .ok(wm.windowList)
         case ["config-path"]:
             return .ok(configDirectory.path)
         case ["version"]:

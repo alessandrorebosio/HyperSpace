@@ -177,6 +177,9 @@ public final class WMModel {
     /// Runs a command. Returns what else the service must do; errors are user mistakes
     /// worth reporting (`hsctl`), not failures.
     public func run(_ command: WMCommand) throws(InvalidConfig) -> WMEffect {
+        // macOS didn't report a focused window we manage (some apps don't answer, or the
+        // focus is on a panel): act on the workspace's most recent window, as AeroSpace does.
+        if focused.map({ !focusedWorkspace.windows.contains($0) }) ?? true { focusRecent(in: focusedWorkspace) }
         switch command {
         case let .focus(direction):
             guard let node = focusedNode, let target = neighbor(of: node, direction) else { return .none }
