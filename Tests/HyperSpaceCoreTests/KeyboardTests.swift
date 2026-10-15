@@ -43,7 +43,7 @@ struct KeyboardPlanTests {
         ])
         #expect(p.map[122] == .key(Combo(parsing: "cmd-space")!))
         #expect(p.map[120] == .system(.navigateBack))
-        #expect(p.layer == nil)
+        #expect(p.layers.isEmpty)
         #expect(p.needsEventTap)
     }
 
@@ -75,19 +75,19 @@ struct KeyboardPlanTests {
         map = { h = "home", j = "passthrough" }
         """)
         #expect(p.hid == [HIDMapping(from: 0x39, to: 0x6D, device: nil)])
-        let layer = try #require(p.layer)
+        let layer = try #require(p.capsLock)
         #expect(layer.alone == .key(Combo(parsing: "escape")!))
         #expect(layer.base[4] == .key(Combo(parsing: "arrow.left")!))
         #expect(layer.base[12] == .drop)
         #expect(layer.base[7] == nil)
         let plan = InputPlan(keyboard: p)
-        #expect(plan.tables(forApp: "com.example.app").layerMap[4] == .key(Combo(parsing: "home")!))
-        #expect(plan.tables(forApp: "com.other").layerMap[4] == .key(Combo(parsing: "arrow.left")!))
+        #expect(plan.tables(forApp: "com.example.app").layerMaps[0][4] == .key(Combo(parsing: "home")!))
+        #expect(plan.tables(forApp: "com.other").layerMaps[0][4] == .key(Combo(parsing: "arrow.left")!))
     }
 
     @Test func invalidKeysAreConfigErrors() {
         #expect(error("[capslock.map]\nhh = \"arrow.left\"") == "capslock.map.hh: unknown key 'hh'")
-        #expect(error("[capslock.map]\nh = \"cmd-lefty\"") == "capslock.map.h: unknown key or combo 'cmd-lefty'")
+        #expect(error("[capslock.map]\nh = \"cmd-lefty\"") == "capslock.map.h: unknown key, combo or action 'cmd-lefty'")
         #expect(error("[map]\n\"shift.left\" = \"cmd-a\"")?.contains("modifier key can only become another key") == true)
         #expect(error("[map]\ncapslock = \"escape\"\n[capslock]")?.contains("already configured") == true)
         #expect(error("[[device]]\nmap = { a = \"cmd-b\" }")?.contains("unknown key 'cmd-b'") == true)
@@ -99,7 +99,7 @@ struct KeyboardPlanTests {
 
 struct KeyEngineTests {
     let h: UInt16 = 4, j: UInt16 = 38, q: UInt16 = 12, t: UInt16 = 17, f1: UInt16 = 122
-    let trigger = Layer.trigger.code
+    let trigger = Layer.capsLockTrigger
     let ms: UInt64 = 1_000_000
 
     var tables: ActiveTables {
@@ -189,8 +189,8 @@ struct KeyEngineTests {
 
     @Test func capsLockLED() throws {
         let plan = { (toml: String) in try KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, toml).get()) }
-        #expect(try plan("[capslock]").layer?.led == CapsLockLED.off)
-        #expect(try plan("[capslock]\nled = \"held\"").layer?.led == CapsLockLED.held)
+        #expect(try plan("[capslock]").capsLock?.led == CapsLockLED.off)
+        #expect(try plan("[capslock]\nled = \"held\"").capsLock?.led == CapsLockLED.held)
     }
 
     @Test func holdModifierNames() {

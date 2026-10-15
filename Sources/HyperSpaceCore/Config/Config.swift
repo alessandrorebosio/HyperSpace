@@ -1,4 +1,5 @@
-/// The whole config: keyboard.toml, mouse.toml and wm.toml. A missing file means "feature off".
+/// The whole config: keyboard.toml, mouse.toml and wm.toml, as written by the user.
+/// A missing file means "feature off". Plans (`KeyboardPlan`, `MousePlan`) validate and compile it.
 public struct Config: Sendable, Equatable {
     public var keyboard = KeyboardConfig()
     public var mouse = MouseConfig()
@@ -7,31 +8,41 @@ public struct Config: Sendable, Equatable {
     public init() {}
 }
 
-// MARK: - Keyboard
+// MARK: - Keyboard (keyboard.toml)
 
 public struct KeyboardConfig: Sendable, Equatable {
-    /// Key -> action, always active. Key -> key is applied at HID level when possible (L0).
+    /// `[map]`: key -> action, always active. Key -> key is applied at HID level when possible.
     public var map: [String: Action] = [:]
+    /// `[[app]]`: `[map]` overrides while one app is in front.
     public var app: [AppMap] = []
-    /// Key -> key remaps for one keyboard only.
+    /// `[[device]]`: key -> key remaps for one keyboard only.
     public var device: [DeviceMap] = []
-    /// Caps Lock layer. `nil` means Caps Lock is left alone.
-    public var capslock: CapsLockConfig?
+    /// `[capslock]`: the Caps Lock layer. `nil` leaves Caps Lock alone.
+    public var capslock: LayerConfig?
+    /// `[layer.<key>]`: any other key as a layer or dual-role key.
+    public var layer: [String: LayerConfig] = [:]
+    /// `[double]`: key -> action on a double tap. Modifier keys work too.
+    public var double: [String: Action] = [:]
+    /// Maximum time between the two taps of a double tap.
+    public var doubleTapMs = 300
 
     public init() {}
 }
 
-/// Once configured, Caps Lock no longer toggles caps lock: it only does what is mapped here.
-public struct CapsLockConfig: Sendable, Equatable {
-    /// Action when Caps Lock is tapped alone.
+/// A key that does one thing when tapped alone and another while held: `alone` on a tap,
+/// `hold` modifiers or `map` actions for keys pressed meanwhile. Caps Lock's `[capslock]`
+/// and every `[layer.<key>]` share this shape.
+public struct LayerConfig: Sendable, Equatable {
+    /// Action when the key is tapped alone.
     public var alone: Action = .none
-    /// Modifiers added to every unmapped key while Caps Lock is held, e.g. `"shift-ctrl-opt"`,
-    /// `"meh"` (⇧⌃⌥) or `"hyper"` (⇧⌃⌥⌘).
+    /// Modifiers added to every unmapped key while held, e.g. `"shift-ctrl-opt"`, `"meh"`
+    /// (⇧⌃⌥) or `"hyper"` (⇧⌃⌥⌘). A layer with only `alone` and `hold` is a dual-role key.
     public var hold: String?
-    /// Caps Lock LED: "off" (always off, default) or "held" (on while Caps Lock is held).
+    /// Caps Lock only. LED: "off" (always off, default) or "held" (on while Caps Lock is held).
     public var led: String?
+    /// Held longer than this, the key is no longer a tap: `alone` doesn't fire.
     public var tapTimeoutMs = 200
-    /// Caps + key. Keys not listed keep their normal behavior.
+    /// Layer key + key -> action. Keys not listed keep their normal behavior (plus `hold`).
     public var map: [String: Action] = [:]
     public var app: [AppMap] = []
 
@@ -44,9 +55,18 @@ public struct AppMap: Sendable, Equatable {
     public var map: [String: Action]
 }
 
+/// Selects devices by any combination of fields; a missing field matches everything.
 public struct DeviceMatch: Sendable, Equatable {
+    /// Case-insensitive substring of the product name, e.g. "lift".
+    public var name: String?
     public var vendor: Int?
     public var product: Int?
+
+    public init(name: String? = nil, vendor: Int? = nil, product: Int? = nil) {
+        self.name = name
+        self.vendor = vendor
+        self.product = product
+    }
 }
 
 public struct DeviceMap: Sendable, Equatable {
@@ -55,24 +75,74 @@ public struct DeviceMap: Sendable, Equatable {
     public var map: [String: String]
 }
 
-// MARK: - Mouse
+// MARK: - Mouse (mouse.toml)
 
 public struct MouseConfig: Sendable, Equatable {
-    /// Button name (e.g. `button3`, `back`) -> action, for every mouse.
+    /// `[buttons]`: button name (e.g. `button3`, `back`, `dpi`) -> action, for every mouse.
     public var buttons: [String: Action] = [:]
-    /// Per-app overrides; `map` holds button names.
+    /// `[[app]]`: per-app overrides; `map` holds button names.
     public var app: [AppMap] = []
-    /// Wheel scrolling (notched mice). Trackpads and smooth-scrolling mice are never touched.
+    /// `[hold.<button>]`: what the wheel and mouse movement do while a button is held.
+    public var hold: [String: HoldConfig] = [:]
+    /// `[scroll]`: wheel scrolling (notched mice). Trackpads are never touched.
     public var scroll: ScrollConfig?
+    /// `[pointer]`: speed and acceleration for every mouse.
+    public var pointer = PointerConfig()
+    /// `[[device]]`: pointer settings for some mice only; they win over `[pointer]`.
+    public var device: [PointerDevice] = []
+    /// `[navigate]`: how navigate.back/.forward reach each app.
     public var navigate = NavigateConfig()
 
     public init() {}
 }
 
+/// `[hold.<button>]`: `scroll.up/.down/.left/.right` (per wheel notch) and
+/// `move.left/.right/.up/.down` (a mouse gesture) -> action, while the button is held.
+public struct HoldConfig: Sendable, Equatable {
+    public var map: [String: Action] = [:]
+    /// How far the mouse must move, in points, for a `move.*` gesture.
+    public var distance = 60
+}
+
 public struct ScrollConfig: Sendable, Equatable {
-    public var reverse = false
+    public var reverse = ScrollAxes.none
+    /// Same distance per notch, no acceleration.
     public var linear = false
+    /// Lines per notch when linear or smooth (1-20, default 3).
     public var lines: Int?
+    /// The notched wheel scrolls smoothly, like a trackpad.
+    public var smooth = false
+    /// Modifiers that make scrolling faster while held, e.g. "opt".
+    public var fast: String?
+    /// Speed multiplier while `fast` is held.
+    public var fastFactor = 3.0
+}
+
+public enum ScrollAxes: String, Sendable, Equatable {
+    case none, both, vertical, horizontal
+}
+
+public struct PointerConfig: Sendable, Equatable {
+    /// 0...1, slow to fast. `nil` keeps the macOS setting.
+    public var speed: Double?
+    /// `false` turns acceleration off (linear pointer), a number 0...20 sets the curve,
+    /// `nil` keeps the macOS setting.
+    public var acceleration: PointerAcceleration?
+
+    public init(speed: Double? = nil, acceleration: PointerAcceleration? = nil) {
+        self.speed = speed
+        self.acceleration = acceleration
+    }
+}
+
+public enum PointerAcceleration: Sendable, Equatable {
+    case off
+    case curve(Double)
+}
+
+public struct PointerDevice: Sendable, Equatable {
+    public var match: DeviceMatch
+    public var pointer: PointerConfig
 }
 
 /// How `navigate.back`/`navigate.forward` reach each app (bundle id prefixes).
@@ -83,7 +153,7 @@ public struct NavigateConfig: Sendable, Equatable {
     public var buttons: [String] = []
 }
 
-// MARK: - Window manager
+// MARK: - Window manager (wm.toml, not implemented yet)
 
 public struct WMConfig: Sendable, Equatable {
     public var enabled = false
@@ -107,20 +177,26 @@ public struct WMRule: Sendable, Equatable {
 }
 
 // MARK: - Decoding
+// Every table rejects unknown keys, so a typo is an error instead of a silent no-op.
 
 extension KeyboardConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case map, app, device, capslock }
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case map, app, device, capslock, layer, double, doubleTapMs = "double_tap_ms"
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
         map = try c.decode(.map, default: [:])
         app = try c.decode(.app, default: [])
         device = try c.decode(.device, default: [])
-        capslock = try c.decodeIfPresent(CapsLockConfig.self, forKey: .capslock)
+        capslock = try c.decodeIfPresent(LayerConfig.self, forKey: .capslock)
+        layer = try c.decode(.layer, default: [:])
+        double = try c.decode(.double, default: [:])
+        doubleTapMs = try c.decode(.doubleTapMs, default: 300)
     }
 }
 
-extension CapsLockConfig: Decodable {
+extension LayerConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable {
         case alone, hold, led, tapTimeoutMs = "tap_timeout_ms", map, app
     }
@@ -158,36 +234,106 @@ private struct AppButtons: Decodable {
 }
 
 extension DeviceMap: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case vendor, product, map }
+    enum CodingKeys: String, CodingKey, CaseIterable { case name, vendor, product, map }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
-        match = DeviceMatch(vendor: try c.decodeIfPresent(Int.self, forKey: .vendor),
-                            product: try c.decodeIfPresent(Int.self, forKey: .product))
+        match = try DeviceMatch(c)
         map = try c.decode(.map, default: [:])
     }
 }
 
+extension DeviceMatch {
+    /// Reads `name`, `vendor` and `product` from a table that has them.
+    init<K: CodingKey & CaseIterable>(_ c: KeyedDecodingContainer<K>) throws {
+        func key(_ name: String) -> K { K.allCases.first { $0.stringValue == name }! }
+        name = try c.decodeIfPresent(String.self, forKey: key("name"))
+        vendor = try c.decodeIfPresent(Int.self, forKey: key("vendor"))
+        product = try c.decodeIfPresent(Int.self, forKey: key("product"))
+    }
+}
+
 extension MouseConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, scroll, navigate }
+    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, hold, scroll, pointer, device, navigate }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
         buttons = try c.decode(.buttons, default: [:])
         app = try c.decode(.app, default: [AppButtons]()).map(\.app)
+        hold = try c.decode(.hold, default: [:])
         scroll = try c.decodeIfPresent(ScrollConfig.self, forKey: .scroll)
+        pointer = try c.decode(.pointer, default: PointerConfig())
+        device = try c.decode(.device, default: [])
         navigate = try c.decode(.navigate, default: NavigateConfig())
     }
 }
 
+extension HoldConfig: Decodable {
+    /// Keys are input names plus `distance`; names are checked by `MousePlan`.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.anyTable()
+        for key in c.allKeys {
+            if key.stringValue == "distance" {
+                distance = try c.decode(Int.self, forKey: key)
+            } else {
+                map[key.stringValue] = try c.decode(Action.self, forKey: key)
+            }
+        }
+    }
+}
+
 extension ScrollConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case reverse, linear, lines }
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case reverse, linear, lines, smooth, fast, fastFactor = "fast_factor"
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
-        reverse = try c.decode(.reverse, default: false)
+        // `reverse = true` means both axes; a string picks one.
+        if let both = try? c.decodeIfPresent(Bool.self, forKey: .reverse) {
+            reverse = both ? .both : .none
+        } else if let axes = try c.decodeIfPresent(String.self, forKey: .reverse) {
+            guard let parsed = ScrollAxes(rawValue: axes) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.reverse],
+                                                        debugDescription: "use true, false, \"vertical\" or \"horizontal\""))
+            }
+            reverse = parsed
+        }
         linear = try c.decode(.linear, default: false)
         lines = try c.decodeIfPresent(Int.self, forKey: .lines)
+        smooth = try c.decode(.smooth, default: false)
+        fast = try c.decodeIfPresent(String.self, forKey: .fast)
+        fastFactor = try c.decodeNumber(.fastFactor) ?? 3
+    }
+}
+
+extension PointerConfig: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case speed, acceleration }
+
+    public init(from decoder: any Decoder) throws {
+        self = try PointerConfig(try decoder.table(CodingKeys.self))
+    }
+
+    /// Reads `speed` and `acceleration` from a table that has them.
+    init<K: CodingKey & CaseIterable>(_ c: KeyedDecodingContainer<K>) throws {
+        func key(_ name: String) -> K { K.allCases.first { $0.stringValue == name }! }
+        speed = try c.decodeNumber(key("speed"))
+        // `acceleration = false` is off, `true` keeps the macOS curve, a number sets it.
+        if let on = try? c.decodeIfPresent(Bool.self, forKey: key("acceleration")) {
+            acceleration = on ? nil : .off
+        } else {
+            acceleration = try c.decodeNumber(key("acceleration")).map(PointerAcceleration.curve)
+        }
+    }
+}
+
+extension PointerDevice: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case name, vendor, product, speed, acceleration }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        match = try DeviceMatch(c)
+        pointer = try PointerConfig(c)
     }
 }
 

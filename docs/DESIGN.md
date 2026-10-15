@@ -240,6 +240,19 @@ t = { shell = "open -a Terminal" }
 bundle_id = "com.microsoft.VSCode"
 map = { d = "cmd-shift-k" }
 
+# Any other key as a layer or dual-role key. Typing keys decide tap vs hold when the
+# next key is released ("permissive hold"), so fast typing isn't affected.
+[layer.space]
+alone = "space"
+map = { j = "arrow.down", k = "arrow.up" }
+
+[layer.return]               # Return tapped, Control held
+alone = "return"
+hold = "ctrl"
+
+[double]                     # double taps; modifiers work too (watched via flagsChanged)
+"shift.left" = "cmd-space"
+
 # ── mouse.toml ───────────────────────────────────────────
 [buttons]                    # button1...button31, middle, back, forward
 back = "navigate.back"
@@ -248,14 +261,34 @@ middle = "media.play"        # named actions: volume.*, brightness.*, media.*, m
 button5 = "mission.control"  #   window.*, click.*, scroll.*, lookup, zoom.smart (list in mouse.toml)
 button6 = { scroll = "down", lines = 5 }
 
+dpi = "mission.control"      # Logitech controls over HID++ (dpi, gesture, cid.0x....)
+button7 = { action = "volume.up", repeat = true }   # repeat while held
+button8 = { action = "click.left", hold = true }    # held down while held: drags
+button9 = { app = "Safari" } # also text, sequence, shell, scroll
+
 [[app]]
 bundle_id = "com.google.Chrome"
 buttons = { back = "passthrough", forward = "passthrough" }
 
+[hold.back]                  # while back is held: wheel and gestures; tapped, it's back
+"scroll.up" = "volume.up"
+"move.left" = "space.left"
+distance = 60
+
 [scroll]                     # notched wheels only
-reverse = true
-linear = true
+smooth = true                # synthesized trackpad-like glide
+reverse = "vertical"         # true, "vertical" or "horizontal"
 lines = 3
+fast = "opt"
+fast_factor = 3
+
+[pointer]                    # HID properties, no permission; trackpads untouched
+speed = 0.5
+acceleration = false
+
+[[device]]                   # per-device pointer settings
+name = "lift"
+speed = 0.6
 
 # How navigate.back/.forward reach an app (bundle id prefixes), on top of the built-in
 # list (Apple apps, Firefox, Opera, ForkLift get a swipe; others get buttons 4/5).

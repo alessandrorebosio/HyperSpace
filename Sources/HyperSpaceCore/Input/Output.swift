@@ -1,5 +1,6 @@
-/// What a remapped key or mouse button produces.
-public enum Output: Sendable, Equatable {
+/// What a remapped key or mouse input produces: an `Action` after validation. The event tap
+/// looks outputs up in `OutputTable`s and performs them without any parsing.
+public indirect enum Output: Sendable, Equatable {
     /// Swallow the input.
     case drop
     /// A key code with modifiers. Key names refer to physical positions (US layout).
@@ -7,14 +8,36 @@ public enum Output: Sendable, Equatable {
     /// A named system action: navigation, media keys, Mission Control, clicks...
     case system(SystemAction)
     case scroll(ScrollStep)
+    /// Typed as Unicode text, independent of the keyboard layout.
+    case text(String)
+    case sequence([Output])
     case shell(String)
     case wm(String)
+    /// Open or focus an app by name or bundle id.
+    case app(String)
+    /// Performed on press, then again at the key repeat rate until release.
+    case repeating(Output)
+    /// Pressed on press, released on release: keys and clicks only.
+    case held(Output)
 }
 
 extension Output {
     /// An action as written in the config, e.g. `volume.up`, `cmd-space`, `scroll.down`.
     public init(parsing text: String) throws(InvalidConfig) {
         self = try Compile.output(.keys(text), path: text) ?? .drop
+    }
+
+    /// The action a click output sends, as a CoreGraphics button number.
+    public var clickButton: Int? {
+        guard case let .system(action) = self else { return nil }
+        return switch action {
+        case .clickLeft: 0
+        case .clickRight: 1
+        case .clickMiddle: 2
+        case .clickBack: 3
+        case .clickForward: 4
+        default: nil
+        }
     }
 }
 
@@ -92,11 +115,14 @@ public struct NavigationRules: Sendable, Equatable {
 }
 
 /// Lookup table indexed by key code or button number. `nil` = not remapped: normal behavior.
+/// A fixed array, so lookups on the input thread never hash or allocate.
 public struct OutputTable: Sendable, Equatable {
     private var outputs: [Output?]
 
+    /// Indexed by macOS virtual key code.
     public static var keys: OutputTable { OutputTable(count: 128) }
-    public static var buttons: OutputTable { OutputTable(count: 32) }
+    /// Indexed by `MouseButtons` index: CoreGraphics buttons, then Logitech controls.
+    public static var buttons: OutputTable { OutputTable(count: MouseButtons.count) }
 
     private init(count: Int) {
         outputs = [Output?](repeating: nil, count: count)
@@ -128,9 +154,16 @@ enum Compile {
 
     static func combo(_ text: String, path: String) throws(InvalidConfig) -> Combo {
         guard let combo = Combo(parsing: text) else {
-            throw InvalidConfig(message: "\(path): unknown key or combo '\(text)'\(text.contains("_") ? dotsHint : "")")
+            throw InvalidConfig(message: "\(path): unknown key, combo or action '\(text)'\(text.contains("_") ? dotsHint : "")")
         }
         return combo
+    }
+
+    static func modifiers(_ text: String, path: String) throws(InvalidConfig) -> Modifiers {
+        guard let modifiers = Modifiers(parsing: text) else {
+            throw InvalidConfig(message: "\(path): '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\", \"meh\" or \"hyper\"")
+        }
+        return modifiers
     }
 
     static func scroll(_ direction: String, _ amount: ScrollAmount, path: String) throws(InvalidConfig) -> ScrollStep {
@@ -138,7 +171,7 @@ enum Compile {
         case let .lines(n): (n, false)
         case let .pixels(n): (n, true)
         }
-        guard value > 0, value <= 10_000 else { throw InvalidConfig(message: "\(path): the scroll amount must be positive") }
+        guard (1...10_000).contains(value) else { throw InvalidConfig(message: "\(path): the scroll amount must be between 1 and 10000") }
         let n = Int32(value)
         switch direction {
         case "up": return ScrollStep(dx: 0, dy: n, pixels: pixels)
@@ -163,18 +196,35 @@ enum Compile {
     /// `nil` means passthrough.
     static func output(_ action: Action, path: String) throws(InvalidConfig) -> Output? {
         switch action {
-        case .none: .drop
-        case .passthrough: nil
-        case let .shell(command): .shell(command)
-        case let .wm(command): .wm(command)
-        case let .scroll(direction, amount): .scroll(try scroll(direction, amount, path: path))
+        case .none: return .drop
+        case .passthrough: return nil
+        case let .shell(command): return .shell(command)
+        case let .wm(command): return .wm(command)
+        case let .app(name): return .app(name)
+        case let .text(text): return .text(text)
+        case let .scroll(direction, amount): return .scroll(try scroll(direction, amount, path: path))
         case let .keys(text):
-            if let action = SystemAction(rawValue: text) {
-                .system(action)
-            } else if text.hasPrefix("scroll."), case let direction = String(text.dropFirst(7)) {
-                .scroll(try scroll(direction, .lines(3), path: path))
-            } else {
-                .key(try combo(text, path: path))
+            if let action = SystemAction(rawValue: text) { return .system(action) }
+            if text.hasPrefix("scroll.") { return .scroll(try scroll(String(text.dropFirst(7)), .lines(3), path: path)) }
+            return .key(try combo(text, path: path))
+        case let .sequence(actions):
+            var outputs: [Output] = []
+            for (i, action) in actions.enumerated() {
+                guard let output = try self.output(action, path: "\(path)[\(i)]") else {
+                    throw InvalidConfig(message: "\(path)[\(i)]: passthrough has no meaning in a sequence")
+                }
+                outputs.append(output)
+            }
+            return .sequence(outputs)
+        case let .repeating(action):
+            guard let output = try output(action, path: path) else { return nil }
+            return .repeating(output)
+        case let .held(action):
+            let output = try output(action, path: path)
+            switch output {
+            case .key?: return .held(output!)
+            case let output? where output.clickButton != nil: return .held(output)
+            default: throw InvalidConfig(message: "\(path): `hold` works with keys, combos and click.left/.right/.middle/.back/.forward")
             }
         }
     }

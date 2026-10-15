@@ -1,4 +1,5 @@
-/// L0 remap: HID usage -> HID usage, applied by the HID event system (no permissions).
+/// L0 remap: HID usage -> HID usage, applied by the HID event system (no permissions, works
+/// in password fields too).
 public struct HIDMapping: Sendable, Equatable {
     public var from: UInt32
     public var to: UInt32
@@ -13,16 +14,23 @@ public enum CapsLockLED: String, Sendable, Equatable {
     case held
 }
 
-/// The Caps Lock layer.
+/// A key that is a layer while held and `alone` when tapped: `[capslock]` or `[layer.<key>]`.
 public struct Layer: Sendable, Equatable {
-    /// Caps Lock is turned into this key at L0, then tracked by the event tap.
-    public static let trigger = KeyNames.key("f18")!
+    /// Caps Lock is turned into F18 at L0 (so it stops toggling caps lock), then the tap
+    /// treats F18 as the Caps Lock layer key.
+    public static let capsLockTrigger = KeyNames.key("f18")!.code
 
+    /// Key code the tap sees for this layer key.
+    public var trigger: UInt16
     public var alone: Output?
     /// Added to unmapped keys while the layer is held.
     public var hold: Modifiers
     public var led: CapsLockLED
     public var tapTimeoutNs: UInt64
+    /// Typing keys (space, return...) decide between tap and hold only once the next key is
+    /// released, so fast typing ("space" then "j" overlapping) still types both. Caps Lock
+    /// isn't typed, so it decides at once.
+    public var permissive: Bool
     public var base: OutputTable
     public var apps: [String: OutputTable]
 }
@@ -34,18 +42,28 @@ public struct KeyboardPlan: Sendable, Equatable {
     /// `[map]` entries the event tap handles (combos, actions, keys an app overrides).
     public var map = OutputTable.keys
     public var apps: [String: OutputTable] = [:]
-    public var layer: Layer?
+    /// Caps Lock first, if configured.
+    public var layers: [Layer] = []
+    /// Key code -> action on a double tap.
+    public var double = OutputTable.keys
+    public var doubleTapNs: UInt64 = 300_000_000
 
-    public var needsEventTap: Bool { layer != nil || !map.isEmpty || !apps.isEmpty }
+    public var capsLock: Layer? { layers.first { $0.trigger == Layer.capsLockTrigger } }
+
+    public var needsEventTap: Bool { !layers.isEmpty || !map.isEmpty || !apps.isEmpty || !double.isEmpty }
 
     public init() {}
 
     public init(_ config: KeyboardConfig) throws(InvalidConfig) {
         let capsLock = KeyNames.key("capslock")!
+        let layerKeys = config.layer.keys
         func from(_ name: String, _ path: String) throws(InvalidConfig) -> Key {
             let key = try Compile.key(name, path: path)
             if config.capslock != nil, key == capsLock {
                 throw InvalidConfig(message: "\(path): capslock is already configured in [capslock]")
+            }
+            if layerKeys.contains(where: { KeyNames.key($0) == key }) {
+                throw InvalidConfig(message: "\(path): this key is a layer key in [layer.\(name)]")
             }
             return key
         }
@@ -77,7 +95,7 @@ public struct KeyboardPlan: Sendable, Equatable {
             let key = try from(name, path)
             if case let .key(to)? = try Compile.output(action, path: path), to.modifiers.isEmpty,
                !overridden.contains(Int(key.code)) {
-                hid.append(HIDMapping(from: key.usage, to: to.key.usage, device: nil)) // works in password fields too
+                hid.append(HIDMapping(from: key.usage, to: to.key.usage, device: nil))
             } else {
                 map = try Compile.table([name: action], path: "map", over: map, index: tapKey)
             }
@@ -86,35 +104,50 @@ public struct KeyboardPlan: Sendable, Equatable {
             apps[app.bundleID] = try Compile.table(app.map, path: "app[\(i)].map", over: map, index: tapKey)
         }
 
-        guard let caps = config.capslock else { return }
-        hid.append(HIDMapping(from: capsLock.usage, to: Layer.trigger.usage, device: nil))
-        var hold: Modifiers = []
-        if let text = caps.hold {
-            guard let parsed = Modifiers(parsing: text) else {
-                throw InvalidConfig(message: "capslock.hold: '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\", \"meh\" or \"hyper\"")
+        if let caps = config.capslock {
+            hid.append(HIDMapping(from: capsLock.usage, to: KeyNames.key(code: Layer.capsLockTrigger)!.usage, device: nil))
+            layers.append(try KeyboardPlan.layer(caps, trigger: Layer.capsLockTrigger, permissive: false, path: "capslock"))
+        }
+        for (name, layer) in config.layer.sorted(by: { $0.key < $1.key }) {
+            let path = "layer.\(name)"
+            let key = try Compile.key(name, path: path)
+            guard !key.isModifier, key != capsLock else {
+                throw InvalidConfig(message: "\(path): use a non-modifier key (Caps Lock goes in [capslock])")
             }
-            hold = parsed
+            guard layer.led == nil else { throw InvalidConfig(message: "\(path).led: only [capslock] has an LED") }
+            layers.append(try KeyboardPlan.layer(layer, trigger: key.code, permissive: true, path: path))
         }
-        var led = CapsLockLED.off
-        if let text = caps.led {
-            guard let parsed = CapsLockLED(rawValue: text) else {
-                throw InvalidConfig(message: "capslock.led: '\(text)' isn't valid; use \"off\" or \"held\"")
+
+        // Double taps: modifier keys are fine here, the tap watches their flag changes.
+        double = try Compile.table(config.double, path: "double", over: .keys) { name, path throws(InvalidConfig) in
+            Int(try from(name, path).code)
+        }
+        guard (100...1000).contains(config.doubleTapMs) else {
+            throw InvalidConfig(message: "double_tap_ms: must be between 100 and 1000")
+        }
+        doubleTapNs = UInt64(config.doubleTapMs) * 1_000_000
+    }
+
+    private static func layer(_ config: LayerConfig, trigger: UInt16, permissive: Bool, path: String) throws(InvalidConfig) -> Layer {
+        let led = try config.led.map { text throws(InvalidConfig) in
+            guard let led = CapsLockLED(rawValue: text) else {
+                throw InvalidConfig(message: "\(path).led: '\(text)' isn't valid; use \"off\" or \"held\"")
             }
-            led = parsed
-        }
-        let layerKey = { (name: String, path: String) throws(InvalidConfig) -> Int in
-            Int(try Compile.key(name, path: path).code)
-        }
-        let base = try Compile.table(caps.map, path: "capslock.map", over: .keys, index: layerKey)
+            return led
+        } ?? .off
+        let key = { (name: String, path: String) throws(InvalidConfig) -> Int in Int(try Compile.key(name, path: path).code) }
+        let base = try Compile.table(config.map, path: "\(path).map", over: .keys, index: key)
         var apps: [String: OutputTable] = [:]
-        for (i, app) in caps.app.enumerated() {
-            apps[app.bundleID] = try Compile.table(app.map, path: "capslock.app[\(i)].map", over: base, index: layerKey)
+        for (i, app) in config.app.enumerated() {
+            apps[app.bundleID] = try Compile.table(app.map, path: "\(path).app[\(i)].map", over: base, index: key)
         }
-        layer = Layer(
-            alone: try Compile.output(caps.alone, path: "capslock.alone"),
-            hold: hold,
+        return Layer(
+            trigger: trigger,
+            alone: try Compile.output(config.alone, path: "\(path).alone"),
+            hold: try config.hold.map { text throws(InvalidConfig) in try Compile.modifiers(text, path: "\(path).hold") } ?? [],
             led: led,
-            tapTimeoutNs: UInt64(max(0, caps.tapTimeoutMs)) * 1_000_000,
+            tapTimeoutNs: UInt64(max(0, config.tapTimeoutMs)) * 1_000_000,
+            permissive: permissive,
             base: base,
             apps: apps
         )
