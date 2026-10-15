@@ -87,12 +87,6 @@ struct ConfigTests {
 
     @Test func wmFileDecodesAeroSpaceFormat() throws {
         let wm = try ConfigLoader.parse(WMConfig.self, """
-        config-version = 2
-        after-startup-command = []
-        start-at-login = true
-        auto-reload-config = false
-        enable-normalization-flatten-containers = true
-        enable-normalization-opposite-orientation-for-nested-containers = true
         accordion-padding = 5
         default-root-container-layout = 'tiles'
         default-root-container-orientation = 'auto'
@@ -101,7 +95,6 @@ struct ConfigTests {
         persistent-workspaces = ['1', '2', 'Develop']
         on-mode-changed = []
         focus-follows-mouse.enabled = false
-        key-mapping.preset = 'qwerty'
         gaps.inner.horizontal = 5
         gaps.inner.vertical =   5
         gaps.outer.left =       5
@@ -132,7 +125,6 @@ struct ConfigTests {
         """).get()
         #expect(!wm.isEmpty)
         #expect(wm.accordionPadding == 5)
-        #expect(wm.autoReloadConfig == false)
         #expect(wm.persistentWorkspaces == ["1", "2", "Develop"])
         #expect(wm.gaps.outerTop.fallback == 24)
         #expect(wm.gaps.outerTop.perMonitor.first?.pattern == "main")
@@ -156,7 +148,7 @@ struct ConfigTests {
         #expect(error(WMConfig.self, "[mode.main.binding]\nalt-h = 'focus sideways'")?.contains("focus") == true)
         #expect(error(WMConfig.self, "[mode.main.binding]\nalt-h = 'mode nowhere'")?.contains("no [mode.nowhere.binding]") == true)
         #expect(error(WMConfig.self, "[mode.main.binding]\nsuper-h = 'focus left'")?.contains("unknown modifier") == true)
-        #expect(error(WMConfig.self, "persistent-workspaces = ['1']")?.contains("config-version = 2") == true)
+        #expect(error(WMConfig.self, "start-at-login = true")?.contains("unknown key") == true)
         #expect(error(WMConfig.self, "[[on-window-detected]]\nrun = 'layout floating'")?.contains("omitting 'if'") == true)
         #expect(error(WMConfig.self, "default-root-container-layout = 'grid'")?.contains("tiles or accordion") == true)
     }
@@ -175,7 +167,7 @@ struct ConfigTests {
 
     @Test func wrongTypeIsReportedWithItsPath() {
         // TOMLDecoder reports the line; our own messages add the key path.
-        #expect(error(WMConfig.self, "auto-reload-config = \"yes\"")?.contains("auto-reload-config") == true)
+        #expect(error(WMConfig.self, "accordion-padding = \"yes\"")?.contains("accordion-padding") == true)
     }
 
     @Test func perAppTablesUseTheirFileNames() {

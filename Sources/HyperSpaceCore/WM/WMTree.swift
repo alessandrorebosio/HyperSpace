@@ -121,18 +121,17 @@ public final class WMNode {
         return nil
     }
 
-    /// Removes empty containers and, with AeroSpace's normalizations (both on by default),
-    /// lifts single children into their parent and makes nested containers alternate
-    /// orientation. Call on the root after every change.
-    public func normalize(flatten: Bool = true, opposite: Bool = true) {
-        clean(flatten: flatten)
-        if opposite { alternate() }
+    /// Removes empty containers, lifts single children into their parent and makes nested
+    /// containers alternate orientation (AeroSpace's normalizations). Call on the root after
+    /// every change.
+    public func normalize() {
+        clean()
+        alternate()
     }
 
-    private func clean(flatten: Bool) {
-        for child in children where child.isContainer { child.clean(flatten: flatten) }
+    private func clean() {
+        for child in children where child.isContainer { child.clean() }
         for child in children where child.isContainer && child.children.isEmpty { child.removeFromParent() }
-        guard flatten else { return }
         // A container with one child is replaced by that child.
         for child in children where child.isContainer && child.children.count == 1 {
             let only = child.children[0], weight = child.weight, wasRecent = recent === child, index = child.index!

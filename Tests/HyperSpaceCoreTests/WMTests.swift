@@ -229,7 +229,6 @@ struct WMTests {
                               visible: CGRect(x: 1000, y: 0, width: 800, height: 600))
         let main = WMMonitor(id: 1, name: "Built-in Retina Display", isMain: true, frame: WMTests.screen.frame, visible: WMTests.screen.visible)
         var config = WMConfig()
-        config.configVersion = 2
         config.persistentWorkspaces = ["Develop"]
         config.workspaceToMonitorForceAssignment = ["Develop": ["dell"]]
         let m = WMModel(monitors: [main, right], settings: try WMSettings(config))
@@ -265,19 +264,6 @@ struct WMTests {
         #expect(m.focused == 3)
     }
 
-    @Test func normalizationCanBeTurnedOff() throws {
-        var config = WMConfig()
-        config.enableNormalizationFlattenContainers = false
-        config.enableNormalizationOppositeOrientationForNestedContainers = false
-        let m = WMModel(monitors: [WMTests.screen], settings: try WMSettings(config))
-        for id: WindowID in 1...2 {
-            m.add(WMWindowInfo(id: id, floating: false))
-            m.nativeFocus(id)
-        }
-        try run(m, "split vertical")
-        #expect(tree(m.focusedWorkspace.root) == "h[1 v[2]]", "split keeps single-child containers when flattening is off")
-    }
-
     @Test func gapsPerSideAndMonitor() throws {
         var config = WMConfig()
         config.gaps.innerHorizontal = GapValue(10)
@@ -295,12 +281,10 @@ struct WMTests {
         #expect(m.layout().tiled[2] == CGRect(x: 508, y: 40, width: 492, height: 560))
     }
 
-    @Test func keyNotationAndPresets() throws {
-        #expect(try WMKeys.combo("ctrl-alt-shift-leftSquareBracket", preset: "qwerty", notation: [:], path: "")
+    @Test func keyNotation() throws {
+        #expect(try WMKeys.combo("ctrl-alt-shift-leftSquareBracket", path: "")
             == Combo(key: KeyNames.key("bracket.open")!, modifiers: [.control, .option, .shift]))
-        #expect(try WMKeys.combo("alt-keypad1", preset: "qwerty", notation: [:], path: "").key == KeyNames.key("keypad.1"))
-        #expect(try WMKeys.combo("alt-j", preset: "dvorak", notation: [:], path: "").key == KeyNames.key("c"))
-        #expect(try WMKeys.combo("alt-unicorn", preset: "qwerty", notation: ["unicorn": "u"], path: "").key == KeyNames.key("u"))
+        #expect(try WMKeys.combo("alt-keypad1", path: "").key == KeyNames.key("keypad.1"))
     }
 
     @Test func capsLockHoldTriggersHotkeys() throws {

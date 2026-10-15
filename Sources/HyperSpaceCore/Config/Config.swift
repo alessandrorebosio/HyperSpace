@@ -155,35 +155,24 @@ public struct NavigateConfig: Sendable, Equatable {
 
 // MARK: - Window manager (wm.toml, AeroSpace's format)
 
-/// wm.toml uses AeroSpace's config format and keys, so an `~/.aerospace.toml` can be copied
-/// over as is. An empty file (or one with
-/// only comments) leaves the window manager off.
+/// wm.toml uses AeroSpace's keys for everything about windows; app-level settings (login item,
+/// reloading, keyboard layout) belong to HyperSpace and aren't in it. An empty file (or one
+/// with only comments) leaves the window manager off.
 public struct WMConfig: Sendable, Equatable {
     /// True when the file sets nothing: the window manager stays off.
     public var isEmpty = true
-    public var configVersion = 1
-    public var afterStartupCommand: [String] = []
     public var onFocusChanged: [String] = []
     public var onFocusedMonitorChanged: [String] = []
     public var onModeChanged: [String] = []
-    public var enableNormalizationFlattenContainers = true
-    public var enableNormalizationOppositeOrientationForNestedContainers = true
     /// tiles | accordion
     public var defaultRootContainerLayout = "tiles"
     /// horizontal | vertical | auto
     public var defaultRootContainerOrientation = "auto"
-    public var startAtLogin: Bool?
-    public var autoReloadConfig = true
     public var automaticallyUnhideMacosHiddenApps = false
     public var accordionPadding = 30
     public var persistentWorkspaces: [String]?
     /// A process (argv) run when the focused workspace changes.
     public var execOnWorkspaceChange: [String] = []
-    public var execInheritEnvVars = true
-    public var execEnvVars: [String: String]?
-    /// qwerty | dvorak | colemak
-    public var keyMappingPreset = "qwerty"
-    public var keyNotationToKeyCode: [String: String] = [:]
     /// Mode name -> hotkey -> commands.
     public var modes: [String: [String: [String]]] = [:]
     public var gaps = GapsConfig()
@@ -401,24 +390,15 @@ extension NavigateConfig: Decodable {
 
 extension WMConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case configVersion = "config-version"
-        case afterStartupCommand = "after-startup-command"
-        case afterLoginCommand = "after-login-command"
         case onFocusChanged = "on-focus-changed"
         case onFocusedMonitorChanged = "on-focused-monitor-changed"
         case onModeChanged = "on-mode-changed"
-        case flatten = "enable-normalization-flatten-containers"
-        case opposite = "enable-normalization-opposite-orientation-for-nested-containers"
         case rootLayout = "default-root-container-layout"
         case rootOrientation = "default-root-container-orientation"
-        case startAtLogin = "start-at-login"
-        case autoReloadConfig = "auto-reload-config"
         case unhide = "automatically-unhide-macos-hidden-apps"
         case accordionPadding = "accordion-padding"
         case persistentWorkspaces = "persistent-workspaces"
         case execOnWorkspaceChange = "exec-on-workspace-change"
-        case exec
-        case keyMapping = "key-mapping"
         case mode
         case gaps
         case focusFollowsMouse = "focus-follows-mouse"
@@ -429,33 +409,15 @@ extension WMConfig: Decodable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
         isEmpty = c.allKeys.isEmpty
-        configVersion = try c.decode(.configVersion, default: 1)
-        afterStartupCommand = try c.decode(.afterStartupCommand, default: Commands()).list
         onFocusChanged = try c.decode(.onFocusChanged, default: Commands()).list
         onFocusedMonitorChanged = try c.decode(.onFocusedMonitorChanged, default: Commands()).list
         onModeChanged = try c.decode(.onModeChanged, default: Commands()).list
-        enableNormalizationFlattenContainers = try c.decode(.flatten, default: true)
-        enableNormalizationOppositeOrientationForNestedContainers = try c.decode(.opposite, default: true)
         defaultRootContainerLayout = try c.decode(.rootLayout, default: "tiles")
         defaultRootContainerOrientation = try c.decode(.rootOrientation, default: "auto")
-        startAtLogin = try c.decodeIfPresent(Bool.self, forKey: .startAtLogin)
-        autoReloadConfig = try c.decode(.autoReloadConfig, default: true)
         automaticallyUnhideMacosHiddenApps = try c.decode(.unhide, default: false)
         accordionPadding = try c.decode(.accordionPadding, default: 30)
         persistentWorkspaces = try c.decodeIfPresent([String].self, forKey: .persistentWorkspaces)
         execOnWorkspaceChange = try c.decode(.execOnWorkspaceChange, default: [])
-        if c.contains(.afterLoginCommand) {
-            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.afterLoginCommand],
-                                                    debugDescription: "deprecated in AeroSpace; use after-startup-command"))
-        }
-        if let exec = try c.decodeIfPresent(ExecTable.self, forKey: .exec) {
-            execInheritEnvVars = exec.inheritEnvVars
-            execEnvVars = exec.envVars
-        }
-        if let mapping = try c.decodeIfPresent(KeyMappingTable.self, forKey: .keyMapping) {
-            keyMappingPreset = mapping.preset
-            keyNotationToKeyCode = mapping.notation
-        }
         modes = try c.decode(.mode, default: [String: ModeTable]()).mapValues(\.bindings)
         gaps = try c.decode(.gaps, default: GapsTable()).gaps
         focusFollowsMouse = try c.decode(.focusFollowsMouse, default: FocusFollowsMouseTable()).enabled
@@ -480,30 +442,6 @@ private struct Commands: Decodable {
 }
 
 private typealias Patterns = Commands
-
-private struct ExecTable: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case inheritEnvVars = "inherit-env-vars", envVars = "env-vars" }
-    var inheritEnvVars = true
-    var envVars: [String: String]?
-
-    init(from decoder: any Decoder) throws {
-        let c = try decoder.table(CodingKeys.self)
-        inheritEnvVars = try c.decode(.inheritEnvVars, default: true)
-        envVars = try c.decodeIfPresent([String: String].self, forKey: .envVars)
-    }
-}
-
-private struct KeyMappingTable: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case preset, notation = "key-notation-to-key-code" }
-    var preset = "qwerty"
-    var notation: [String: String] = [:]
-
-    init(from decoder: any Decoder) throws {
-        let c = try decoder.table(CodingKeys.self)
-        preset = try c.decode(.preset, default: "qwerty")
-        notation = try c.decode(.notation, default: [:])
-    }
-}
 
 private struct ModeTable: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case binding }

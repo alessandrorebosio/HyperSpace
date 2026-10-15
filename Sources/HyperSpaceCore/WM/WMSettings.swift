@@ -5,26 +5,18 @@ import Foundation
 public struct WMSettings: Sendable, Equatable {
     public var gaps = GapsConfig()
     public var accordionPadding = 30.0
-    public var flattenContainers = true
-    public var oppositeOrientationForNestedContainers = true
     public var rootLayout = ContainerLayout.tiles
     /// nil = auto: horizontal on wide monitors, vertical on tall ones.
     public var rootOrientation: Orientation?
     public var persistentWorkspaces: [String] = []
     public var workspaceToMonitor: [String: [String]] = [:]
     public var onWindowDetected: [Rule] = []
-    public var afterStartup: WMScript?
     public var onFocusChanged: WMScript?
     public var onFocusedMonitorChanged: WMScript?
     public var onModeChanged: WMScript?
     public var execOnWorkspaceChange: [String] = []
-    public var execInheritEnvVars = true
-    /// `exec.env-vars`; the default puts Homebrew on the PATH, like AeroSpace.
-    public var execEnvVars = ["PATH": "/opt/homebrew/bin:/opt/homebrew/sbin:${PATH}"]
     public var focusFollowsMouse = false
     public var automaticallyUnhideMacosHiddenApps = false
-    public var startAtLogin: Bool?
-    public var autoReloadConfig = true
     /// Mode -> binding notation -> script, for `trigger-binding` and `list-modes`.
     public var modes: [String: [String: WMScript]] = ["main": [:]]
     /// Mode -> hotkey table for the event tap.
@@ -47,8 +39,6 @@ public struct WMSettings: Sendable, Equatable {
     public init(_ config: WMConfig) throws(InvalidConfig) {
         gaps = config.gaps
         accordionPadding = Double(config.accordionPadding)
-        flattenContainers = config.enableNormalizationFlattenContainers
-        oppositeOrientationForNestedContainers = config.enableNormalizationOppositeOrientationForNestedContainers
         switch config.defaultRootContainerLayout {
         case "tiles": rootLayout = .tiles
         case "accordion": rootLayout = .accordion
@@ -60,29 +50,17 @@ public struct WMSettings: Sendable, Equatable {
         case "vertical": rootOrientation = .vertical
         case let other: throw InvalidConfig(message: "default-root-container-orientation: '\(other)'; use horizontal, vertical or auto")
         }
-        guard (1...2).contains(config.configVersion) else { throw InvalidConfig(message: "config-version: use 1 or 2") }
-        if let persistent = config.persistentWorkspaces {
-            guard config.configVersion >= 2 else {
-                throw InvalidConfig(message: "persistent-workspaces: needs config-version = 2")
-            }
-            persistentWorkspaces = persistent
-        }
         workspaceToMonitor = config.workspaceToMonitorForceAssignment
         func script(_ commands: [String], _ path: String) throws(InvalidConfig) -> WMScript? {
             guard !commands.isEmpty else { return nil }
             do { return try WMScript(commands: commands) } catch { throw InvalidConfig(message: "\(path): \(error.message)") }
         }
-        afterStartup = try script(config.afterStartupCommand, "after-startup-command")
         onFocusChanged = try script(config.onFocusChanged, "on-focus-changed")
         onFocusedMonitorChanged = try script(config.onFocusedMonitorChanged, "on-focused-monitor-changed")
         onModeChanged = try script(config.onModeChanged, "on-mode-changed")
         execOnWorkspaceChange = config.execOnWorkspaceChange
-        execInheritEnvVars = config.execInheritEnvVars
-        if let vars = config.execEnvVars { execEnvVars = vars }
         focusFollowsMouse = config.focusFollowsMouse
         automaticallyUnhideMacosHiddenApps = config.automaticallyUnhideMacosHiddenApps
-        startAtLogin = config.startAtLogin
-        autoReloadConfig = config.autoReloadConfig
         guard (0...1000).contains(config.accordionPadding) else { throw InvalidConfig(message: "accordion-padding: must be between 0 and 1000") }
 
         for (i, rule) in config.onWindowDetected.enumerated() {
@@ -106,16 +84,13 @@ public struct WMSettings: Sendable, Equatable {
             onWindowDetected.append(Rule(condition: condition, checkFurtherCallbacks: rule.checkFurtherCallbacks, run: run))
         }
 
-        guard WMKeys.presets[config.keyMappingPreset] != nil else {
-            throw InvalidConfig(message: "key-mapping.preset: '\(config.keyMappingPreset)'; use qwerty, dvorak or colemak")
-        }
         modes = [:]
         for (mode, bindings) in config.modes {
             var table = OutputTable.hotkeys
             var scripts: [String: WMScript] = [:]
             for (notation, commands) in bindings.sorted(by: { $0.key < $1.key }) {
                 let path = "mode.\(mode).binding.\(notation)"
-                let combo = try WMKeys.combo(notation, preset: config.keyMappingPreset, notation: config.keyNotationToKeyCode, path: path)
+                let combo = try WMKeys.combo(notation, path: path)
                 guard let script = try script(commands, path) else { throw InvalidConfig(message: "\(path): no command") }
                 for command in script.commands {
                     if case let .mode(target) = command, config.modes[target] == nil {
@@ -130,12 +105,10 @@ public struct WMSettings: Sendable, Equatable {
             hotkeys[mode] = table
         }
         if modes["main"] == nil { modes["main"] = [:] }
-        // config-version 1 infers persistent workspaces from the bindings, as AeroSpace does.
-        if config.configVersion == 1 {
-            persistentWorkspaces = modes.values.flatMap(\.values).flatMap(\.commands).compactMap { command in
-                if case let .workspace(.named(name), _, _, _) = command { return name }
-                return nil
-            }
+        // Without persistent-workspaces, the workspaces named in bindings stay alive.
+        persistentWorkspaces = config.persistentWorkspaces ?? modes.values.flatMap(\.values).flatMap(\.commands).compactMap { command in
+            if case let .workspace(.named(name), _, _, _) = command { return name }
+            return nil
         }
     }
 
