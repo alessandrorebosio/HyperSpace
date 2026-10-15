@@ -190,8 +190,16 @@ Same concepts and command names as AeroSpace, so moving an existing config over 
 - App rules (e.g. Finder floating, Slack → workspace 9)
 - Commands from hotkeys and from `hsctl`
 
+Implementation: `WMModel` (HyperSpaceCore) is the pure state and every command over ids and
+rectangles, unit tested; `WindowManager` (HyperSpaceWM) feeds it AX events and applies its
+`layout()`. Hotkeys from `[bindings]` are compiled into the keyboard's hotkey table
+(⌘⇧⌥⌃ × key code, a flat array), matched in the event tap after remapping, so a Caps Lock
+`hold = "meh"` can drive `meh-h` bindings.
+
 Optimizations over AeroSpace:
-- **Window state cache**: frames, app and window ids live in memory and are updated from `AXObserver` notifications. The WM doesn't query AX on every command (AX calls are slow, and some apps take tens of ms to answer).
+- **Window state cache**: frames, app and window ids live in memory and are updated from `AXObserver` notifications. The WM doesn't query AX on every command (AX calls are slow, and some apps take tens of ms to answer). AeroSpace runs a full refresh (every app's window list) after each AX notification.
+- **Attribute-level diffs**: a window that only moves gets a position call, one that only resizes a size call; frames are diffed against the last requested frame, so a window refusing a size (minimum size) isn't asked again on every change.
+- **Coalescing**: per window, a queued frame superseded by a newer command is skipped.
 - **Diff-based layout**: after each command only the windows whose frame actually changed get an AX `setFrame`. Unchanged windows aren't touched.
 - **Batched workspace switch**: all hide/show moves are computed first, then applied concurrently per app. Today they are applied one after the other.
 - **Per-app timeouts** (`AXUIElementSetMessagingTimeout`): a frozen app can't block the whole WM.
@@ -332,8 +340,8 @@ layout = "floating"
 | **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
 | **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `hsctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
 | **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, `[map]` remaps, per-app and per-device overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
-| **3 — Mouse** (in progress) | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `hsctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
-| **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
+| **3 — Mouse** ✅ | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `hsctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
+| **4 — WM** ✅ (needs real-world testing) | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
 | **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |
 
 ---

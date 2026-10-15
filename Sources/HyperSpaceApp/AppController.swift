@@ -2,8 +2,10 @@ import AppKit
 import HyperSpaceCore
 import HyperSpaceInput
 import HyperSpaceIPC
+import HyperSpaceWM
 
-/// Owns the app state: config, permission, file watcher, IPC server and menu bar item.
+/// Owns the app state: config, permission, file watcher, IPC server, window manager and
+/// menu bar item.
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
     private let log = HyperSpace.logger("app")
@@ -16,6 +18,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// One per broken file; those files keep their last good settings.
     private(set) var configErrors: [ConfigError] = []
     private(set) var input: InputService!
+    private(set) var wm: WindowManager!
     /// Off = every remap is undone (keyboards restored, event tap stopped) while the app stays
     /// open, so it can be turned back on from the menu or `hsctl enable`. Remembered across launches.
     private(set) var isEnabled = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true
@@ -35,8 +38,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         input = InputService { [weak self] command in
-            self?.log.info("WM command '\(command)' ignored: the window manager isn't implemented yet")
+            if let error = self?.wm.run(command) { self?.log.error("wm: \(error)") }
         }
+        wm = WindowManager(handlers: .init(
+            exec: { [weak self] shell in _ = self?.input.run(.shell(shell)) },
+            reloadConfig: { [weak self] in self?.reloadConfig() },
+            enable: { [weak self] on in self?.setEnabled(on ?? !(self?.isEnabled ?? true)) },
+            changed: { [weak self] in self?.menu?.refresh() }
+        ))
         terminateOnSignals()
         menu = StatusMenu(controller: self)
         reloadConfig()
@@ -64,6 +73,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
+        wm.stop() // brings windows of hidden workspaces back on screen
         input.shutdown() // restores the keyboards' original HID mappings
         server?.stop()
         watcher?.stop()
@@ -81,8 +91,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Applies the config to the input layers and the window manager, or undoes everything
+    /// while HyperSpace is disabled.
     private func applyInput() {
         input.apply(isEnabled ? plan : InputPlan(), accessibilityGranted: accessibility.isGranted)
+        if isEnabled, config.wm.enabled, accessibility.isGranted, let settings = try? WMSettings(config.wm) {
+            wm.start(settings)
+        } else {
+            wm.stop()
+        }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -147,6 +164,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             } catch {
                 return .error("hyperspace: \(error.message)")
             }
+        case ["list-workspaces"]:
+            return .ok(wm.summary)
         case ["config-path"]:
             return .ok(configDirectory.path)
         case ["version"]:
@@ -160,7 +179,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             let width = apps.map(\.0.count).max() ?? 0
             return .ok(apps.map { $0.0.padding(toLength: width + 2, withPad: " ", startingAt: 0) + $0.1 }.joined(separator: "\n"))
         default:
-            return .error("hyperspace: unknown command '\(request.args.joined(separator: " "))'. Run `hsctl --help`.")
+            // Anything else is a window manager command, as in AeroSpace: `hsctl workspace 2`.
+            let command = request.args.joined(separator: " ")
+            do {
+                _ = try WMCommand(parsing: command)
+            } catch {
+                return .error("hyperspace: \(error.message). Run `hsctl --help`.")
+            }
+            return wm.run(command).map { .error("hyperspace: \($0)") } ?? .ok("")
         }
     }
 
@@ -173,6 +199,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         config state   \(configErrors.isEmpty ? "ok" : configErrors.map { "error in \(($0.path as NSString).lastPathComponent): \($0.message)" }.joined(separator: "\n               "))
         event tap      \(input.tapState.rawValue)
         HID mappings   \(input.mappedKeyboards) keyboard(s)
+        window manager \(wm.focusedWorkspace.map { "on, workspace \($0)" } ?? "off")
         login item     \(LoginItem.isEnabled ? "on" : "off")
         """
     }

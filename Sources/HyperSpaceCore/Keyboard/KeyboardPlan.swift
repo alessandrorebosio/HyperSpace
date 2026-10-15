@@ -47,10 +47,14 @@ public struct KeyboardPlan: Sendable, Equatable {
     /// Key code -> action on a double tap.
     public var double = OutputTable.keys
     public var doubleTapNs: UInt64 = 300_000_000
+    /// Window manager hotkeys from wm.toml, set by `InputPlan`.
+    public var hotkeys = OutputTable.hotkeys
 
     public var capsLock: Layer? { layers.first { $0.trigger == Layer.capsLockTrigger } }
 
-    public var needsEventTap: Bool { !layers.isEmpty || !map.isEmpty || !apps.isEmpty || !double.isEmpty }
+    public var needsEventTap: Bool {
+        !layers.isEmpty || !map.isEmpty || !apps.isEmpty || !double.isEmpty || !hotkeys.isEmpty
+    }
 
     public init() {}
 

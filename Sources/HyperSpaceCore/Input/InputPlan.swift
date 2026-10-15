@@ -12,6 +12,7 @@ public struct InputPlan: Sendable, Equatable {
 
     public init(_ config: Config) throws(InvalidConfig) {
         keyboard = try KeyboardPlan(config.keyboard)
+        keyboard.hotkeys = try Hotkeys.compile(config.wm)
         mouse = try MousePlan(config.mouse)
     }
 
@@ -26,6 +27,8 @@ public struct InputPlan: Sendable, Equatable {
             layerMaps: keyboard.layers.map { pick($0.apps, $0.base) },
             double: keyboard.double,
             doubleTapNs: keyboard.doubleTapNs,
+            hotkeys: keyboard.hotkeys,
+            hasHotkeys: !keyboard.hotkeys.isEmpty,
             buttons: pick(mouse.apps, mouse.buttons),
             holds: mouse.holds,
             scroll: mouse.scroll,
@@ -43,6 +46,9 @@ public struct ActiveTables: Sendable, Equatable {
     public var layerMaps: [OutputTable] = []
     public var double = OutputTable.keys
     public var doubleTapNs: UInt64 = 0
+    public var hotkeys = OutputTable.hotkeys
+    /// Precomputed: checking an empty 2048-entry table on every key would be wasted work.
+    public var hasHotkeys = false
     public var buttons = OutputTable.buttons
     public var holds: [HoldPlan?] = []
     public var scroll: ScrollPlan?

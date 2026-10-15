@@ -172,6 +172,7 @@ public final class InputTap: @unchecked Sendable {
             capsLock.set(type == .keyDown) // LED on while Caps Lock is held
         }
         let decision = keys.handle(code: code, down: type == .keyDown, isRepeat: isRepeat,
+                                   modifiers: InputTap.modifiers(event.flags),
                                    now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: tables)
         // A Caps Lock LED that is on is the caps lock state: keep it from making capitals.
         if keys.isLayerHeld { event.flags.remove(.maskAlphaShift) }
@@ -205,6 +206,15 @@ public final class InputTap: @unchecked Sendable {
                                       now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: tables) {
             emit(output, pid: current.frontmostPID, location: Post.cursor)
         }
+    }
+
+    private static func modifiers(_ flags: CGEventFlags) -> Modifiers {
+        var modifiers: Modifiers = []
+        if flags.contains(.maskCommand) { modifiers.insert(.command) }
+        if flags.contains(.maskShift) { modifiers.insert(.shift) }
+        if flags.contains(.maskAlternate) { modifiers.insert(.option) }
+        if flags.contains(.maskControl) { modifiers.insert(.control) }
+        return modifiers
     }
 
     private static let modifierMasks: [UInt16: CGEventFlags] = [

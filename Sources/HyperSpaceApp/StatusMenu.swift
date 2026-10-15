@@ -24,6 +24,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             ? MenuBarIcon.image
             : NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
         item.button?.appearsDisabled = !controller.isEnabled // dimmed while off
+        // The focused workspace next to the icon, like AeroSpace's menu bar item.
+        item.button?.title = controller.wm.focusedWorkspace.map { " \($0)" } ?? ""
+        item.button?.imagePosition = .imageLeading
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

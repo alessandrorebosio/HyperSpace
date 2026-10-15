@@ -38,7 +38,10 @@ extension MouseConfig: ConfigSection {
 extension WMConfig: ConfigSection {
     static var file: ConfigFile { .wm }
     static var empty: WMConfig { WMConfig() }
-    func validate() throws(InvalidConfig) {}
+    func validate() throws(InvalidConfig) {
+        _ = try WMSettings(self)
+        _ = try Hotkeys.compile(self)
+    }
 }
 
 public enum ConfigLoader {
@@ -316,10 +319,52 @@ public enum ConfigLoader {
     """
 
     static let wmTemplate = """
-    # HyperSpace — window manager (coming soon)
+    # HyperSpace — window manager
     \(header)
+    #
+    # A tiling window manager with AeroSpace's model and commands: windows are laid out in
+    # a tree of containers, side by side ("tiles") or stacked ("accordion"). Workspaces are
+    # virtual: one is shown per monitor, the windows of the others wait off-screen.
+    # Needs Accessibility only. Commands also work from the terminal: hsctl workspace 2
+    #
+    # Commands:  focus|move|join-with left|right|up|down
+    #            workspace <name>|next|prev, workspace-back-and-forth
+    #            move-node-to-workspace <name>|next|prev [--focus-follows-window]
+    #            layout tiles|accordion|horizontal|vertical|tiling|floating (several = toggle)
+    #            resize smart|width|height [+|-]<points>, balance-sizes, flatten-workspace-tree
+    #            fullscreen, close, exec-and-forget <shell command>, reload-config
+    #            focus-monitor|move-node-to-monitor|move-workspace-to-monitor left|right|up|down|next|prev
 
-    # enabled = true
+    # enabled = true              # off by default: turning it on rearranges every window
+    # gaps = { inner = 8, outer = 8 }
+    # accordion_padding = 30
+
+    # Hotkeys -> commands (a list runs in order). Modifiers as in keyboard.toml, plus
+    # "meh" (⇧⌃⌥) and "hyper" (⇧⌃⌥⌘): with [capslock] hold = "meh", Caps + h is "meh-h".
+    # [bindings]
+    # alt-h = "focus left"
+    # alt-j = "focus down"
+    # alt-k = "focus up"
+    # alt-l = "focus right"
+    # alt-shift-h = "move left"
+    # alt-shift-j = "move down"
+    # alt-shift-k = "move up"
+    # alt-shift-l = "move right"
+    # alt-1 = "workspace 1"
+    # alt-shift-1 = "move-node-to-workspace 1"
+    # alt-tab = "workspace-back-and-forth"
+    # alt-slash = "layout tiles horizontal vertical"
+    # alt-comma = "layout accordion horizontal vertical"
+    # alt-minus = "resize smart -50"
+    # alt-equal = "resize smart +50"
+    # alt-f = "fullscreen"
+    # alt-shift-space = "layout floating tiling"
+
+    # Per-app rules for new windows (bundle ids: hsctl apps).
+    # [[rule]]
+    # app = "com.apple.finder"
+    # layout = "floating"         # or "tiling"
+    # workspace = "9"
 
     """
 }

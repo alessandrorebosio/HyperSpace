@@ -17,7 +17,9 @@ let package = Package(
         .target(name: "HyperSpaceIPC"),
         // Talks to macOS input APIs (event tap, HID event system).
         .target(name: "HyperSpaceInput", dependencies: ["HyperSpaceCore"]),
-        .executableTarget(name: "HyperSpaceApp", dependencies: ["HyperSpaceCore", "HyperSpaceIPC", "HyperSpaceInput"]),
+        // Talks to other apps' windows through the Accessibility API.
+        .target(name: "HyperSpaceWM", dependencies: ["HyperSpaceCore"]),
+        .executableTarget(name: "HyperSpaceApp", dependencies: ["HyperSpaceCore", "HyperSpaceIPC", "HyperSpaceInput", "HyperSpaceWM"]),
         .executableTarget(name: "hsctl", dependencies: ["HyperSpaceIPC"]),
         .testTarget(name: "HyperSpaceCoreTests", dependencies: ["HyperSpaceCore", "HyperSpaceIPC"]),
     ]

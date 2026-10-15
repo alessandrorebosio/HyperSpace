@@ -121,6 +121,9 @@ public struct OutputTable: Sendable, Equatable {
 
     /// Indexed by macOS virtual key code.
     public static var keys: OutputTable { OutputTable(count: 128) }
+    /// Indexed by `Hotkeys.index(code:modifiers:)`: every key code under every combination
+    /// of ⌘⇧⌥⌃.
+    public static var hotkeys: OutputTable { OutputTable(count: 16 * 128) }
     /// Indexed by `MouseButtons` index: CoreGraphics buttons, then Logitech controls.
     public static var buttons: OutputTable { OutputTable(count: MouseButtons.count) }
 
