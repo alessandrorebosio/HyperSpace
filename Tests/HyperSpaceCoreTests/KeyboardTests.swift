@@ -42,7 +42,7 @@ struct KeyboardPlanTests {
             HIDMapping(from: 0xE7, to: 0xE6, device: nil),
         ])
         #expect(p.map[122] == .key(Combo(parsing: "cmd-space")!))
-        #expect(p.map[120] == .navigate(.back))
+        #expect(p.map[120] == .system(.navigateBack))
         #expect(p.layer == nil)
         #expect(p.needsEventTap)
     }

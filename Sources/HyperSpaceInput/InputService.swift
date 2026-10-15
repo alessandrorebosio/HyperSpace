@@ -52,6 +52,18 @@ public final class InputService {
         pushTables()
     }
 
+    /// Performs an output now, as if a mapped input fired (`hsctl do`). Needs the event tap.
+    public func run(_ output: Output) -> Bool {
+        switch output {
+        case let .shell(command): ActionRunner.shell(command)
+        case let .wm(command): onWMCommand(command)
+        default:
+            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+            return tap?.run(output, targetPID: pid) ?? false
+        }
+        return true
+    }
+
     public func shutdown() {
         stopTap()
         mapper.restore()
@@ -64,7 +76,7 @@ public final class InputService {
             switch output {
             case let .shell(command): ActionRunner.shell(command)
             case let .wm(command): Task { @MainActor in onWMCommand(command) }
-            case .key, .navigate, .media, .drop: break // handled on the input thread
+            case .key, .system, .scroll, .drop: break // handled on the input thread
             }
         }
         if tap.start() {

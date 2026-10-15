@@ -4,39 +4,70 @@ public enum Output: Sendable, Equatable {
     case drop
     /// A key code with modifiers. Key names refer to physical positions (US layout).
     case key(Combo)
-    /// Back/forward in the app under the input, independent of the keyboard layout.
-    case navigate(Navigation)
-    /// A keyboard media key: volume, brightness, playback.
-    case media(MediaKey)
+    /// A named system action: navigation, media keys, Mission Control, clicks...
+    case system(SystemAction)
+    case scroll(ScrollStep)
     case shell(String)
     case wm(String)
+}
+
+extension Output {
+    /// An action as written in the config, e.g. `volume.up`, `cmd-space`, `scroll.down`.
+    public init(parsing text: String) throws(InvalidConfig) {
+        self = try Compile.output(.keys(text), path: text) ?? .drop
+    }
 }
 
 public enum Navigation: Sendable, Equatable {
     case back, forward
 }
 
-/// Media keys, as named in the config. Raw values are the `NX_KEYTYPE_*` codes the
-/// system-defined event carries. Playback goes to the app that is playing (Spotify, Music...).
-public enum MediaKey: Int, Sendable, CaseIterable {
-    case volumeUp = 0, volumeDown = 1, volumeMute = 7
-    case brightnessUp = 2, brightnessDown = 3
-    case play = 16, next = 17, previous = 18
+/// Every named action, by its config name.
+public enum SystemAction: String, Sendable, CaseIterable {
+    /// Back/forward in the app under the input, independent of the keyboard layout.
+    case navigateBack = "navigate.back", navigateForward = "navigate.forward"
 
-    public var name: String {
+    case volumeUp = "volume.up", volumeDown = "volume.down", volumeMute = "volume.mute"
+    case brightnessUp = "brightness.up", brightnessDown = "brightness.down"
+    case keyboardBrightnessUp = "keyboard.brightness.up", keyboardBrightnessDown = "keyboard.brightness.down"
+    case mediaPlay = "media.play", mediaNext = "media.next", mediaPrevious = "media.previous"
+    case mediaForward = "media.forward", mediaRewind = "media.rewind"
+
+    case missionControl = "mission.control", missionWindows = "mission.windows"
+    case missionDesktop = "mission.desktop", missionLaunchpad = "mission.launchpad"
+    case spaceLeft = "space.left", spaceRight = "space.right"
+    case lookUp = "lookup", smartZoom = "zoom.smart"
+    case windowMaximize = "window.maximize", windowMinimize = "window.minimize"
+
+    case clickLeft = "click.left", clickDouble = "click.double", clickRight = "click.right"
+    case clickMiddle = "click.middle", clickBack = "click.back", clickForward = "click.forward"
+
+    /// The `NX_KEYTYPE_*` code of a media key, sent like a keyboard's function row.
+    public var mediaKey: Int32? {
         switch self {
-        case .volumeUp: "volume.up"
-        case .volumeDown: "volume.down"
-        case .volumeMute: "volume.mute"
-        case .brightnessUp: "brightness.up"
-        case .brightnessDown: "brightness.down"
-        case .play: "media.play"
-        case .next: "media.next"
-        case .previous: "media.previous"
+        case .volumeUp: 0
+        case .volumeDown: 1
+        case .brightnessUp: 2
+        case .brightnessDown: 3
+        case .volumeMute: 7
+        case .mediaPlay: 16
+        case .mediaNext: 17
+        case .mediaPrevious: 18
+        case .mediaForward: 19
+        case .mediaRewind: 20
+        case .keyboardBrightnessUp: 21
+        case .keyboardBrightnessDown: 22
+        default: nil
         }
     }
+}
 
-    static let byName = Dictionary(uniqueKeysWithValues: allCases.map { ($0.name, $0) })
+/// A synthesized scroll: positive `dy` is up, positive `dx` is left (wheel conventions).
+public struct ScrollStep: Sendable, Equatable {
+    public var dx: Int32
+    public var dy: Int32
+    /// Pixels instead of lines.
+    public var pixels: Bool
 }
 
 /// Which apps get back/forward as a trackpad swipe rather than mouse buttons 4/5.
@@ -102,6 +133,22 @@ enum Compile {
         return combo
     }
 
+    static func scroll(_ direction: String, _ amount: ScrollAmount, path: String) throws(InvalidConfig) -> ScrollStep {
+        let (value, pixels) = switch amount {
+        case let .lines(n): (n, false)
+        case let .pixels(n): (n, true)
+        }
+        guard value > 0, value <= 10_000 else { throw InvalidConfig(message: "\(path): the scroll amount must be positive") }
+        let n = Int32(value)
+        switch direction {
+        case "up": return ScrollStep(dx: 0, dy: n, pixels: pixels)
+        case "down": return ScrollStep(dx: 0, dy: -n, pixels: pixels)
+        case "left": return ScrollStep(dx: n, dy: 0, pixels: pixels)
+        case "right": return ScrollStep(dx: -n, dy: 0, pixels: pixels)
+        default: throw InvalidConfig(message: "\(path): unknown scroll direction '\(direction)'; use up, down, left or right")
+        }
+    }
+
     /// Compiles a name -> action map over `base`; `index` turns a name into a table index.
     static func table(_ map: [String: Action], path: String, over base: OutputTable,
                       index: (String, String) throws(InvalidConfig) -> Int) throws(InvalidConfig) -> OutputTable {
@@ -120,10 +167,15 @@ enum Compile {
         case .passthrough: nil
         case let .shell(command): .shell(command)
         case let .wm(command): .wm(command)
-        case .keys("navigate.back"): .navigate(.back)
-        case .keys("navigate.forward"): .navigate(.forward)
+        case let .scroll(direction, amount): .scroll(try scroll(direction, amount, path: path))
         case let .keys(text):
-            if let media = MediaKey.byName[text] { .media(media) } else { .key(try combo(text, path: path)) }
+            if let action = SystemAction(rawValue: text) {
+                .system(action)
+            } else if text.hasPrefix("scroll."), case let direction = String(text.dropFirst(7)) {
+                .scroll(try scroll(direction, .lines(3), path: path))
+            } else {
+                .key(try combo(text, path: path))
+            }
         }
     }
 }

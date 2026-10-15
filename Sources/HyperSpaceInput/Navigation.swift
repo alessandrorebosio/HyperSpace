@@ -59,13 +59,8 @@ struct NavigationSender {
         ended.post(tap: .cgSessionEventTap)
     }
 
-    /// Mouse buttons 4/5 (CoreGraphics numbers 3/4), marked so the tap lets them through.
+    /// Mouse buttons 4/5 (CoreGraphics numbers 3/4).
     private static func postButton(_ direction: Navigation, at location: CGPoint) {
-        let button = CGMouseButton(rawValue: direction == .back ? 3 : 4)!
-        for type in [CGEventType.otherMouseDown, .otherMouseUp] {
-            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: button) else { continue }
-            event.setIntegerValueField(.eventSourceUserData, value: InputTap.marker)
-            event.post(tap: .cgSessionEventTap)
-        }
+        Post.click(direction == .back ? 3 : 4, at: location)
     }
 }

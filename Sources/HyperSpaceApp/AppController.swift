@@ -140,6 +140,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         case ["toggle"]:
             setEnabled(!isEnabled)
             return .ok("HyperSpace \(isEnabled ? "enabled" : "disabled")")
+        case let args where args.count == 2 && args[0] == "do":
+            do {
+                let output = try Output(parsing: args[1])
+                return input.run(output) ? .ok("") : .error("hyperspace: the event tap isn't running (disabled or no Accessibility)")
+            } catch {
+                return .error("hyperspace: \(error.message)")
+            }
         case ["config-path"]:
             return .ok(configDirectory.path)
         case ["version"]:
