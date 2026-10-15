@@ -55,7 +55,10 @@ final class AXApp: @unchecked Sendable {
     func start(_ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
         queue.async { [self] in
             var observer: AXObserver?
-            guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else { return }
+            guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else {
+                DispatchQueue.main.async { MainActor.assumeIsolated { completion([]) } } // startup still counts it
+                return
+            }
             self.observer = observer
             for notification in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
                 AXObserverAddNotification(observer, element, notification as CFString, nil)

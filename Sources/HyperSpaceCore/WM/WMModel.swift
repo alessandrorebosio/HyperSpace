@@ -81,10 +81,10 @@ public final class WMModel {
     public private(set) var monitors: [WMMonitor] = []
     public private(set) var workspaces: [String: WMWorkspace] = [:]
     /// Monitor id -> name of the workspace it shows.
-    public private(set) var visible: [UInt32: String] = [:]
-    public private(set) var focusedMonitor: UInt32 = 0
+    public internal(set) var visible: [UInt32: String] = [:]
+    public internal(set) var focusedMonitor: UInt32 = 0
     public private(set) var focused: WindowID?
-    public private(set) var windows: [WindowID: WMWindowInfo] = [:]
+    public internal(set) var windows: [WindowID: WMWindowInfo] = [:]
     public private(set) var previousWorkspace: String?
     /// Recently focused windows, most recent last.
     private var history: [WindowID] = []
@@ -92,7 +92,7 @@ public final class WMModel {
     private var subject: WindowID?
     /// Window -> name of its workspace, kept by every attach and detach so lookups don't
     /// search every workspace's tree.
-    private var location: [WindowID: String] = [:]
+    var location: [WindowID: String] = [:]
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -401,7 +401,7 @@ public final class WMModel {
 
     // MARK: - Private: focus, workspaces, monitors
 
-    private func focus(_ window: WindowID) {
+    func focus(_ window: WindowID) {
         focused = window
         workspace(of: window)?.root.find(window)?.markRecent()
         history.removeAll { $0 == window }
@@ -418,7 +418,7 @@ public final class WMModel {
     }
 
     /// The most recently focused window still on `workspace`.
-    private func recent(in workspace: WMWorkspace) -> WindowID? {
+    func recent(in workspace: WMWorkspace) -> WindowID? {
         let windows = Set(workspace.windows)
         return history.last { windows.contains($0) } ?? workspace.root.recentWindow?.window ?? workspace.floating.last
     }
@@ -478,7 +478,7 @@ public final class WMModel {
     }
 
     /// Hidden empty workspaces are dropped, unless persistent; they come back when named.
-    private func collectEmptyWorkspaces() {
+    func collectEmptyWorkspaces() {
         for (name, workspace) in workspaces where workspace.isEmpty && !isVisible(name) && !settings.persistentWorkspaces.contains(name) {
             workspaces[name] = nil
         }
@@ -498,12 +498,12 @@ public final class WMModel {
         }
     }
 
-    private func attachFloating(_ window: WindowID, to workspace: WMWorkspace) {
+    func attachFloating(_ window: WindowID, to workspace: WMWorkspace) {
         workspace.floating.append(window)
         location[window] = workspace.name
     }
 
-    private func detach(_ window: WindowID, from workspace: WMWorkspace) {
+    func detach(_ window: WindowID, from workspace: WMWorkspace) {
         location[window] = nil
         workspace.floating.removeAll { $0 == window }
         workspace.root.find(window)?.removeFromParent()
