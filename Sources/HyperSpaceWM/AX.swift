@@ -1,4 +1,5 @@
 import ApplicationServices
+import Foundation
 import HyperSpaceCore
 
 /// Thin typed wrappers over AXUIElement attribute calls. Each one is an IPC round trip to
@@ -54,6 +55,24 @@ enum AX {
         if let button: AXUIElement = value(element, kAXCloseButtonAttribute) {
             AXUIElementPerformAction(button, kAXPressAction as CFString)
         }
+    }
+}
+
+/// What the window server knows about windows: no IPC to the apps, safe on any thread.
+enum WindowServer {
+    /// Bounds and visibility of `ids`, in one call. Windows that no longer exist are missing.
+    static func windows(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)] {
+        var pointers = ids.map { UnsafeRawPointer(bitPattern: UInt($0)) }
+        guard let array = CFArrayCreate(nil, &pointers, pointers.count, nil),
+              let infos = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else { return [:] }
+        var windows: [WindowID: (bounds: CGRect, onscreen: Bool)] = [:]
+        for info in infos {
+            guard let id = info[kCGWindowNumber as String] as? WindowID,
+                  let dict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
+            windows[id] = (bounds, info[kCGWindowIsOnscreen as String] as? Bool ?? false)
+        }
+        return windows
     }
 }
 

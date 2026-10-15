@@ -11,8 +11,6 @@ struct WindowRecord: @unchecked Sendable {
     let frame: CGRect?
     /// Kept up to date through title notifications, for rules and `list-windows`.
     var title: String
-    /// Shows a tab bar: with macOS native tabs every tab is a window of its own.
-    let hasTabs: Bool
 }
 
 /// One running app as the window manager sees it. Every AX call to the app runs on the
@@ -90,27 +88,7 @@ final class AXApp: @unchecked Sendable {
             }
         }
         return WindowRecord(id: id, element: window, floating: floating, frame: AX.frame(window),
-                            title: AX.string(window, kAXTitleAttribute) ?? "", hasTabs: AXApp.hasTabBar(window))
-    }
-
-    /// Whether a new window is a native tab of one of `groups` (same app): it sits on the
-    /// group's frame and either window shows a tab bar. The tab bar and the final frame can
-    /// arrive a moment after the window, so this looks a few times over ~200 ms. App queue only.
-    static func tabGroup(of window: AXUIElement, among groups: [(WindowID, AXUIElement, CGRect)]) -> WindowID? {
-        guard !groups.isEmpty else { return nil }
-        for attempt in 0..<5 {
-            if attempt > 0 { usleep(50_000) }
-            guard let frame = AX.frame(window) else { continue }
-            for (id, element, groupFrame) in groups where groupFrame.isClose(to: frame) {
-                if hasTabBar(window) || hasTabBar(element) { return id }
-            }
-        }
-        return nil
-    }
-
-    static func hasTabBar(_ window: AXUIElement) -> Bool {
-        let children: [AXUIElement] = AX.value(window, kAXChildrenAttribute) ?? []
-        return children.contains { AX.string($0, kAXRoleAttribute) == kAXTabGroupRole }
+                            title: AX.string(window, kAXTitleAttribute) ?? "")
     }
 
     func windows() -> [AXUIElement] {

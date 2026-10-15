@@ -63,7 +63,6 @@ public final class WindowManager {
     private var tabs: [WindowID: WindowID] = [:]
     /// Group window -> the tab currently shown, which is what focusing the group raises.
     private var shownTab: [WindowID: WindowID] = [:]
-    private var tabChecks: [pid_t: Task<Void, Never>] = [:]
 
     /// Apps still reading their windows at startup (for `if.during-aerospace-startup`).
     private var startingApps = 0
@@ -494,7 +493,7 @@ public final class WindowManager {
         let hidden = running.isHidden
         app.start { [weak self] records in
             guard let self, AXApp.live[pid] === app else { return }
-            for record in records { self.add(record, of: app, managed: !hidden) }
+            self.add(records, of: app, managed: !hidden)
             self.syncFocus(NSWorkspace.shared.frontmostApplication?.processIdentifier)
             self.apply()
             self.appStarted()
@@ -511,26 +510,15 @@ public final class WindowManager {
         switch event {
         case let .windowCreated(element):
             nonisolated(unsafe) let element = element
-            // Managed windows of the same app: a new native tab lands exactly on one of them.
-            nonisolated(unsafe) let groups: [(WindowID, AXUIElement, CGRect)] = records.compactMap { id, entry in
-                guard entry.app.pid == app.pid, tabs[id] == nil, model?.windows[id] != nil,
-                      let frame = targets[id] ?? frames[id] else { return nil }
-                return (id, entry.record.element, frame)
-            }
             app.queue.async { [weak self] in
+                // The read is answered on the app's main thread, so by the time it returns the
+                // app is done creating the window (and a new tab has hidden the previous one).
                 guard let record = app.record(element) else { return }
-                let group = AXApp.tabGroup(of: element, among: groups)
-                let diagnosis = group == nil && !groups.isEmpty
-                    ? "now \(String(describing: AX.frame(element))), tab bar \(AXApp.hasTabBar(element)), same-app " + groups.map { "\($0.0) \($0.2) bar \(AXApp.hasTabBar($0.1))" }.joined(separator: "; ")
-                    : ""
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let self, self.records[record.id] == nil else { return }
-                        let message = "window \(record.id) of \(app.bundleID ?? "?"): frame \(String(describing: record.frame)), tab of \(group.map(String.init) ?? "none") \(diagnosis)"
-                        self.log.info("\(message, privacy: .public)")
-                        self.add(record, of: app, managed: true, tabOf: group)
+                        self.add([record], of: app, managed: true)
                         self.apply()
-                        self.scheduleTabCheck(app.pid)
                     }
                 }
             }
@@ -538,8 +526,9 @@ public final class WindowManager {
             forget(window: id)
             apply()
         case .focusChanged:
+            // Switching tabs moves focus: the shown tab changed, or a tab missed on creation.
+            if reconcileTabs(app.pid) { apply() }
             syncFocus(app.pid)
-            scheduleTabCheck(app.pid)
         case let .minimized(id, isMinimized):
             setManaged(id, !isMinimized)
             apply()
@@ -555,71 +544,68 @@ public final class WindowManager {
         }
     }
 
-    private func add(_ record: WindowRecord, of app: AXApp, managed: Bool, tabOf known: WindowID? = nil) {
-        records[record.id] = (app, record)
-        frames[record.id] = record.frame
+    /// Registers new windows of one app: native tabs join their group, the rest are managed.
+    private func add(_ new: [WindowRecord], of app: AXApp, managed: Bool) {
+        for record in new {
+            records[record.id] = (app, record)
+            frames[record.id] = record.frame
+        }
         guard managed else { return }
-        if let group = known ?? tabGroup(of: record, app) {
-            tabs[record.id] = group
-            shownTab[group] = record.id // a new tab is the one shown
-            return
-        }
-        manage(record.id)
-        windowDetected(record.id)
-    }
-
-    /// Tabs made in quick succession can slip past the check on creation. macOS shows only
-    /// the selected tab of a group: any managed window of the app that is off screen (and
-    /// not parked by us) while another window of the app sits on its frame is a background
-    /// tab, and joins that window's group. One CGWindowList call, no AX.
-    private func scheduleTabCheck(_ pid: pid_t) {
-        tabChecks[pid]?.cancel()
-        tabChecks[pid] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled else { return }
-            self?.tabChecks[pid] = nil
-            self?.checkTabs(pid)
+        reconcileTabs(app.pid, new: Set(new.map(\.id)))
+        for record in new where tabs[record.id] == nil {
+            manage(record.id)
+            windowDetected(record.id)
         }
     }
 
-    private func checkTabs(_ pid: pid_t) {
-        guard let model else { return }
-        let all = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]) ?? []
-        var windows: [WindowID: (bounds: CGRect, onscreen: Bool)] = [:]
-        for info in all where (info[kCGWindowOwnerPID as String] as? pid_t) == pid {
-            guard let id = info[kCGWindowNumber as String] as? WindowID, records[id] != nil,
-                  let dict = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
-            windows[id] = (bounds, info[kCGWindowIsOnscreen as String] as? Bool ?? false)
+    /// macOS native tabs (Finder, Safari, Terminal...) from the window server alone: every
+    /// tab of a group has the group's frame and only the selected one is on screen. Among
+    /// windows of the app on the same bounds, with one of them off screen, the new ones and
+    /// the tiled ones hidden behind another tab join the group. Parked windows of other
+    /// workspaces can share bounds without being tabs, so they're never folded; a new tab of
+    /// a parked group still joins it. Tiled windows only (plus `new`): minimized ones are off
+    /// screen too. One window server call, no AX.
+    @discardableResult
+    private func reconcileTabs(_ pid: pid_t, new: Set<WindowID> = []) -> Bool {
+        guard let model else { return false }
+        let ids = records.compactMap { id, entry in
+            entry.app.pid == pid && (new.contains(id) || tabs[id] != nil || model.windows[id] != nil) ? id : nil
+        }.sorted()
+        guard ids.count > 1 else { return false }
+        let server = WindowServer.windows(ids)
+        var buckets: [[WindowID]] = []
+        for id in ids {
+            guard let bounds = server[id]?.bounds else { continue }
+            if let i = buckets.firstIndex(where: { server[$0[0]]!.bounds.isClose(to: bounds) }) {
+                buckets[i].append(id)
+            } else {
+                buckets.append([id])
+            }
         }
         var changed = false
-        for (id, window) in windows where !window.onscreen && model.windows[id] != nil && parked[id] == nil {
-            guard let shown = windows.first(where: { $0.key != id && $0.value.onscreen && $0.value.bounds.isClose(to: window.bounds) })?.key
-            else { continue }
-            let group = tabs[shown] ?? shown
-            guard group != id, model.windows[group] != nil else {
-                shownTab[id] = shown // our group, showing another of its tabs
-                continue
+        for bucket in buckets where bucket.count > 1 && bucket.contains(where: { !server[$0]!.onscreen }) {
+            let joining = bucket.filter { id in
+                new.contains(id) || (model.windows[id] != nil && !server[id]!.onscreen && parked[id] == nil)
             }
-            // A background tab that was tiled as a window: fold it (and its tabs) into the group.
-            model.remove(id)
-            for (tab, owner) in tabs where owner == id { tabs[tab] = group }
-            tabs[id] = group
-            shownTab[group] = shown == group ? nil : shown
-            shownTab[id] = nil
-            changed = true
+            guard !joining.isEmpty, let head = bucket.first(where: { model.windows[$0] != nil && !joining.contains($0) })
+                ?? bucket.lazy.compactMap({ self.tabs[$0] }).first
+                ?? joining.first(where: { model.windows[$0] != nil })
+                ?? joining.first(where: { server[$0]!.onscreen }) ?? joining.first else { continue }
+            for id in joining where id != head {
+                if model.windows[id] != nil {
+                    // Tiled as a window before its group was known: fold it, tabs included.
+                    model.remove(id)
+                    for (tab, owner) in tabs where owner == id { tabs[tab] = head }
+                    shownTab[id] = nil
+                    changed = true
+                }
+                tabs[id] = head
+            }
+            if let shown = bucket.first(where: { server[$0]!.onscreen && ($0 == head || tabs[$0] == head) }) {
+                shownTab[head] = shown == head ? nil : shown
+            }
         }
-        if changed { apply() }
-    }
-
-    /// A window with a tab bar sitting exactly on a managed window of the same app is a
-    /// new tab of that window's group, not a window to tile.
-    private func tabGroup(of record: WindowRecord, _ app: AXApp) -> WindowID? {
-        guard record.hasTabs, let frame = record.frame, let model else { return nil }
-        return records.first { id, entry in
-            id != record.id && entry.app.pid == app.pid && tabs[id] == nil && model.windows[id] != nil
-                && (targets[id] ?? frames[id]).map { $0.isClose(to: frame) } == true
-        }?.key
+        return changed
     }
 
     private func manage(_ id: WindowID) {
@@ -691,6 +677,7 @@ public final class WindowManager {
 
     private func setHidden(_ pid: pid_t, _ hidden: Bool) {
         for (id, entry) in records where entry.app.pid == pid && tabs[id] == nil { setManaged(id, !hidden) }
+        if !hidden { reconcileTabs(pid) }
         apply()
     }
 
