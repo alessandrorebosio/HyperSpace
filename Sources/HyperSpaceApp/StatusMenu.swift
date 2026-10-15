@@ -22,9 +22,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let healthy = controller.accessibility.isGranted && controller.configErrors.isEmpty
         if !healthy && controller.isEnabled {
             item.button?.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
-        } else if let wm = controller.wm, let workspace = wm.focusedWorkspace {
-            // Like AeroSpace: the focused workspace, with the mode's initial outside main.
-            item.button?.image = MenuBarIcon.label(workspace: workspace, mode: wm.mode == "main" ? nil : wm.mode)
+        } else if let wm = controller.wm, case let workspaces = wm.shownWorkspaces, !workspaces.isEmpty {
+            // Each display's workspace, the focused one filled, with the mode's initial outside main.
+            item.button?.image = MenuBarIcon.label(workspaces: workspaces, mode: wm.mode == "main" ? nil : wm.mode)
         } else {
             item.button?.image = MenuBarIcon.image
         }

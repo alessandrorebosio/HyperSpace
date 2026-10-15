@@ -13,7 +13,7 @@ extension WindowManager {
             forget(app: pid)
         case let .activated(pid):
             // An app launched for the first time may not be a regular app yet when it launches.
-            if apps[pid] == nil { watch(pid) } else { syncFocus(pid) }
+            if apps[pid] == nil { watch(pid) } else { refresh(pid); syncFocus(pid) }
         case let .hidden(pid, true):
             if settings.automaticallyUnhideMacosHiddenApps { system.unhide(pid) } else { setHidden(pid, true) }
         case let .hidden(pid, false):
@@ -65,10 +65,9 @@ extension WindowManager {
     /// frame is set again, since macOS moves windows of displays that left on its own.
     private func monitorsChanged() {
         guard let model else { return }
-        let before = model.focusedWorkspace.name
         model.setMonitors(system.monitors())
         apply(force: true)
-        if model.focusedWorkspace.name != before { handlers.changed() }
+        announce()
     }
 
     // MARK: - Windows
@@ -85,6 +84,7 @@ extension WindowManager {
         case .focusChanged:
             // Switching tabs moves focus: the shown tab changed, or a tab missed on creation.
             if reconcileTabs(app.pid) { apply() }
+            refresh(app.pid)
             syncFocus(app.pid)
         case let .minimized(id, isMinimized):
             setManaged(id, !isMinimized)
@@ -96,8 +96,29 @@ extension WindowManager {
         }
     }
 
+    /// Catches up with events that never came, when the app gets focus: windows it has that
+    /// weren't reported join, and windows the window server no longer has are dropped.
+    func refresh(_ pid: pid_t) {
+        guard let app = apps[pid] else { return }
+        app.windows { [weak self, weak app] new in
+            guard let self, let app, self.apps[pid] === app else { return }
+            let known = self.records.compactMap { $0.value.app === app ? $0.key : nil }
+            let server = self.system.windowServer(known)
+            // Nothing at all back is a failed call more likely than every window gone.
+            let gone = server.isEmpty ? [] : known.filter { server[$0] == nil }
+            let unseen = new.filter { self.records[$0.id] == nil }
+            guard !gone.isEmpty || !unseen.isEmpty else { return }
+            if !gone.isEmpty { self.log.info("\(app.name): \(gone.count) closed windows missed") }
+            if !unseen.isEmpty { self.log.info("\(app.name): \(unseen.count) new windows missed") }
+            for id in gone { self.forget(window: id) }
+            self.add(unseen, of: app, managed: !self.system.isHidden(pid))
+            self.apply()
+        }
+    }
+
     /// Registers new windows of one app: native tabs join their group, the rest are managed.
     private func add(_ new: [WindowRecord], of app: WindowApp, managed: Bool) {
+        let new = new.filter { records[$0.id] == nil }
         for record in new {
             records[record.id] = (app, record)
             frames[record.id] = record.frame
@@ -150,8 +171,9 @@ extension WindowManager {
     }
 
     private func forget(window id: WindowID) {
-        if let heir = tabs.first(where: { $0.value == id })?.key {
-            // The group's window closed but other tabs remain: one of them stands in.
+        let groupTabs = tabs.filter { $0.value == id }.map(\.key)
+        if let heir = shownTab[id].flatMap({ groupTabs.contains($0) ? $0 : nil }) ?? groupTabs.min() {
+            // The group's window closed but other tabs remain: the shown one stands in.
             model?.replace(id, with: heir)
             tabs[heir] = nil
             for (tab, group) in tabs where group == id { tabs[tab] = heir }
@@ -191,7 +213,7 @@ extension WindowManager {
                 ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
             if model.nativeFocus(known) { self.apply() }
             self.focusChanged(since: before)
-            if model.focusedWorkspace.name != before.workspace { self.handlers.changed() }
+            self.announce()
         }
     }
 

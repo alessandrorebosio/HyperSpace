@@ -20,6 +20,9 @@ final class FakeApp: WindowApp, @unchecked Sendable {
     var closed: [WindowID] = []
     /// Set to report the windows only on `finishStart()`, like a slow app.
     var slowStart = false
+    /// Windows that ignore the next frame they're given, like a busy app past the timeout.
+    var dropNextFrame: Set<WindowID> = []
+    private lazy var all: [WindowRecord] = initial
     private var pendingStart: (@MainActor () -> Void)?
     private var events: (@MainActor (WindowEvent) -> Void)?
 
@@ -48,6 +51,18 @@ final class FakeApp: WindowApp, @unchecked Sendable {
 
     func stop() { events = nil }
 
+    /// Every window the app has: the initial ones, plus created and missed ones, still open.
+    func windows(_ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
+        let open = all.filter { frames[$0.id] != nil }
+        MainActor.assumeIsolated { completion(open) }
+    }
+
+    /// A window that appears without its created event (the notification was missed).
+    @MainActor func miss(_ id: WindowID, frame: CGRect) {
+        frames[id] = frame
+        all.append(WindowRecord(id: id, floating: false, frame: frame, title: ""))
+    }
+
     func focusedWindow(_ completion: @escaping @MainActor (WindowID?) -> Void) {
         MainActor.assumeIsolated { completion(focused) }
     }
@@ -57,7 +72,7 @@ final class FakeApp: WindowApp, @unchecked Sendable {
     }
 
     func setFrames(_ changes: [(window: WindowID, frame: CGRect, old: CGRect?)]) {
-        for change in changes { frames[change.window] = change.frame }
+        for change in changes where dropNextFrame.remove(change.window) == nil { frames[change.window] = change.frame }
     }
 
     func focus(_ window: WindowID) { raised.append(window) }
@@ -71,7 +86,9 @@ final class FakeApp: WindowApp, @unchecked Sendable {
     /// A new window, appearing where macOS puts it.
     @MainActor func create(_ id: WindowID, frame: CGRect, title: String = "", floating: Bool = false) {
         frames[id] = frame
-        send(.created(WindowRecord(id: id, floating: floating, frame: frame, title: title)))
+        let record = WindowRecord(id: id, floating: floating, frame: frame, title: title)
+        all.append(record)
+        send(.created(record))
     }
 
     @MainActor func destroy(_ id: WindowID) {

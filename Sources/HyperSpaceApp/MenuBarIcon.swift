@@ -20,27 +20,36 @@ enum MenuBarIcon {
         return image
     }()
 
-    /// Labels already drawn, by mode and workspace: refreshing costs a dictionary lookup.
+    /// Labels already drawn, by mode and workspaces: refreshing costs a dictionary lookup.
     private static var labels: [String: NSImage] = [:]
 
     /// AeroSpace's i3-style label: outside the main mode, the mode's initial in a circle and
-    /// a colon; then the focused workspace knocked out of a rounded box. Opaque, not a
-    /// template: the menu bar draws template images translucent. The handler runs at every
-    /// draw, so the color follows the menu bar's light or dark appearance.
-    static func label(workspace: String, mode: String?) -> NSImage {
-        let key = (mode ?? "") + "\u{0}" + workspace
+    /// a colon; then each display's workspace, the main display first, the others left to
+    /// right, divided by a bar (`1 | develop`): the focused one knocked out of a rounded box, the others outlined.
+    /// Opaque, not a template: the menu bar draws template images translucent. The handler
+    /// runs at every draw, so the color follows the menu bar's light or dark appearance.
+    static func label(workspaces: [(name: String, focused: Bool)], mode: String?) -> NSImage {
+        let key = (mode ?? "") + workspaces.map { "\u{0}" + ($0.focused ? "*" : "") + $0.name }.joined()
         if let cached = labels[key] { return cached }
 
-        let height: CGFloat = 18, padding: CGFloat = 4, gap: CGFloat = 3
+        let height: CGFloat = 18, padding: CGFloat = 4, gap: CGFloat = 3, divider: CGFloat = 1
         let bold: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .bold), .foregroundColor: NSColor.black]
         let small: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: NSColor.black]
-        let name = workspace as NSString
         let initial = mode.map { $0.prefix(1).uppercased() as NSString }
         let colon = ":" as NSString
         let colonWidth = ceil(colon.size(withAttributes: bold).width)
         let modeWidth = initial == nil ? 0 : (height - 2) + gap + colonWidth + gap
-        let boxWidth = max(ceil(name.size(withAttributes: bold).width) + padding * 2, height - 2) // square at least
-        let size = NSSize(width: modeWidth + boxWidth, height: height)
+        // Each workspace's box, square at least, with a divider between neighbors.
+        var boxes: [(name: NSString, focused: Bool, rect: NSRect)] = []
+        var x = modeWidth
+        for (i, workspace) in workspaces.enumerated() {
+            if i > 0 { x += gap + divider + gap }
+            let name = workspace.name as NSString
+            let width = max(ceil(name.size(withAttributes: bold).width) + padding * 2, height - 2)
+            boxes.append((name, workspace.focused, NSRect(x: x, y: 1, width: width, height: height - 2)))
+            x += width
+        }
+        let size = NSSize(width: x, height: height)
 
         func draw(_ text: NSString, _ attributes: [NSAttributedString.Key: Any], centeredIn rect: NSRect) {
             let textSize = text.size(withAttributes: attributes)
@@ -59,13 +68,28 @@ enum MenuBarIcon {
                 draw(initial, small.merging([.foregroundColor: ink]) { $1 }, centeredIn: circle)
                 draw(colon, bold.merging([.foregroundColor: ink]) { $1 }, centeredIn: NSRect(x: circle.maxX + gap, y: 0, width: colonWidth, height: height))
             }
-            let box = NSRect(x: modeWidth, y: 1, width: boxWidth, height: height - 2)
-            NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
-            NSGraphicsContext.current?.compositingOperation = .destinationOut
-            draw(name, bold, centeredIn: box)
+            for (i, box) in boxes.enumerated() {
+                if i > 0 {
+                    NSRect(x: box.rect.minX - gap - divider, y: 4, width: divider, height: height - 8).fill()
+                }
+                if box.focused {
+                    // Knocked out: the text is cut from the box, so the menu bar shows through.
+                    NSGraphicsContext.saveGraphicsState()
+                    NSBezierPath(roundedRect: box.rect, xRadius: 4, yRadius: 4).fill()
+                    NSGraphicsContext.current?.compositingOperation = .destinationOut
+                    draw(box.name, bold, centeredIn: box.rect)
+                    NSGraphicsContext.restoreGraphicsState()
+                } else {
+                    let outline = NSBezierPath(roundedRect: box.rect.insetBy(dx: 0.75, dy: 0.75), xRadius: 3.5, yRadius: 3.5)
+                    outline.lineWidth = 1.5
+                    outline.stroke()
+                    draw(box.name, bold.merging([.foregroundColor: ink]) { $1 }, centeredIn: box.rect)
+                }
+            }
             return true
         }
-        image.accessibilityDescription = mode.map { "\($0) mode, workspace \(workspace)" } ?? "Workspace \(workspace)"
+        let names = workspaces.map { $0.focused ? "workspace \($0.name) (focused)" : "workspace \($0.name)" }.joined(separator: ", ")
+        image.accessibilityDescription = mode.map { "\($0) mode, \(names)" } ?? names
         labels[key] = image
         return image
     }
