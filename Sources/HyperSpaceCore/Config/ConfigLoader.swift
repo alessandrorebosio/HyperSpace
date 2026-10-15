@@ -331,7 +331,8 @@ public enum ConfigLoader {
     # automatically-unhide-macos-hidden-apps = false
     # focus-follows-mouse.enabled = false
 
-    # Workspaces kept alive when empty; omitted = the ones named in bindings.
+    # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned
+    # to a monitor, which is usually what you want.
     # persistent-workspaces = ['1', '2', '3']
 
     # Gaps: a number, or per monitor: [{ monitor.main = 16 }, { monitor."dell" = 32 }, 24]

@@ -46,7 +46,7 @@ cat > $APP/Contents/Info.plist <<EOF
     <key>CFBundleVersion</key>             <string>$VERSION</string>
     <key>LSMinimumSystemVersion</key>      <string>15.0</string>
     <key>LSUIElement</key>                 <true/>
-    <key>NSHumanReadableCopyright</key>    <string>HyperSpace</string>
+    <key>NSHumanReadableCopyright</key>    <string>© 2026 Alessandro Rebosio, MIT License</string>
 </dict>
 </plist>
 EOF

@@ -105,11 +105,12 @@ public struct WMSettings: Sendable, Equatable {
             hotkeys[mode] = table
         }
         if modes["main"] == nil { modes["main"] = [:] }
-        // Without persistent-workspaces, the workspaces named in bindings stay alive.
-        persistentWorkspaces = config.persistentWorkspaces ?? modes.values.flatMap(\.values).flatMap(\.commands).compactMap { command in
+        // Without persistent-workspaces, the workspaces named in bindings and the ones assigned
+        // to a monitor stay alive.
+        persistentWorkspaces = config.persistentWorkspaces ?? Array(Set(modes.values.flatMap(\.values).flatMap(\.commands).compactMap { command in
             if case let .workspace(.named(name), _, _, _) = command { return name }
             return nil
-        }
+        } + workspaceToMonitor.keys)).sorted()
     }
 
     /// Gaps resolved for one monitor.

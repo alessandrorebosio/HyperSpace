@@ -7,7 +7,23 @@ A single lightweight macOS app for:
 
 Goal: one process, no drivers, one permission (Accessibility).
 
-Status: phases 1–4 built: menu bar app, TOML config with hot reload, `hsctl`, keyboard remapping (Caps Lock and other layers, dual-role keys, double taps, per-app and per-device remaps), mouse remapping (buttons, Logitech controls over HID++, wheel and gesture actions while a button is held, smooth scrolling, pointer speed and acceleration), system actions (media keys, Mission Control, windows, clicks, apps, text), and a tiling window manager compatible with AeroSpace: wm.toml takes AeroSpace's window keys (app-level ones like start-at-login live in the menu), `hsctl` takes AeroSpace's commands (empty wm.toml = off). See [docs/DESIGN.md](docs/DESIGN.md) and the spike results in [docs/SPIKE.md](docs/SPIKE.md).
+Keyboard remapping (Caps Lock and other layers, dual-role keys, double taps, per-app and per-device remaps), mouse remapping (buttons, Logitech controls over HID++, wheel and gesture actions while a button is held, smooth scrolling, pointer speed and acceleration), system actions (media keys, Mission Control, windows, clicks, apps, text), and a tiling window manager compatible with AeroSpace: wm.toml takes AeroSpace's window keys (app-level ones like start-at-login live in the menu), `hsctl` takes AeroSpace's commands (empty wm.toml = off). The menu bar shows each display's workspace. See [docs/DESIGN.md](docs/DESIGN.md).
+
+## Install
+
+Download `HyperSpace-<version>.zip` from [Releases](https://github.com/alessandrorebosio/HyperSpace/releases), unzip it and move `HyperSpace.app` to `/Applications`.
+
+The app is signed with a self-signed identity, not notarized: the first time, macOS blocks it. Allow it in System Settings → Privacy & Security ("Open Anyway"), or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/HyperSpace.app
+```
+
+Then grant Accessibility when asked (System Settings → Privacy & Security → Accessibility). To use `hsctl` from the terminal:
+
+```sh
+ln -s /Applications/HyperSpace.app/Contents/MacOS/hsctl /opt/homebrew/bin/hsctl
+```
 
 ## Build
 
@@ -17,6 +33,7 @@ Requires macOS 15+ and Swift 6 (Command Line Tools are enough).
 scripts/bundle.sh          # builds build/HyperSpace.app (hsctl is inside Contents/MacOS)
 open build/HyperSpace.app
 scripts/test.sh            # runs the tests
+scripts/release.sh         # tests, bundle, then build/HyperSpace-<version>.zip
 ```
 
 The app is signed with a self-signed "HyperSpace Dev" identity that `scripts/signing.sh` creates on the first build, in a keychain file private to this checkout (`.signing/`, git-ignored; the login keychain isn't touched). A stable signature means macOS keeps the Accessibility permission across rebuilds. Set `HYPERSPACE_SIGN_IDENTITY` to sign with another identity.
@@ -41,3 +58,7 @@ hsctl config-path
 hsctl apps          # running apps and their bundle ids, for per-app rules
 hsctl version
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party code and ideas: [THIRD_PARTY.md](THIRD_PARTY.md).

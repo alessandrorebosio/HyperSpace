@@ -43,7 +43,7 @@ extension WindowManager {
             var names = model.workspaceNames
             if filters["--focused"] != nil { names = [model.focusedWorkspace.name] }
             if let monitors = filters["--monitor"] {
-                let ids = Set(monitors.compactMap { monitorID($0) })
+                let ids = monitorIDs(monitors)
                 names = names.filter { model.assignedMonitor($0).map(ids.contains) ?? false }
             }
             if let visible = filters["--visible"] { names = names.filter { model.isVisible($0) != (visible == ["no"]) } }
@@ -58,7 +58,7 @@ extension WindowManager {
                     model.workspaces[name == "focused" ? model.focusedWorkspace.name : name]?.windows ?? []
                 }
             } else if let monitors = filters["--monitor"] {
-                let monitorIDs = Set(monitors.compactMap { monitorID($0) })
+                let monitorIDs = monitorIDs(monitors)
                 ids = model.visible.filter { monitorIDs.contains($0.key) }.flatMap { model.workspace($0.value).windows }
             } else {
                 ids = model.workspaceNames.flatMap { model.workspaces[$0]?.windows ?? [] }
@@ -94,10 +94,22 @@ extension WindowManager {
         return rows.map { row in format.replacing(/%\{([a-z-]+)\}/) { row[String($0.1)] ?? "" } }.joined(separator: "\n")
     }
 
-    private func monitorID(_ pattern: String) -> UInt32? {
-        guard let model else { return nil }
-        if pattern == "focused" { return model.focusedMonitor }
-        return model.monitors.first { WMMonitor.matches(pattern, $0, in: model.monitors) }?.id
+    /// `--monitor` values, as in AeroSpace: `all`, `focused`, `mouse`, or a monitor pattern.
+    private func monitorIDs(_ patterns: [String]) -> Set<UInt32> {
+        guard let model else { return [] }
+        return Set(patterns.flatMap { pattern -> [UInt32] in
+            switch pattern {
+            case "all":
+                return model.monitors.map(\.id)
+            case "focused":
+                return [model.focusedMonitor]
+            case "mouse":
+                let mouse = CGEvent(source: nil)?.location ?? .zero
+                return model.monitors.filter { $0.frame.contains(mouse) }.map(\.id)
+            default:
+                return model.monitors.first { WMMonitor.matches(pattern, $0, in: model.monitors) }.map { [$0.id] } ?? []
+            }
+        })
     }
 
     // MARK: - Mouse
