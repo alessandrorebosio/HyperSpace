@@ -4,28 +4,22 @@ public struct MousePlan: Sendable, Equatable {
     public var buttons = OutputTable.buttons
     public var apps: [String: OutputTable] = [:]
     public var scroll: ScrollConfig?
+    public var navigation = NavigationRules()
 
     public var needsEventTap: Bool { !buttons.isEmpty || !apps.isEmpty || scroll != nil }
 
     public init() {}
 
     public init(_ config: MouseConfig) throws(InvalidConfig) {
-        buttons = try MousePlan.table(config.buttons, path: "buttons", over: .buttons)
+        buttons = try Compile.table(config.buttons, path: "buttons", over: .buttons, index: MousePlan.button)
         for (i, app) in config.app.enumerated() {
-            apps[app.bundleID] = try MousePlan.table(app.buttons, path: "app[\(i)].buttons", over: buttons)
+            apps[app.bundleID] = try Compile.table(app.map, path: "app[\(i)].buttons", over: buttons, index: MousePlan.button)
         }
         if let lines = config.scroll?.lines, !(1...20).contains(lines) {
             throw InvalidConfig(message: "scroll.lines: must be between 1 and 20")
         }
         scroll = config.scroll
-    }
-
-    private static func table(_ map: [String: Action], path: String, over base: OutputTable) throws(InvalidConfig) -> OutputTable {
-        var table = base
-        for (name, action) in map {
-            table[try button(name, path: "\(path).\(name)")] = try Compile.output(action, path: "\(path).\(name)")
-        }
-        return table
+        navigation = NavigationRules(config.navigate)
     }
 
     /// `button1`...`button31`, or `middle`, `back`, `forward`.

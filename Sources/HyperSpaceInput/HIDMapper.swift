@@ -42,12 +42,14 @@ public final class HIDMapper {
 
     private func applyToAll() {
         var mapped = 0
-        for service in keyboards() {
+        for service in HIDKeyboards.all(client) {
             let id = registryID(service)
             if original[id] == nil {
                 original[id] = .some(IOHIDServiceClientCopyProperty(service, property))
             }
-            let entries = mappings.filter { matches($0.device, service) }
+            // First mapping per key wins: device-specific ones come first in the plan.
+            var seen = Set<UInt32>()
+            let entries = mappings.filter { matches($0.device, service) && seen.insert($0.from).inserted }
             if entries.isEmpty {
                 let previous = original[id] ?? nil
                 IOHIDServiceClientSetProperty(service, property, previous ?? ([] as CFArray))
@@ -61,16 +63,6 @@ public final class HIDMapper {
         }
         mappedKeyboards = mapped
         log.info("applied \(self.mappings.count) HID mapping(s) to \(mapped) keyboard(s)")
-    }
-
-    private func keyboards() -> [IOHIDServiceClient] {
-        let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient]) ?? []
-        return services.filter { service in
-            guard IOHIDServiceClientConformsTo(service, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Keyboard)) != 0 else { return false }
-            // Karabiner's virtual keyboard replays already-remapped input: leave it alone.
-            let product = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String ?? ""
-            return !product.contains("Karabiner")
-        }
     }
 
     private func matches(_ device: DeviceMatch?, _ service: IOHIDServiceClient) -> Bool {

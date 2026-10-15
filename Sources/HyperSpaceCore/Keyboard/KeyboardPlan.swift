@@ -31,34 +31,59 @@ public struct Layer: Sendable, Equatable {
 /// every key name, so a config that compiles can be applied without further checks.
 public struct KeyboardPlan: Sendable, Equatable {
     public var hid: [HIDMapping] = []
-    public var simple = OutputTable.keys
+    /// `[map]` entries the event tap handles (combos, actions, keys an app overrides).
+    public var map = OutputTable.keys
+    public var apps: [String: OutputTable] = [:]
     public var layer: Layer?
 
-    public var needsEventTap: Bool { layer != nil || !simple.isEmpty }
+    public var needsEventTap: Bool { layer != nil || !map.isEmpty || !apps.isEmpty }
 
     public init() {}
 
     public init(_ config: KeyboardConfig) throws(InvalidConfig) {
         let capsLock = KeyNames.key("capslock")!
-        for (i, remap) in config.simple.enumerated() {
-            let path = "simple[\(i)]"
-            let from = try Compile.key(remap.from, path: "\(path).from")
-            let to = try Compile.combo(remap.to, path: "\(path).to")
-            if config.capslock != nil, from == capsLock {
-                throw InvalidConfig(message: "\(path).from: capslock is already configured in [capslock]")
+        func from(_ name: String, _ path: String) throws(InvalidConfig) -> Key {
+            let key = try Compile.key(name, path: path)
+            if config.capslock != nil, key == capsLock {
+                throw InvalidConfig(message: "\(path): capslock is already configured in [capslock]")
             }
-            if to.modifiers.isEmpty {
-                hid.append(HIDMapping(from: from.usage, to: to.key.usage, device: remap.device))
-                continue
+            return key
+        }
+        /// Index into a tap table. The tap never sees modifier keys go down, only flag changes.
+        func tapKey(_ name: String, _ path: String) throws(InvalidConfig) -> Int {
+            let key = try from(name, path)
+            guard !key.isModifier else {
+                throw InvalidConfig(message: "\(path): a modifier key can only become another key, in [map] or [[device]]")
             }
-            // A combo can't be expressed at HID level: the event tap handles it.
-            guard !from.isModifier else {
-                throw InvalidConfig(message: "\(path): remapping a modifier to a combo is not supported")
+            return Int(key.code)
+        }
+
+        // Device remaps come first: for the same key, the more specific mapping wins.
+        for (i, device) in config.device.enumerated() {
+            for (name, target) in device.map.sorted(by: { $0.key < $1.key }) {
+                let path = "device[\(i)].map.\(name)"
+                let to = try Compile.key(target, path: path)
+                hid.append(HIDMapping(from: try from(name, path).usage, to: to.usage, device: device.match))
             }
-            guard remap.device == nil else {
-                throw InvalidConfig(message: "\(path): a device filter needs a single key as target, not a combo")
+        }
+
+        // Keys an app overrides go through the tap, the only layer that knows the frontmost app.
+        var overridden = Set<Int>()
+        for (i, app) in config.app.enumerated() {
+            for name in app.map.keys { overridden.insert(try tapKey(name, "app[\(i)].map.\(name)")) }
+        }
+        for (name, action) in config.map.sorted(by: { $0.key < $1.key }) {
+            let path = "map.\(name)"
+            let key = try from(name, path)
+            if case let .key(to)? = try Compile.output(action, path: path), to.modifiers.isEmpty,
+               !overridden.contains(Int(key.code)) {
+                hid.append(HIDMapping(from: key.usage, to: to.key.usage, device: nil)) // works in password fields too
+            } else {
+                map = try Compile.table([name: action], path: "map", over: map, index: tapKey)
             }
-            simple[Int(from.code)] = .key(to)
+        }
+        for (i, app) in config.app.enumerated() {
+            apps[app.bundleID] = try Compile.table(app.map, path: "app[\(i)].map", over: map, index: tapKey)
         }
 
         guard let caps = config.capslock else { return }
@@ -77,10 +102,13 @@ public struct KeyboardPlan: Sendable, Equatable {
             }
             led = parsed
         }
-        let base = try KeyboardPlan.table(caps.map, path: "capslock.map", over: .keys)
+        let layerKey = { (name: String, path: String) throws(InvalidConfig) -> Int in
+            Int(try Compile.key(name, path: path).code)
+        }
+        let base = try Compile.table(caps.map, path: "capslock.map", over: .keys, index: layerKey)
         var apps: [String: OutputTable] = [:]
         for (i, app) in caps.app.enumerated() {
-            apps[app.bundleID] = try KeyboardPlan.table(app.map, path: "capslock.app[\(i)].map", over: base)
+            apps[app.bundleID] = try Compile.table(app.map, path: "capslock.app[\(i)].map", over: base, index: layerKey)
         }
         layer = Layer(
             alone: try Compile.output(caps.alone, path: "capslock.alone"),
@@ -90,13 +118,5 @@ public struct KeyboardPlan: Sendable, Equatable {
             base: base,
             apps: apps
         )
-    }
-
-    private static func table(_ map: [String: Action], path: String, over base: OutputTable) throws(InvalidConfig) -> OutputTable {
-        var table = base
-        for (name, action) in map {
-            table[Int(try Compile.key(name, path: "\(path).\(name)").code)] = try Compile.output(action, path: "\(path).\(name)")
-        }
-        return table
     }
 }

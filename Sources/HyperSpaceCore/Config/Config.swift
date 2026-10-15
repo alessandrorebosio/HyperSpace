@@ -10,18 +10,15 @@ public struct Config: Sendable, Equatable {
 // MARK: - Keyboard
 
 public struct KeyboardConfig: Sendable, Equatable {
-    /// Static 1:1 remaps, applied at HID level when possible (L0).
-    public var simple: [SimpleRemap] = []
+    /// Key -> action, always active. Key -> key is applied at HID level when possible (L0).
+    public var map: [String: Action] = [:]
+    public var app: [AppMap] = []
+    /// Key -> key remaps for one keyboard only.
+    public var device: [DeviceMap] = []
     /// Caps Lock layer. `nil` means Caps Lock is left alone.
     public var capslock: CapsLockConfig?
 
     public init() {}
-}
-
-public struct SimpleRemap: Sendable, Equatable {
-    public var from: String
-    public var to: String
-    public var device: DeviceMatch?
 }
 
 /// Once configured, Caps Lock no longer toggles caps lock: it only does what is mapped here.
@@ -36,12 +33,13 @@ public struct CapsLockConfig: Sendable, Equatable {
     public var tapTimeoutMs = 200
     /// Caps + key. Keys not listed keep their normal behavior.
     public var map: [String: Action] = [:]
-    public var app: [AppKeyMap] = []
+    public var app: [AppMap] = []
 
     public init() {}
 }
 
-public struct AppKeyMap: Sendable, Equatable {
+/// Overrides while one app is in front: key or button name -> action.
+public struct AppMap: Sendable, Equatable {
     public var bundleID: String
     public var map: [String: Action]
 }
@@ -51,27 +49,38 @@ public struct DeviceMatch: Sendable, Equatable {
     public var product: Int?
 }
 
+public struct DeviceMap: Sendable, Equatable {
+    public var match: DeviceMatch
+    /// Key -> key.
+    public var map: [String: String]
+}
+
 // MARK: - Mouse
 
 public struct MouseConfig: Sendable, Equatable {
     /// Button name (e.g. `button3`, `back`) -> action, for every mouse.
     public var buttons: [String: Action] = [:]
-    public var app: [AppMouseMap] = []
+    /// Per-app overrides; `map` holds button names.
+    public var app: [AppMap] = []
     /// Wheel scrolling (notched mice). Trackpads and smooth-scrolling mice are never touched.
     public var scroll: ScrollConfig?
+    public var navigate = NavigateConfig()
 
     public init() {}
-}
-
-public struct AppMouseMap: Sendable, Equatable {
-    public var bundleID: String
-    public var buttons: [String: Action]
 }
 
 public struct ScrollConfig: Sendable, Equatable {
     public var reverse = false
     public var linear = false
     public var lines: Int?
+}
+
+/// How `navigate.back`/`navigate.forward` reach each app (bundle id prefixes).
+public struct NavigateConfig: Sendable, Equatable {
+    /// Extra apps that get a trackpad swipe.
+    public var swipe: [String] = []
+    /// Apps that get mouse buttons 4/5, even if they'd get a swipe by default.
+    public var buttons: [String] = []
 }
 
 // MARK: - Window manager
@@ -100,25 +109,14 @@ public struct WMRule: Sendable, Equatable {
 // MARK: - Decoding
 
 extension KeyboardConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case simple, capslock }
+    enum CodingKeys: String, CodingKey, CaseIterable { case map, app, device, capslock }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        simple = try c.decode(.simple, default: [])
+        let c = try decoder.table(CodingKeys.self)
+        map = try c.decode(.map, default: [:])
+        app = try c.decode(.app, default: [])
+        device = try c.decode(.device, default: [])
         capslock = try c.decodeIfPresent(CapsLockConfig.self, forKey: .capslock)
-    }
-}
-
-extension SimpleRemap: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case from, to, device }
-
-    public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        from = try c.decode(String.self, forKey: .from)
-        to = try c.decode(String.self, forKey: .to)
-        device = try c.decodeIfPresent(DeviceMatch.self, forKey: .device)
     }
 }
 
@@ -128,8 +126,7 @@ extension CapsLockConfig: Decodable {
     }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         alone = try c.decode(.alone, default: .none)
         hold = try c.decodeIfPresent(String.self, forKey: .hold)
         led = try c.decodeIfPresent(String.self, forKey: .led)
@@ -139,48 +136,47 @@ extension CapsLockConfig: Decodable {
     }
 }
 
-extension AppKeyMap: Decodable {
+extension AppMap: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case bundleID = "bundle_id", map }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         bundleID = try c.decode(String.self, forKey: .bundleID)
         map = try c.decode(.map, default: [:])
     }
 }
 
-extension DeviceMatch: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case vendor, product }
+/// mouse.toml's `[[app]]`, which names its table `buttons`.
+private struct AppButtons: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case bundleID = "bundle_id", buttons }
+    let app: AppMap
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        app = AppMap(bundleID: try c.decode(String.self, forKey: .bundleID), map: try c.decode(.buttons, default: [:]))
+    }
+}
+
+extension DeviceMap: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case vendor, product, map }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        vendor = try c.decodeIfPresent(Int.self, forKey: .vendor)
-        product = try c.decodeIfPresent(Int.self, forKey: .product)
+        let c = try decoder.table(CodingKeys.self)
+        match = DeviceMatch(vendor: try c.decodeIfPresent(Int.self, forKey: .vendor),
+                            product: try c.decodeIfPresent(Int.self, forKey: .product))
+        map = try c.decode(.map, default: [:])
     }
 }
 
 extension MouseConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, scroll }
+    enum CodingKeys: String, CodingKey, CaseIterable { case buttons, app, scroll, navigate }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         buttons = try c.decode(.buttons, default: [:])
-        app = try c.decode(.app, default: [])
+        app = try c.decode(.app, default: [AppButtons]()).map(\.app)
         scroll = try c.decodeIfPresent(ScrollConfig.self, forKey: .scroll)
-    }
-}
-
-extension AppMouseMap: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case bundleID = "bundle_id", buttons }
-
-    public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        bundleID = try c.decode(String.self, forKey: .bundleID)
-        buttons = try c.decode(.buttons, default: [:])
+        navigate = try c.decode(.navigate, default: NavigateConfig())
     }
 }
 
@@ -188,11 +184,20 @@ extension ScrollConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case reverse, linear, lines }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         reverse = try c.decode(.reverse, default: false)
         linear = try c.decode(.linear, default: false)
         lines = try c.decodeIfPresent(Int.self, forKey: .lines)
+    }
+}
+
+extension NavigateConfig: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case swipe, buttons }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        swipe = try c.decode(.swipe, default: [])
+        buttons = try c.decode(.buttons, default: [])
     }
 }
 
@@ -200,8 +205,7 @@ extension WMConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case enabled, gaps, bindings, rule }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         enabled = try c.decode(.enabled, default: false)
         gaps = try c.decode(.gaps, default: Gaps())
         bindings = try c.decode(.bindings, default: [:])
@@ -213,8 +217,7 @@ extension Gaps: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case inner, outer }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         inner = try c.decode(.inner, default: 0)
         outer = try c.decode(.outer, default: 0)
     }
@@ -224,8 +227,7 @@ extension WMRule: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable { case app, layout, workspace }
 
     public init(from decoder: any Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
-        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let c = try decoder.table(CodingKeys.self)
         app = try c.decode(String.self, forKey: .app)
         layout = try c.decodeIfPresent(String.self, forKey: .layout)
         workspace = try c.decodeIfPresent(String.self, forKey: .workspace)

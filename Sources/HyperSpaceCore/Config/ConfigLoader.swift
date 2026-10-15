@@ -169,13 +169,22 @@ public enum ConfigLoader {
     #            "none"                           do nothing
     #            "passthrough"                    keep the normal behavior (for app exceptions)
 
-    # Simple remaps, always active (must come before any [section]). key -> key works
-    # everywhere, even in password fields; key -> combo needs HyperSpace running.
-    # "device" limits a remap to one keyboard.
-    # simple = [
-    #   { from = "command.right", to = "option.right" },
-    #   { from = "f1", to = "cmd-space" },
-    # ]
+    # Remaps, always active. key -> key works everywhere, even in password fields;
+    # anything else (combos, shell...) needs HyperSpace running.
+    # [map]
+    # "command.right" = "option.right"
+    # f1 = "cmd-space"
+    # f5 = { shell = "open -a Safari" }
+
+    # [map] overrides while one app is in front.
+    # [[app]]
+    # bundle_id = "com.apple.Terminal"
+    # map = { f1 = "passthrough" }
+
+    # key -> key for one keyboard only (vendor/product ids: `hidutil list`).
+    # [[device]]
+    # vendor = 0x05ac
+    # map = { "option.left" = "command.left" }
 
     # Caps Lock. Once this section exists, Caps Lock no longer toggles caps lock
     # (if it was on, HyperSpace turns it off).
@@ -220,6 +229,13 @@ public enum ConfigLoader {
     # [[app]]
     # bundle_id = "com.google.Chrome"
     # buttons = { button3 = "passthrough", button4 = "passthrough" }
+
+    # How navigate.back/.forward reach an app (bundle id prefixes). Apple apps, Firefox,
+    # Opera and ForkLift get a trackpad swipe; every other app gets mouse buttons 4/5.
+    # Add an app here if back/forward doesn't work in it.
+    # [navigate]
+    # swipe = ["com.example.App"]   # these get a swipe too
+    # buttons = ["com.apple.Xcode"] # these get buttons 4/5 instead
 
     # Wheel scrolling only; trackpads and Magic Mouse are never touched.
     # [scroll]
