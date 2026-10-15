@@ -6,12 +6,37 @@ public enum Output: Sendable, Equatable {
     case key(Combo)
     /// Back/forward in the app under the input, independent of the keyboard layout.
     case navigate(Navigation)
+    /// A keyboard media key: volume, brightness, playback.
+    case media(MediaKey)
     case shell(String)
     case wm(String)
 }
 
 public enum Navigation: Sendable, Equatable {
     case back, forward
+}
+
+/// Media keys, as named in the config. Raw values are the `NX_KEYTYPE_*` codes the
+/// system-defined event carries. Playback goes to the app that is playing (Spotify, Music...).
+public enum MediaKey: Int, Sendable, CaseIterable {
+    case volumeUp = 0, volumeDown = 1, volumeMute = 7
+    case brightnessUp = 2, brightnessDown = 3
+    case play = 16, next = 17, previous = 18
+
+    public var name: String {
+        switch self {
+        case .volumeUp: "volume.up"
+        case .volumeDown: "volume.down"
+        case .volumeMute: "volume.mute"
+        case .brightnessUp: "brightness.up"
+        case .brightnessDown: "brightness.down"
+        case .play: "media.play"
+        case .next: "media.next"
+        case .previous: "media.previous"
+        }
+    }
+
+    static let byName = Dictionary(uniqueKeysWithValues: allCases.map { ($0.name, $0) })
 }
 
 /// Which apps get back/forward as a trackpad swipe rather than mouse buttons 4/5.
@@ -97,7 +122,8 @@ enum Compile {
         case let .wm(command): .wm(command)
         case .keys("navigate.back"): .navigate(.back)
         case .keys("navigate.forward"): .navigate(.forward)
-        case let .keys(text): .key(try combo(text, path: path))
+        case let .keys(text):
+            if let media = MediaKey.byName[text] { .media(media) } else { .key(try combo(text, path: path)) }
         }
     }
 }

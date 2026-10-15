@@ -64,7 +64,7 @@ public final class InputService {
             switch output {
             case let .shell(command): ActionRunner.shell(command)
             case let .wm(command): Task { @MainActor in onWMCommand(command) }
-            case .key, .navigate, .drop: break // handled on the input thread
+            case .key, .navigate, .media, .drop: break // handled on the input thread
             }
         }
         if tap.start() {

@@ -168,6 +168,8 @@ public final class InputTap: @unchecked Sendable {
         case let .navigate(direction):
             let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
             navigation.send(direction, targetPID: pid, location: event.location, rules: current.tables.navigation)
+        case let .media(key):
+            MediaKeys.post(key)
         case .shell, .wm:
             perform(output)
         case .drop:
