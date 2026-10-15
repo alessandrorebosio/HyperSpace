@@ -24,7 +24,9 @@ enum MenuBarIcon {
     private static var labels: [String: NSImage] = [:]
 
     /// AeroSpace's i3-style label: outside the main mode, the mode's initial in a circle and
-    /// a colon; then the focused workspace knocked out of a rounded box.
+    /// a colon; then the focused workspace knocked out of a rounded box. Opaque, not a
+    /// template: the menu bar draws template images translucent. The handler runs at every
+    /// draw, so the color follows the menu bar's light or dark appearance.
     static func label(workspace: String, mode: String?) -> NSImage {
         let key = (mode ?? "") + "\u{0}" + workspace
         if let cached = labels[key] { return cached }
@@ -46,14 +48,16 @@ enum MenuBarIcon {
         }
 
         let image = NSImage(size: size, flipped: false) { _ in
-            NSColor.black.set()
+            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let ink = dark ? NSColor.white : NSColor.black
+            ink.set()
             if let initial {
                 let circle = NSRect(x: 1, y: 1, width: height - 2, height: height - 2)
                 let ring = NSBezierPath(ovalIn: circle.insetBy(dx: 0.75, dy: 0.75))
                 ring.lineWidth = 1.5
                 ring.stroke()
-                draw(initial, small, centeredIn: circle)
-                draw(colon, bold, centeredIn: NSRect(x: circle.maxX + gap, y: 0, width: colonWidth, height: height))
+                draw(initial, small.merging([.foregroundColor: ink]) { $1 }, centeredIn: circle)
+                draw(colon, bold.merging([.foregroundColor: ink]) { $1 }, centeredIn: NSRect(x: circle.maxX + gap, y: 0, width: colonWidth, height: height))
             }
             let box = NSRect(x: modeWidth, y: 1, width: boxWidth, height: height - 2)
             NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
@@ -61,7 +65,6 @@ enum MenuBarIcon {
             draw(name, bold, centeredIn: box)
             return true
         }
-        image.isTemplate = true
         image.accessibilityDescription = mode.map { "\($0) mode, workspace \(workspace)" } ?? "Workspace \(workspace)"
         labels[key] = image
         return image
