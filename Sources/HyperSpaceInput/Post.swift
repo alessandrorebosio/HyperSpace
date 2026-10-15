@@ -36,34 +36,68 @@ enum Post {
 
     /// Physical modifiers are kept (Shift + Caps + h selects to the left), the combo's are added.
     static func flags(for combo: Combo, physical: CGEventFlags = []) -> CGEventFlags {
-        var flags = physical.subtracting([.maskSecondaryFn, .maskNumericPad])
-        if combo.modifiers.contains(.command) { flags.insert(.maskCommand) }
-        if combo.modifiers.contains(.shift) { flags.insert(.maskShift) }
-        if combo.modifiers.contains(.option) { flags.insert(.maskAlternate) }
-        if combo.modifiers.contains(.control) { flags.insert(.maskControl) }
-        if combo.modifiers.contains(.fn) || combo.key.hasFnFlag { flags.insert(.maskSecondaryFn) }
+        var flags = physical.subtracting([.maskSecondaryFn, .maskNumericPad]).union(self.flags(for: combo.modifiers))
+        if combo.key.hasFnFlag { flags.insert(.maskSecondaryFn) }
         if combo.key.isArrow { flags.insert(.maskNumericPad) }
         return flags
     }
 
+    static func flags(for modifiers: Modifiers) -> CGEventFlags {
+        var flags: CGEventFlags = []
+        if modifiers.contains(.command) { flags.insert(.maskCommand) }
+        if modifiers.contains(.shift) { flags.insert(.maskShift) }
+        if modifiers.contains(.option) { flags.insert(.maskAlternate) }
+        if modifiers.contains(.control) { flags.insert(.maskControl) }
+        if modifiers.contains(.fn) { flags.insert(.maskSecondaryFn) }
+        return flags
+    }
+
+    /// Types text as Unicode, so it comes out right on any keyboard layout. Events carry at
+    /// most 20 UTF-16 units each.
+    static func text(_ text: String) {
+        let units = Array(text.utf16)
+        for start in stride(from: 0, to: units.count, by: 20) {
+            var chunk = Array(units[start..<min(start + 20, units.count)])
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { continue }
+                event.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+                send(event)
+            }
+        }
+    }
+
+    /// Where the pointer is now, for outputs that don't come from a mouse event.
+    static var cursor: CGPoint { CGEvent(source: nil)?.location ?? .zero }
+
     /// A full click of `button` (CoreGraphics number: 0 left, 1 right, 2 middle, 3 back, 4 forward).
     static func click(_ button: Int, at location: CGPoint, count: Int64 = 1) {
-        let (down, up): (CGEventType, CGEventType) = switch button {
-        case 0: (.leftMouseDown, .leftMouseUp)
-        case 1: (.rightMouseDown, .rightMouseUp)
-        default: (.otherMouseDown, .otherMouseUp)
+        self.button(button, down: true, at: location, count: count)
+        self.button(button, down: false, at: location, count: count)
+    }
+
+    static func button(_ button: Int, down: Bool, at location: CGPoint, count: Int64 = 1) {
+        let type: CGEventType = switch button {
+        case 0: down ? .leftMouseDown : .leftMouseUp
+        case 1: down ? .rightMouseDown : .rightMouseUp
+        default: down ? .otherMouseDown : .otherMouseUp
         }
-        guard let mouseButton = CGMouseButton(rawValue: UInt32(button)) else { return }
-        for type in [down, up] {
-            guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: location, mouseButton: mouseButton) else { continue }
-            event.setIntegerValueField(.mouseEventClickState, value: count)
-            send(event)
-        }
+        guard let mouseButton = CGMouseButton(rawValue: UInt32(button)),
+              let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: location, mouseButton: mouseButton) else { return }
+        event.setIntegerValueField(.mouseEventClickState, value: count)
+        send(event)
     }
 
     static func scroll(_ step: ScrollStep) {
         guard let event = CGEvent(scrollWheelEvent2Source: source, units: step.pixels ? .pixel : .line,
                                   wheelCount: 2, wheel1: step.dy, wheel2: step.dx, wheel3: 0) else { return }
+        send(event)
+    }
+
+    /// A trackpad-like scroll by points, for smooth scrolling.
+    static func smoothScroll(dx: Int32, dy: Int32) {
+        guard let event = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
+                                  wheel1: dy, wheel2: dx, wheel3: 0) else { return }
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         send(event)
     }
 

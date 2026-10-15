@@ -12,6 +12,10 @@ LinearMouse's `ButtonActionExecutor`, `DockKit`, `KeyKit` and `GestureKit`: Dock
 notifications, symbolic hot keys, the zoom toggle gesture, window maximize and
 IOHIDSystem auxiliary keys.
 
+`Sources/HyperSpaceInput/PointerSettings.swift` uses the same HID properties and speed
+curve as LinearMouse's `PointerKit` (pointer resolution, acceleration,
+`HIDUseLinearScalingMouseAcceleration`).
+
 ## TOMLDecoder — MIT License, Copyright (c) Daniel Duan
 https://github.com/dduan/TOMLDecoder
 

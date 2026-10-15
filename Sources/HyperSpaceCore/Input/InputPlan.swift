@@ -22,9 +22,12 @@ public struct InputPlan: Sendable, Equatable {
         }
         return ActiveTables(
             keys: pick(keyboard.apps, keyboard.map),
-            layer: keyboard.layer,
-            layerMap: keyboard.layer.map { pick($0.apps, $0.base) } ?? .keys,
+            layers: keyboard.layers,
+            layerMaps: keyboard.layers.map { pick($0.apps, $0.base) },
+            double: keyboard.double,
+            doubleTapNs: keyboard.doubleTapNs,
             buttons: pick(mouse.apps, mouse.buttons),
+            holds: mouse.holds,
             scroll: mouse.scroll,
             navigation: mouse.navigation
         )
@@ -35,9 +38,13 @@ public struct InputPlan: Sendable, Equatable {
 /// Immutable: the tap swaps whole snapshots.
 public struct ActiveTables: Sendable, Equatable {
     public var keys = OutputTable.keys
-    public var layer: Layer?
-    public var layerMap = OutputTable.keys
+    public var layers: [Layer] = []
+    /// `layers[i]`'s map for the frontmost app.
+    public var layerMaps: [OutputTable] = []
+    public var double = OutputTable.keys
+    public var doubleTapNs: UInt64 = 0
     public var buttons = OutputTable.buttons
-    public var scroll: ScrollConfig?
+    public var holds: [HoldPlan?] = []
+    public var scroll: ScrollPlan?
     public var navigation = NavigationRules()
 }

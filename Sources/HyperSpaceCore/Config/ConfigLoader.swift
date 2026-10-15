@@ -152,6 +152,33 @@ public enum ConfigLoader {
     # mapped here; everything else is untouched. Per-app rules use the app's bundle id:
     #   hsctl apps                            bundle ids of the running apps
     #   osascript -e 'id of app "Safari"'     bundle id of any installed app
+    # Try any action right away with `hsctl do <action>`, e.g. hsctl do volume.up
+    """
+
+    /// The actions both files accept, documented once.
+    private static let actions = """
+    # Actions, for keys and mouse buttons alike:
+    #   "cmd-w", "arrow.left"                  a key or combo (US key positions)
+    #   "navigate.back" / "navigate.forward"   back/forward in every app, any layout
+    #   "volume.up" / ".down" / ".mute"        volume
+    #   "brightness.up" / ".down"              display brightness
+    #   "keyboard.brightness.up" / ".down"     keyboard backlight
+    #   "media.play" / ".next" / ".previous" / ".forward" / ".rewind"   playback (Spotify, Music...)
+    #   "mission.control" / ".windows" / ".desktop" / ".launchpad"     Mission Control, app windows, desktop
+    #   "space.left" / "space.right"           move one space (desktop)
+    #   "window.maximize" / "window.minimize"  the focused window
+    #   "lookup" / "zoom.smart"                Look Up & data detectors, smart zoom
+    #   "click.left" / ".double" / ".right" / ".middle" / ".back" / ".forward"
+    #   "scroll.up" / ".down" / ".left" / ".right"   3 lines
+    #   { scroll = "down", lines = 5 }         or pixels = 40
+    #   { app = "Safari" }                     open or focus an app (name or bundle id)
+    #   { text = "me@example.com" }            type text
+    #   { sequence = ["cmd-c", "cmd-tab", "cmd-v"] }   several actions in a row
+    #   { shell = "open ~/Downloads" }         run a shell command
+    #   { action = "volume.up", repeat = true }      repeat while held (key repeat rate)
+    #   { action = "click.left", hold = true }       hold down while held: drag with it
+    #   "none"                                 do nothing
+    #   "passthrough"                          keep the normal behavior (for app exceptions)
     """
 
     static let keyboardTemplate = """
@@ -162,50 +189,70 @@ public enum ConfigLoader {
     #            arrow.left/.right/.up/.down, home, end, page.up, page.down, capslock,
     #            shift.left/.right, control.left/.right, option.left/.right, command.left/.right.
     #            Names are US key positions: symbol keys (bracket.open, minus...) may be
-    #            different characters on other layouts.
+    #            different characters on other layouts. Quote names with dots in table
+    #            headers: [layer."page.up"].
     # Modifiers: shift, ctrl, opt, cmd, fn, joined with "-" (e.g. "cmd-shift-k").
-    # Actions:   "arrow.left" / "cmd-arrow.left"  a key or combo
-    #            "volume.up", "media.next", "mission.control"...  named actions (full list in mouse.toml)
-    #            { scroll = "down", lines = 5 }   scroll
-    #            { shell = "open -a Safari" }     run a shell command
-    #            "none"                           do nothing
-    #            "passthrough"                    keep the normal behavior (for app exceptions)
+    \(actions)
+
+    # Maximum time between the two taps of [double] (100-1000 ms; must come before any [section]).
+    # double_tap_ms = 300
 
     # Remaps, always active. key -> key works everywhere, even in password fields;
-    # anything else (combos, shell...) needs HyperSpace running.
+    # anything else (combos, actions...) needs HyperSpace running.
     # [map]
     # "command.right" = "option.right"
     # f1 = "cmd-space"
-    # f5 = { shell = "open -a Safari" }
+    # f10 = "volume.mute"
+    # f11 = { action = "volume.down", repeat = true }
+    # f12 = { action = "volume.up", repeat = true }
 
     # [map] overrides while one app is in front.
     # [[app]]
     # bundle_id = "com.apple.Terminal"
     # map = { f1 = "passthrough" }
 
-    # key -> key for one keyboard only (vendor/product ids: `hidutil list`).
+    # key -> key for one keyboard only. Match by name (part of it), vendor and/or product
+    # (ids: `hidutil list`).
     # [[device]]
-    # vendor = 0x05ac
+    # name = "magic keyboard"
     # map = { "option.left" = "command.left" }
+
+    # Double tap a key: the first tap works as usual, the second does the action.
+    # Modifier keys work too, when tapped alone.
+    # [double]
+    # "shift.left" = "cmd-space"
+    # escape = "mission.control"
 
     # Caps Lock. Once this section exists, Caps Lock no longer toggles caps lock
     # (if it was on, HyperSpace turns it off).
     # [capslock]
-    # hold = "shift-ctrl-opt"     # while held, Caps Lock acts as these modifiers
+    # hold = "shift-ctrl-opt"     # while held, other keys get these modifiers ("meh", "hyper")
     # led = "held"                # LED: "held" = on while Caps Lock is held, "off" = always off (default)
     # alone = "escape"            # action when tapped alone (default: nothing)
     # tap_timeout_ms = 200        # held longer than this = not a tap, "alone" doesn't fire
 
-    # Caps + key overrides, in EVERY app: listed keys do this instead of getting the
-    # modifiers above. Good for global shortcuts like opening apps.
+    # Caps + key, in EVERY app: listed keys do this instead of getting the modifiers above.
     # [capslock.map]
-    # return = { shell = "open -a 'Visual Studio Code'" }
+    # return = { app = "Visual Studio Code" }
     # h = "arrow.left"
+    # u = "volume.up"
 
-    # Caps + key overrides only while that app is in front.
+    # Caps + key only while that app is in front.
     # [[capslock.app]]
     # bundle_id = "com.microsoft.VSCode"
     # map = { d = "cmd-shift-k" }
+
+    # Layers and dual-role keys: any other key works like [capslock] (same options, no led).
+    # Tapped, it types `alone`; held, the other keys use its map and `hold` modifiers.
+    # While typing fast, a key pressed during the layer key counts as held only if it's
+    # released first, so normal typing isn't affected.
+    # [layer.space]
+    # alone = "space"
+    # map = { j = "arrow.down", k = "arrow.up", h = "arrow.left", l = "arrow.right" }
+    #
+    # [layer.return]              # Return when tapped, Control when held
+    # alone = "return"
+    # hold = "ctrl"
 
     """
 
@@ -215,47 +262,56 @@ public enum ConfigLoader {
     #
     # Buttons: button1 = right, button2 (or middle) = wheel click,
     #          button3 (or back) / button4 (or forward) = side buttons, button5...31 = extra.
+    #          Logitech: dpi (the Lift's top button), gesture, or any control as "cid.0x00c3":
+    #          read over Logitech's protocol, these never reach macOS on their own.
     #          The left button can't be remapped.
-    # Actions: "navigate.back" / "navigate.forward"   back/forward in every app
-    #          "cmd-w"                                 a key or combo (US key positions)
-    #          "volume.up" / ".down" / ".mute"          volume
-    #          "brightness.up" / ".down"                display brightness
-    #          "keyboard.brightness.up" / ".down"       keyboard backlight
-    #          "media.play" / ".next" / ".previous" / ".forward" / ".rewind"   playback (Spotify, Music...)
-    #          "mission.control" / ".windows" / ".desktop" / ".launchpad"     Mission Control, app windows, show desktop
-    #          "space.left" / "space.right"            move one space (Desktop)
-    #          "lookup" / "zoom.smart"                 Look Up & data detectors, smart zoom
-    #          "window.maximize" / "window.minimize"   the focused window
-    #          "click.left" / ".double" / ".right" / ".middle" / ".back" / ".forward"   a click
-    #          "scroll.up" / ".down" / ".left" / ".right"   scroll 3 lines
-    #          { scroll = "down", lines = 5 }          scroll a set amount (or pixels = 40)
-    #          { shell = "open -a Safari" }            run a shell command
-    #          "none"                                  disable the button
-    #          "passthrough"                           keep the normal behavior (for app exceptions)
-    #          Try any action right away: hsctl do volume.up
+    \(actions)
 
     # [buttons]
-    # button3 = "navigate.back"     # side button: back
-    # button4 = "navigate.forward"  # side button: forward
-    # middle = "media.play"         # wheel click: play/pause
+    # back = "navigate.back"
+    # forward = "navigate.forward"
+    # middle = "media.play"
+    # dpi = "mission.control"
 
     # Per-app exceptions: these buttons behave differently in one app.
     # [[app]]
     # bundle_id = "com.google.Chrome"
-    # buttons = { button3 = "passthrough", button4 = "passthrough" }
+    # buttons = { back = "passthrough", forward = "passthrough" }
 
-    # How navigate.back/.forward reach an app (bundle id prefixes). Apple apps, Firefox,
-    # Opera and ForkLift get a trackpad swipe; every other app gets mouse buttons 4/5.
-    # Add an app here if back/forward doesn't work in it.
-    # [navigate]
-    # swipe = ["com.example.App"]   # these get a swipe too
-    # buttons = ["com.apple.Xcode"] # these get buttons 4/5 instead
+    # While a button is held, the wheel and mouse movement do something else. Tapped alone,
+    # the button still does its own action (or its normal click).
+    # [hold.back]
+    # "scroll.up" = "volume.up"           # per wheel notch
+    # "scroll.down" = "volume.down"
+    # "move.left" = "space.left"          # mouse gesture: move while holding
+    # "move.right" = "space.right"
+    # distance = 60                       # points of movement per gesture
 
     # Wheel scrolling only; trackpads and Magic Mouse are never touched.
     # [scroll]
-    # reverse = true                # invert the wheel direction
-    # linear = true                 # same distance per notch, no acceleration
-    # lines = 3                     # lines per notch when linear (1-20)
+    # smooth = true               # the notched wheel glides like a trackpad
+    # reverse = true              # invert the wheel: true, "vertical" or "horizontal"
+    # linear = true               # same distance per notch, no acceleration
+    # lines = 3                   # lines per notch when linear or smooth (1-20)
+    # fast = "opt"                # hold these modifiers to scroll faster...
+    # fast_factor = 3             # ...by this much
+
+    # Pointer speed and acceleration for every mouse (trackpads keep the macOS settings).
+    # [pointer]
+    # speed = 0.5                 # 0 (slow) ... 1 (fast)
+    # acceleration = false        # false = linear (moves exactly with your hand), or 0-20
+
+    # Pointer settings for some devices only; they win over [pointer].
+    # [[device]]
+    # name = "lift"               # part of the product name; or vendor = 0x046d, product = ...
+    # speed = 0.6
+    # acceleration = false
+
+    # How navigate.back/.forward reach an app (bundle id prefixes). Apple apps, Firefox,
+    # Opera and ForkLift get a trackpad swipe; every other app gets mouse buttons 4/5.
+    # [navigate]
+    # swipe = ["com.example.App"]   # these get a swipe too
+    # buttons = ["com.apple.Xcode"] # these get buttons 4/5 instead
 
     """
 

@@ -12,7 +12,7 @@ final class CapsLockState: @unchecked Sendable {
 
     func set(_ on: Bool) {
         queue.async { [self] in
-            for service in HIDKeyboards.all(client) {
+            for service in HIDServices.services(client, usage: kHIDUsage_GD_Keyboard) {
                 IOHIDServiceClientSetProperty(service, kIOHIDServiceCapsLockStateKey as CFString, on as CFBoolean)
             }
         }

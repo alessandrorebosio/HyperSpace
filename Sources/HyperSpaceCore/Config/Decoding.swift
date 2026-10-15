@@ -14,6 +14,14 @@ extension Decoder {
         return try container(keyedBy: keys)
     }
 
+    /// A keyed container for a TOML table whose keys are free-form (e.g. `[hold.back]`).
+    func anyTable() throws -> KeyedDecodingContainer<AnyKey> {
+        guard isTable else {
+            throw DecodingError.typeMismatch([String: Any].self, .init(codingPath: codingPath, debugDescription: "expected a table"))
+        }
+        return try container(keyedBy: AnyKey.self)
+    }
+
     /// Throws on keys the model doesn't know, so a typo like `capslok` isn't silently ignored.
     func rejectUnknownKeys<Key: CodingKey & CaseIterable>(_: Key.Type) throws {
         // TOMLDecoder hands out a keyed container even for scalars and arrays, so check first.
@@ -41,6 +49,12 @@ extension Decoder {
 }
 
 extension KeyedDecodingContainer {
+    /// A TOML number: `1` and `1.0` are both accepted.
+    func decodeNumber(_ key: Key) throws -> Double? {
+        if let int = try? decodeIfPresent(Int.self, forKey: key) { return Double(int) }
+        return try decodeIfPresent(Double.self, forKey: key)
+    }
+
     func decode<T: Decodable>(_ key: Key, default value: @autoclosure () -> T) throws -> T {
         try decodeIfPresent(T.self, forKey: key) ?? value()
     }

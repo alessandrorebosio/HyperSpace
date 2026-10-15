@@ -70,7 +70,7 @@ struct ConfigTests {
         buttons = { button3 = "passthrough" }
 
         [scroll]
-        reverse = true
+        reverse = "vertical"
         linear = true
         lines = 3
 
@@ -82,7 +82,7 @@ struct ConfigTests {
         #expect(mouse.buttons["forward"] == .keys("cmd-tab"))
         #expect(mouse.app.first?.map["button3"] == .passthrough)
         #expect(mouse.navigate == NavigateConfig(swipe: ["com.example."], buttons: ["com.apple.Xcode"]))
-        #expect(mouse.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))
+        #expect(mouse.scroll == ScrollConfig(reverse: .vertical, linear: true, lines: 3))
     }
 
     @Test func wmFileDecodes() throws {

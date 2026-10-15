@@ -52,8 +52,10 @@ struct MouseTests {
     @Test func invalidInputsAreConfigErrors() {
         #expect(error("[buttons]\nbutton0 = \"escape\"")?.contains("left button") == true)
         #expect(error("[buttons]\nthumb = \"escape\"")?.contains("unknown mouse input 'thumb'") == true)
-        #expect(error("[buttons]\nback = \"cmd-nope\"")?.contains("unknown key or combo") == true)
-        #expect(error("[[device]]\nmatch = { vendor = 1 }")?.hasPrefix("device: unknown key") == true)
+        #expect(error("[buttons]\nback = \"cmd-nope\"")?.contains("unknown key, combo or action") == true)
+        #expect(error("[[device]]\nmatch = { vendor = 1 }")?.contains("unknown key") == true)
+        #expect(error("[[device]]\nspeed = 0.5")?.contains("needs name, vendor or product") == true)
+        #expect(error("[pointer]\nspeed = 2")?.contains("between 0 and 1") == true)
         #expect(error("[scroll]\nlines = 0")?.contains("between 1 and 20") == true)
         #expect(error("[buttons]\nmiddle = \"scroll.sideways\"")?.contains("unknown scroll direction") == true)
         #expect(error("[buttons]\nmiddle = { scroll = \"up\", lines = 2, pixels = 3 }")?.contains("either `lines` or `pixels`") == true)
@@ -64,16 +66,16 @@ struct MouseTests {
         let tables = try plan(config).tables(forApp: nil)
         var e = MouseEngine()
         #expect(e.button(3, down: true, tables: tables) == .emit(.system(.navigateBack)))
-        #expect(e.isSwallowed(3))
+        #expect(e.swallowed(3) != nil)
         #expect(e.button(3, down: false, tables: tables) == .drop)
-        #expect(!e.isSwallowed(3))
+        #expect(e.swallowed(3) == nil)
     }
 
     @Test func unmappedButtonsPassThrough() throws {
         let tables = try plan(config).tables(forApp: "com.google.Chrome")
         var e = MouseEngine()
         #expect(e.button(3, down: true, tables: tables) == .pass)
-        #expect(!e.isSwallowed(3))
+        #expect(e.swallowed(3) == nil)
         #expect(e.button(3, down: false, tables: tables) == .pass)
         #expect(e.button(1, down: true, tables: tables) == .pass)
     }
