@@ -39,7 +39,7 @@ public enum Direction: String, Sendable, CaseIterable {
 /// containers always alternate orientation, so every arrangement has one representation.
 public final class WMNode {
     /// Set for windows (leaves), nil for containers.
-    public let window: WindowID?
+    public internal(set) var window: WindowID?
     public var orientation: Orientation
     public var layout: ContainerLayout
     public private(set) var children: [WMNode] = []

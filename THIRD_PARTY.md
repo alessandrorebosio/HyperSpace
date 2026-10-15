@@ -17,7 +17,6 @@ curve as LinearMouse's `PointerKit` (pointer resolution, acceleration,
 `HIDUseLinearScalingMouseAcceleration`).
 
 ## AeroSpace — MIT License, Copyright (c) 2023 Nikita Bobko
-https://github.com/nikitabobko/AeroSpace
 
 The window manager (`Sources/HyperSpaceCore/WM`, `Sources/HyperSpaceWM`) follows
 AeroSpace's model and command set: the normalized tiling tree, `move`/`join-with`
