@@ -1,0 +1,151 @@
+import AppKit
+import HyperSpaceCore
+
+/// What the window manager needs to know about a window, read once when it appears.
+struct WindowRecord: Sendable, Equatable {
+    let id: WindowID
+    let floating: Bool
+    let frame: CGRect?
+    /// Kept up to date through title events, for rules and `list-windows`.
+    var title: String
+}
+
+/// What an app reports about its windows, already read: the window manager never waits
+/// on an app.
+enum WindowEvent: Sendable {
+    case created(WindowRecord)
+    case destroyed(WindowID)
+    case focusChanged
+    case minimized(WindowID, Bool)
+    case moved(WindowID)
+    case titleChanged(WindowID, String)
+}
+
+/// A running app's windows as the window manager drives them, by window id. `AXApp` does it
+/// through Accessibility; the tests use a fake. Called on the main thread; completions and
+/// events arrive there too.
+protocol WindowApp: AnyObject, Sendable {
+    var pid: pid_t { get }
+    var bundleID: String? { get }
+    var name: String { get }
+    /// Starts reporting `events` and reads the windows the app already has.
+    func start(events: @escaping @MainActor (WindowEvent) -> Void, _ completion: @escaping @MainActor ([WindowRecord]) -> Void)
+    func stop()
+    /// The focused window, or the main one for apps that don't report focus.
+    func focusedWindow(_ completion: @escaping @MainActor (WindowID?) -> Void)
+    func frame(of window: WindowID, _ completion: @escaping @MainActor (CGRect?) -> Void)
+    /// Frames to set, with the frame each window has now (only what differs is set). A frame
+    /// superseded by a newer one before it's applied is skipped.
+    func setFrames(_ changes: [(window: WindowID, frame: CGRect, old: CGRect?)])
+    /// Raises the window and makes the app frontmost, as a click would.
+    func focus(_ window: WindowID)
+    func close(_ window: WindowID)
+    func minimize(_ window: WindowID)
+    func setFullscreen(_ window: WindowID, _ on: Bool?)
+    func terminate()
+}
+
+enum SystemEvent: Sendable {
+    case launched(pid_t)
+    case terminated(pid_t)
+    case activated(pid_t)
+    case hidden(pid_t, Bool)
+    /// Displays connected, disconnected or woken up.
+    case displaysChanged
+}
+
+/// The rest of macOS the window manager uses: apps, displays, the window server.
+@MainActor
+protocol WindowSystem: AnyObject {
+    /// Where the layout is saved across restarts.
+    var layoutURL: URL { get }
+    var frontmost: pid_t? { get }
+    /// Displays in AX coordinates: origin at the top left of the main display, y down.
+    func monitors() -> [WMMonitor]
+    /// Bounds and visibility of windows, from the window server (no IPC to their apps).
+    func windowServer(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)]
+    /// Regular apps running now.
+    func runningApps() -> [(pid: pid_t, bundleID: String?, name: String)]
+    /// The app behind `pid` if it's a regular app (one with windows to manage).
+    func app(_ pid: pid_t) -> WindowApp?
+    func isHidden(_ pid: pid_t) -> Bool
+    func unhide(_ pid: pid_t)
+    func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void)
+    func stopObserving()
+}
+
+/// The real system: NSWorkspace, NSScreen, CGWindowList and Accessibility.
+@MainActor
+final class MacSystem: WindowSystem {
+    private var observers: [(NotificationCenter, any NSObjectProtocol)] = []
+
+    init() {
+        // One timeout for every AX call: a frozen app answers nothing for 6 s by default.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), AXApp.timeout)
+    }
+
+    /// `~/Library/Application Support/HyperSpace/layout.json`, next to the IPC socket.
+    let layoutURL = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/HyperSpace/layout.json")
+
+    var frontmost: pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+
+    func monitors() -> [WMMonitor] {
+        guard let main = NSScreen.screens.first else { return [] }
+        func ax(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX, y: main.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+        }
+        return NSScreen.screens.map { screen in
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+            return WMMonitor(id: id, name: screen.localizedName, isMain: screen == main,
+                             frame: ax(screen.frame), visible: ax(screen.visibleFrame))
+        }
+    }
+
+    func windowServer(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)] {
+        WindowServer.windows(ids)
+    }
+
+    func runningApps() -> [(pid: pid_t, bundleID: String?, name: String)] {
+        NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map {
+            ($0.processIdentifier, $0.bundleIdentifier, $0.localizedName ?? "")
+        }
+    }
+
+    func app(_ pid: pid_t) -> WindowApp? {
+        guard pid != ProcessInfo.processInfo.processIdentifier,
+              let running = NSRunningApplication(processIdentifier: pid), running.activationPolicy == .regular else { return nil }
+        return AXApp(running)
+    }
+
+    func isHidden(_ pid: pid_t) -> Bool { NSRunningApplication(processIdentifier: pid)?.isHidden ?? false }
+
+    func unhide(_ pid: pid_t) { NSRunningApplication(processIdentifier: pid)?.unhide() }
+
+    func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void) {
+        let workspace = NSWorkspace.shared.notificationCenter
+        func on(_ name: Notification.Name, _ event: @escaping @Sendable (pid_t) -> SystemEvent) {
+            observers.append((workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { note in
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                let pid = app.processIdentifier
+                MainActor.assumeIsolated { handler(event(pid)) }
+            }))
+        }
+        on(NSWorkspace.didLaunchApplicationNotification) { .launched($0) }
+        on(NSWorkspace.didTerminateApplicationNotification) { .terminated($0) }
+        on(NSWorkspace.didActivateApplicationNotification) { .activated($0) }
+        on(NSWorkspace.didHideApplicationNotification) { .hidden($0, true) }
+        on(NSWorkspace.didUnhideApplicationNotification) { .hidden($0, false) }
+        for (center, name) in [(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification),
+                               (workspace, NSWorkspace.didWakeNotification)] {
+            observers.append((center, center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { handler(.displaysChanged) }
+            }))
+        }
+    }
+
+    func stopObserving() {
+        for (center, observer) in observers { center.removeObserver(observer) }
+        observers = []
+    }
+}
