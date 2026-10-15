@@ -226,6 +226,19 @@ struct WMTests {
         #expect(m.layout().tiled[1]?.minX == 1000)
     }
 
+    @Test func whichWindowsFloat() {
+        func kind(_ subrole: String?, resizable: Bool = true, button: Bool = true, app: String? = "com.apple.TextEdit") -> Bool? {
+            WMWindowKind.floating(subrole: subrole, resizable: resizable, fullscreenButton: button, bundleID: app)
+        }
+        #expect(kind("AXStandardWindow") == false)
+        #expect(kind("AXStandardWindow", resizable: false) == true, "fixed size: a calculator")
+        #expect(kind("AXStandardWindow", button: false) == true, "no full screen button: a settings pane")
+        #expect(kind("AXStandardWindow", button: false, app: "com.mitchellh.ghostty") == false, "no title bar, still a window")
+        #expect(kind("AXStandardWindow", resizable: false, app: "com.mitchellh.ghostty") == true)
+        for panel in ["AXDialog", "AXSystemDialog", "AXFloatingWindow", "AXSystemFloatingWindow"] { #expect(kind(panel) == true) }
+        #expect(kind("AXUnknown") == nil && kind(nil) == nil, "popups and menus aren't managed")
+    }
+
     @Test func commandsParseLikeAeroSpace() throws {
         #expect(try WMCommand(parsing: "move-node-to-workspace 3 --focus-follows-window")
             == .moveNodeToWorkspace(.named("3"), focusFollows: true, wrapAround: false, window: nil, failIfNoop: false))

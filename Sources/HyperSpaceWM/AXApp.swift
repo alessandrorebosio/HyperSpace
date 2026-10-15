@@ -124,24 +124,20 @@ final class AXApp: @unchecked Sendable {
 
     // MARK: - Classification
 
-    /// `nil`: not a window to manage (popups, panels...). `true`: float it. `false`: tile it.
-    ///
-    /// Like AeroSpace: standard windows with a usable full screen button are tiled; dialogs
-    /// and windows without one (settings panes, calculators, alerts) float. Some apps that
-    /// hide their title bar have no such button and are tiled anyway.
+    /// `nil`: not a window to manage. `true`: float it. `false`: tile it. The rule is
+    /// `WMWindowKind`'s; this reads what it needs, and for standard windows only.
     static func classify(_ window: AXUIElement, bundleID: String?) -> Bool? {
         let subrole = AX.string(window, kAXSubroleAttribute)
-        guard subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole else { return nil }
-        if subrole == kAXDialogSubrole { return true }
-        if let id = bundleID, tiledWithoutFullscreenButton.contains(where: { id.hasPrefix($0) }) { return false }
+        guard subrole == kAXStandardWindowSubrole else {
+            return WMWindowKind.floating(subrole: subrole, resizable: false, fullscreenButton: false, bundleID: bundleID)
+        }
+        // A window that doesn't answer counts as resizable: tiling is the default.
+        var resizable: DarwinBoolean = true
+        if AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &resizable) != .success { resizable = true }
         let button: AXUIElement? = AX.value(window, kAXFullScreenButtonAttribute)
-        return !(button.flatMap { AX.bool($0, kAXEnabledAttribute) } ?? false)
+        return WMWindowKind.floating(subrole: subrole, resizable: resizable.boolValue,
+                                     fullscreenButton: button.flatMap { AX.bool($0, kAXEnabledAttribute) } ?? false, bundleID: bundleID)
     }
-
-    private static let tiledWithoutFullscreenButton = [
-        "com.microsoft.VSCode", "com.google.Chrome", "com.apple.ActivityMonitor", "org.alacritty", "net.kovidgoyal.kitty",
-        "com.github.wez.wezterm", "com.googlecode.iterm2", "org.gnu.Emacs", "com.mitchellh.ghostty", "com.valvesoftware.steam",
-    ]
 }
 
 /// App notifications carry no refcon; window notifications carry the window id. The app
