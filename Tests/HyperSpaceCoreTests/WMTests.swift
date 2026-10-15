@@ -87,8 +87,8 @@ struct WMTests {
         let m = WMModel(monitors: [WMTests.screen])
         for id: WindowID in 1...2 { m.add(WMWindowInfo(id: id, pid: 1, bundleID: nil, floating: false)) }
         #expect(m.focused == nil, "the app never reported its focused window")
-        try run(m, "move left")
-        #expect(tree(m.focusedWorkspace.root) == "h[2 1]", "acted on the workspace's most recent window")
+        try run(m, "move right")
+        #expect(tree(m.focusedWorkspace.root) == "h[2 1]", "acted on the workspace's first window")
     }
 
     @Test func layoutCommands() throws {
