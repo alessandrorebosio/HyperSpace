@@ -292,6 +292,35 @@ struct WMTests {
         #expect(m.workspaces["Develop"] != nil, "persistent workspaces stay even when empty")
     }
 
+    @Test func assignedWorkspacesNeverChangeMonitor() throws {
+        let right = WMMonitor(id: 2, name: "DELL P2723DE", frame: CGRect(x: 1000, y: 0, width: 800, height: 600),
+                              visible: CGRect(x: 1000, y: 0, width: 800, height: 600))
+        let main = WMMonitor(id: 1, name: "Built-in Retina Display", isMain: true, frame: WMTests.screen.frame, visible: WMTests.screen.visible)
+        var config = WMConfig()
+        config.persistentWorkspaces = ["1", "2", "Develop", "Music"]
+        config.workspaceToMonitorForceAssignment = ["1": ["^built-in retina display$"], "2": ["secondary"]]
+        let m = WMModel(monitors: [main, right], settings: try WMSettings(config))
+        #expect(m.visible == [1: "1", 2: "2"])
+        // Develop goes to the other monitor: 2 stays hidden there, the main one shows 1 again.
+        try run(m, "workspace Develop")
+        try run(m, "move-workspace-to-monitor --wrap-around next")
+        #expect(m.visible == [1: "1", 2: "Develop"])
+        #expect(m.focusedWorkspace.name == "Develop", "the moved workspace keeps the focus")
+        // And back: the other monitor shows its own again.
+        try run(m, "move-workspace-to-monitor --wrap-around next")
+        #expect(m.visible == [1: "Develop", 2: "2"])
+        // Two free workspaces still swap.
+        try run(m, "move-workspace-to-monitor --wrap-around next")
+        try run(m, "workspace Music")
+        try run(m, "move-workspace-to-monitor --wrap-around next")
+        #expect(m.visible == [1: "Develop", 2: "Music"])
+        // Assigned ones don't move at all.
+        try run(m, "workspace 1")
+        #expect(try m.run(WMCommand(parsing: "move-workspace-to-monitor --wrap-around next")).0 == false)
+        try run(m, "workspace 2")
+        #expect(m.visible == [1: "1", 2: "2"], "each on its own monitor, whichever is focused")
+    }
+
     @Test func swapSummonAndFocusBackAndForth() throws {
         let m = model(3)
         try run(m, "swap left")
