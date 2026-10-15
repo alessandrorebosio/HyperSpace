@@ -31,6 +31,7 @@ enum MenuBarIcon {
     static func label(workspaces: [(name: String, focused: Bool)], mode: String?) -> NSImage {
         let key = (mode ?? "") + workspaces.map { "\u{0}" + ($0.focused ? "*" : "") + $0.name }.joined()
         if let cached = labels[key] { return cached }
+        if labels.count > 64 { labels = [:] } // modes x workspaces x displays: keep it small
 
         let height: CGFloat = 18, padding: CGFloat = 4, gap: CGFloat = 3, divider: CGFloat = 1
         let bold: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .bold), .foregroundColor: NSColor.black]

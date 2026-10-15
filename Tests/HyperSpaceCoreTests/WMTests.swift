@@ -321,6 +321,15 @@ struct WMTests {
         #expect(m.visible == [1: "1", 2: "2"], "each on its own monitor, whichever is focused")
     }
 
+    @Test func boundAndAssignedWorkspacesPersistByDefault() throws {
+        var config = WMConfig()
+        config.workspaceToMonitorForceAssignment = ["1": ["main"], "2": ["secondary"]]
+        config.modes = ["main": ["ctrl-alt-shift-d": ["workspace Develop"]]]
+        #expect(try WMSettings(config).persistentWorkspaces == ["1", "2", "Develop"])
+        config.persistentWorkspaces = ["Music"]
+        #expect(try WMSettings(config).persistentWorkspaces == ["Music"], "an explicit list wins")
+    }
+
     @Test func swapSummonAndFocusBackAndForth() throws {
         let m = model(3)
         try run(m, "swap left")
