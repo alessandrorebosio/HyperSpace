@@ -339,8 +339,8 @@ public enum ConfigLoader {
     # gaps = { inner = 8, outer = 8 }
     # accordion_padding = 30
 
-    # Hotkeys -> commands (a list runs in order). Modifiers as in keyboard.toml, plus
-    # "meh" (⇧⌃⌥) and "hyper" (⇧⌃⌥⌘): with [capslock] hold = "meh", Caps + h is "meh-h".
+    # Hotkeys -> commands (a list runs in order). Modifiers as in keyboard.toml: with
+    # [capslock] hold = "shift-ctrl-opt", Caps + h is "shift-ctrl-opt-h".
     # [bindings]
     # alt-h = "focus left"
     # alt-j = "focus down"
