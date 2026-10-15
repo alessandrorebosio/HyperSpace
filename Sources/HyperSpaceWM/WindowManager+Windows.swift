@@ -13,7 +13,7 @@ extension WindowManager {
             forget(app: pid)
         case let .activated(pid):
             // An app launched for the first time may not be a regular app yet when it launches.
-            if apps[pid] == nil { watch(pid) } else { refresh(pid); syncFocus(pid) }
+            if apps[pid] == nil { watch(pid) } else { scheduleRefresh(pid); syncFocus(pid) }
         case let .hidden(pid, true):
             if settings.automaticallyUnhideMacosHiddenApps { system.unhide(pid) } else { setHidden(pid, true) }
         case let .hidden(pid, false):
@@ -50,6 +50,7 @@ extension WindowManager {
 
     private func forget(app pid: pid_t) {
         apps.removeValue(forKey: pid)?.stop()
+        refreshes.removeValue(forKey: pid)?.cancel()
         appStarted(pid) // quit before reporting its windows
         for (id, entry) in records where entry.app.pid == pid { forget(window: id) }
         apply()
@@ -84,7 +85,7 @@ extension WindowManager {
         case .focusChanged:
             // Switching tabs moves focus: the shown tab changed, or a tab missed on creation.
             if reconcileTabs(app.pid) { apply() }
-            refresh(app.pid)
+            scheduleRefresh(app.pid)
             syncFocus(app.pid)
         case let .minimized(id, isMinimized):
             setManaged(id, !isMinimized)
@@ -93,6 +94,19 @@ extension WindowManager {
             moved(id)
         case let .titleChanged(id, title):
             records[id]?.record.title = title
+        }
+    }
+
+    /// `refresh` a moment after the app's focus settles: re-reading every window of a busy
+    /// app can take a second, and it must not hold up the frames of a workspace switch on
+    /// the app's queue. Focus changes in a row make one refresh.
+    func scheduleRefresh(_ pid: pid_t) {
+        refreshes.removeValue(forKey: pid)?.cancel()
+        refreshes[pid] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled else { return }
+            self.refreshes[pid] = nil
+            self.refresh(pid)
         }
     }
 

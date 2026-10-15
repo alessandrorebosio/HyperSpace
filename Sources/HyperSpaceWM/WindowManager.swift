@@ -65,6 +65,8 @@ public final class WindowManager {
     /// Windows parked off-screen, with the frame to give back to floating ones.
     var parked: [WindowID: CGRect] = [:]
     var snapChecks: [WindowID: Task<Void, Never>] = [:]
+    /// Pending `refresh`es, by app.
+    var refreshes: [pid_t: Task<Void, Never>] = [:]
     /// macOS native tabs (Finder, Safari, Terminal...): every tab is a window, but a tab
     /// group is one tile. Tab window -> the window that represents its group in the model.
     var tabs: [WindowID: WindowID] = [:]
@@ -145,6 +147,8 @@ public final class WindowManager {
         apps = [:]
         snapChecks.values.forEach { $0.cancel() }
         snapChecks = [:]
+        refreshes.values.forEach { $0.cancel() }
+        refreshes = [:]
         records = [:]
         frames = [:]
         targets = [:]

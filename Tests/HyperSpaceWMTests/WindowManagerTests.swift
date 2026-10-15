@@ -162,13 +162,15 @@ struct WindowManagerTests {
         _ = wm
     }
 
-    @Test func missedWindowsAreCaughtOnFocus() {
+    @Test func missedWindowsAreCaughtOnFocus() async throws {
         let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
         let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
         // A window appears and another closes without their events.
         app.miss(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
         app.frames[2] = nil
         app.send(.focusChanged)
+        #expect(app.frames[3] == CGRect(x: 10, y: 10, width: 100, height: 100), "not on the switch's path: a moment later")
+        try await Task.sleep(for: .milliseconds(1200))
         #expect(Set([app.frames[1], app.frames[3]]) == [Self.left, Self.right])
         #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "2")
     }

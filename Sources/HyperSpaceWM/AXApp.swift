@@ -22,6 +22,11 @@ final class AXApp: WindowApp, @unchecked Sendable {
     /// App queue only.
     private var observer: AXObserver?
     private var elements: [WindowID: AXUIElement] = [:]
+    /// Windows that aren't to be managed, so `windows(_:)` doesn't read them every time.
+    private var ignored: Set<WindowID> = []
+    /// Whether the app has "enhanced UI" on, read at most every few seconds: one call less
+    /// to a busy app on every layout change.
+    private var enhancedUI: (on: Bool, at: DispatchTime)?
     private var stopped = false
     /// The app's own notifications are on, and its windows were first read.
     private var subscribed = false
@@ -87,7 +92,7 @@ final class AXApp: WindowApp, @unchecked Sendable {
             _ = subscribeApp()
             let windows: [AXUIElement] = AX.value(element, kAXWindowsAttribute) ?? []
             let records = windows.compactMap { window in
-                AX.windowID(window).map { elements[$0] != nil } == true ? nil : record(window)
+                AX.windowID(window).map { elements[$0] != nil || ignored.contains($0) } == true ? nil : record(window)
             }
             onMain { completion(records) }
         }
@@ -105,9 +110,12 @@ final class AXApp: WindowApp, @unchecked Sendable {
 
     /// Reads a window and subscribes to its own notifications. App queue only.
     private func record(_ window: AXUIElement) -> WindowRecord? {
-        guard let id = AX.windowID(window), AX.string(window, kAXRoleAttribute) == kAXWindowRole,
-              AX.bool(window, kAXMinimizedAttribute) != true,
-              let floating = AXApp.classify(window, bundleID: bundleID) else { return nil }
+        guard let id = AX.windowID(window), !ignored.contains(id), AX.bool(window, kAXMinimizedAttribute) != true else { return nil }
+        // Not a window to manage (helper windows, popups): never read again.
+        guard AX.string(window, kAXRoleAttribute) == kAXWindowRole, let floating = AXApp.classify(window, bundleID: bundleID) else {
+            ignored.insert(id)
+            return nil
+        }
         AXUIElementSetMessagingTimeout(window, AXApp.timeout)
         elements[id] = window
         if let observer {
@@ -192,7 +200,10 @@ final class AXApp: WindowApp, @unchecked Sendable {
         queue.async { [self] in
             // Accessibility clients like VoiceOver or Grammarly turn on "enhanced UI", which
             // animates every frame change: off while we move windows, like AeroSpace does.
-            let enhanced = AX.bool(element, "AXEnhancedUserInterface") == true
+            if enhancedUI.map({ DispatchTime.now().uptimeNanoseconds - $0.at.uptimeNanoseconds > 5_000_000_000 }) ?? true {
+                enhancedUI = (AX.bool(element, "AXEnhancedUserInterface") == true, .now())
+            }
+            let enhanced = enhancedUI?.on == true
             if enhanced { AXUIElementSetAttributeValue(element, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse) }
             for (i, change) in changes.enumerated() {
                 guard generations.withLock({ $0[change.window] }) == generation[i], let window = elements[change.window] else { continue }
