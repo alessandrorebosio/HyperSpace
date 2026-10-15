@@ -16,6 +16,15 @@ IOHIDSystem auxiliary keys.
 curve as LinearMouse's `PointerKit` (pointer resolution, acceleration,
 `HIDUseLinearScalingMouseAcceleration`).
 
+## AeroSpace — MIT License, Copyright (c) 2023 Nikita Bobko
+https://github.com/nikitabobko/AeroSpace
+
+The window manager (`Sources/HyperSpaceCore/WM`, `Sources/HyperSpaceWM`) follows
+AeroSpace's model and command set: the normalized tiling tree, `move`/`join-with`
+semantics, accordion padding, virtual workspaces parked in a screen corner, window
+classification heuristics (which windows tile, which float) and the focus sequence
+(main attribute, raise, activate). The code is a rewrite around an event-driven cache.
+
 ## TOMLDecoder — MIT License, Copyright (c) Daniel Duan
 https://github.com/dduan/TOMLDecoder
 

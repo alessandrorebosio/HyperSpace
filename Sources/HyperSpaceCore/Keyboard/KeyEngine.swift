@@ -53,9 +53,11 @@ public struct KeyEngine: Sendable {
         return emitBefore
     }
 
-    /// - Parameter now: monotonic time in nanoseconds.
-    public mutating func handle(code: UInt16, down: Bool, isRepeat: Bool, now: UInt64,
-                                tables: ActiveTables) -> Decision {
+    /// - Parameters:
+    ///   - modifiers: the modifiers physically held (for hotkeys).
+    ///   - now: monotonic time in nanoseconds.
+    public mutating func handle(code: UInt16, down: Bool, isRepeat: Bool, modifiers: Modifiers = [],
+                                now: UInt64, tables: ActiveTables) -> Decision {
         if down, !isRepeat {
             modifierClean = false // a key between modifier press and release: not a tap
         }
@@ -105,7 +107,7 @@ public struct KeyEngine: Sendable {
         }
 
         if layer != nil { layerUsed = true }
-        return press(index, tables: tables)
+        return press(index, modifiers: modifiers, tables: tables)
     }
 
     /// A modifier key changed (`flagsChanged`): returns the double-tap action to perform, if
@@ -136,8 +138,21 @@ public struct KeyEngine: Sendable {
     // MARK: - Private
 
     /// The decision for a key going down: layer map, then layer `hold` modifiers, then `[map]`.
-    private mutating func press(_ index: Int, tables: ActiveTables) -> Decision {
+    private mutating func press(_ index: Int, modifiers: Modifiers, tables: ActiveTables) -> Decision {
         inFlight[index] = layerOutput(index, tables: tables) ?? tables.keys[index]
+        // Hotkeys match the key as apps would get it: after remapping, with the layer's
+        // `hold` modifiers, so Caps + h can trigger a "shift-ctrl-opt-h" binding.
+        if tables.hasHotkeys {
+            let hotkey: (UInt16, Modifiers)? = switch inFlight[index] {
+            case nil: (UInt16(index), modifiers)
+            case let .key(combo)?: (combo.key.code, modifiers.union(combo.modifiers))
+            default: nil
+            }
+            if let (code, mods) = hotkey, let output = tables.hotkeys[Hotkeys.index(code: code, modifiers: mods)] {
+                inFlight[index] = .drop
+                return .emit(output)
+            }
+        }
         switch inFlight[index] {
         case nil: return .pass
         case let .key(combo)?, let .held(.key(combo))?: return .rewrite(combo)

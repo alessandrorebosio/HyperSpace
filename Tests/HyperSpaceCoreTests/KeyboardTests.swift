@@ -15,7 +15,7 @@ struct KeyboardPlanTests {
         #expect(Combo(parsing: "cmd-shift-k") == Combo(key: KeyNames.key("k")!, modifiers: [.command, .shift]))
         #expect(Combo(parsing: "ctrl-minus") == Combo(key: KeyNames.key("minus")!, modifiers: .control))
         #expect(Combo(parsing: "arrow.left")?.modifiers == [])
-        #expect(Combo(parsing: "hyper-k") == nil)
+        #expect(Combo(parsing: "hyper-k")?.modifiers == [.shift, .control, .option, .command])
         #expect(Combo(parsing: "cmd-") == nil)
     }
 

@@ -8,28 +8,26 @@ public struct Modifiers: OptionSet, Sendable, Hashable {
     public static let control = Modifiers(rawValue: 1 << 3)
     public static let fn = Modifiers(rawValue: 1 << 4)
 
+    /// Every modifier name, plus `meh` (⇧⌃⌥) and `hyper` (⇧⌃⌥⌘) as shortcuts.
     static let names: [String: Modifiers] = [
         "cmd": .command, "command": .command,
         "shift": .shift,
         "opt": .option, "option": .option, "alt": .option,
         "ctrl": .control, "control": .control,
         "fn": .fn,
+        "meh": [.shift, .control, .option],
+        "hyper": [.shift, .control, .option, .command],
     ]
 
-    /// `"shift-ctrl-opt"`, or the shortcuts `"meh"` (⇧⌃⌥) and `"hyper"` (⇧⌃⌥⌘).
+    /// `"shift-ctrl-opt"`, `"meh"`, `"hyper"`...
     public init?(parsing text: String) {
-        switch text.lowercased() {
-        case "meh": self = [.shift, .control, .option]
-        case "hyper": self = [.shift, .control, .option, .command]
-        default:
-            var result: Modifiers = []
-            for part in text.lowercased().split(separator: "-") {
-                guard let modifier = Modifiers.names[String(part)] else { return nil }
-                result.insert(modifier)
-            }
-            guard !result.isEmpty else { return nil }
-            self = result
+        var result: Modifiers = []
+        for part in text.lowercased().split(separator: "-") {
+            guard let modifier = Modifiers.names[String(part)] else { return nil }
+            result.formUnion(modifier)
         }
+        guard !result.isEmpty else { return nil }
+        self = result
     }
 }
 
@@ -50,7 +48,7 @@ public struct Combo: Sendable, Hashable {
         var modifiers: Modifiers = []
         for part in parts {
             guard let modifier = Modifiers.names[part] else { return nil }
-            modifiers.insert(modifier)
+            modifiers.formUnion(modifier)
         }
         self.init(key: key, modifiers: modifiers)
     }

@@ -99,7 +99,7 @@ struct ConfigTests {
         """).get()
         #expect(wm.enabled)
         #expect(wm.gaps == Gaps(inner: 8, outer: 4))
-        #expect(wm.bindings["alt-h"] == "focus left")
+        #expect(wm.bindings["alt-h"] == ["focus left"])
         #expect(wm.rule == [WMRule(app: "com.apple.finder", layout: "floating", workspace: nil)])
     }
 

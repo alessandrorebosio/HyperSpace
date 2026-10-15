@@ -14,6 +14,16 @@ usage: hsctl <command>
   config-path   print the config directory (keyboard.toml, mouse.toml, wm.toml)
   apps          list running apps with their bundle id (for per-app rules)
   version       print HyperSpace's version
+
+window manager (same commands as AeroSpace):
+  list-workspaces                     workspaces and their windows (* focused, + visible)
+  focus|move|join-with left|right|up|down
+  workspace <name>|next|prev          workspace-back-and-forth
+  move-node-to-workspace <name>|next|prev [--focus-follows-window]
+  layout tiles|accordion|horizontal|vertical|h_tiles|v_tiles|h_accordion|v_accordion|tiling|floating
+  resize smart|width|height [+|-]<n>  balance-sizes  flatten-workspace-tree
+  fullscreen [on|off]                 close
+  focus-monitor|move-node-to-monitor|move-workspace-to-monitor left|right|up|down|next|prev
 """
 
 if args.isEmpty || args == ["-h"] || args == ["--help"] {

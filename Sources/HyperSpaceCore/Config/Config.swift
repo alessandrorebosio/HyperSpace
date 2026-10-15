@@ -153,13 +153,15 @@ public struct NavigateConfig: Sendable, Equatable {
     public var buttons: [String] = []
 }
 
-// MARK: - Window manager (wm.toml, not implemented yet)
+// MARK: - Window manager (wm.toml)
 
 public struct WMConfig: Sendable, Equatable {
     public var enabled = false
     public var gaps = Gaps()
-    /// Hotkey (e.g. `alt-shift-h`) -> WM command (e.g. `move left`).
-    public var bindings: [String: String] = [:]
+    public var accordionPadding = 30
+    /// Hotkey (e.g. `alt-shift-h`) -> commands run in order (e.g. `["move left"]`).
+    /// A single command can be written as a plain string.
+    public var bindings: [String: [String]] = [:]
     public var rule: [WMRule] = []
 
     public init() {}
@@ -348,14 +350,30 @@ extension NavigateConfig: Decodable {
 }
 
 extension WMConfig: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case enabled, gaps, bindings, rule }
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled, gaps, accordionPadding = "accordion_padding", bindings, rule
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
         enabled = try c.decode(.enabled, default: false)
         gaps = try c.decode(.gaps, default: Gaps())
-        bindings = try c.decode(.bindings, default: [:])
+        accordionPadding = try c.decode(.accordionPadding, default: 30)
+        bindings = try c.decode(.bindings, default: [String: Commands]()).mapValues(\.list)
         rule = try c.decode(.rule, default: [])
+    }
+}
+
+/// A binding's value: one command, or a list run in order.
+private struct Commands: Decodable {
+    let list: [String]
+
+    init(from decoder: any Decoder) throws {
+        if let single = try? decoder.singleValueContainer().decode(String.self) {
+            list = [single]
+        } else {
+            list = try [String](from: decoder)
+        }
     }
 }
 
