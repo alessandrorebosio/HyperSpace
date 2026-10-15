@@ -1,5 +1,5 @@
 /// A window manager command, with AeroSpace's names, arguments and flags, so an AeroSpace
-/// config or script works unchanged. See https://nikitabobko.github.io/AeroSpace/commands
+/// config or script works unchanged.
 public indirect enum WMCommand: Sendable, Equatable {
     case focus(FocusTarget, Boundaries)
     case move(Direction, Boundaries, window: WindowID?)

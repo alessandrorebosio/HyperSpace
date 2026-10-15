@@ -58,6 +58,11 @@ public final class WindowManager {
     /// Windows parked off-screen, with the frame to give back to floating ones.
     private var parked: [WindowID: CGRect] = [:]
     private var snapChecks: [WindowID: Task<Void, Never>] = [:]
+    /// macOS native tabs (Finder, Safari, Terminal...): every tab is a window, but a tab
+    /// group is one tile. Tab window -> the window that represents its group in the model.
+    private var tabs: [WindowID: WindowID] = [:]
+    /// Group window -> the tab currently shown, which is what focusing the group raises.
+    private var shownTab: [WindowID: WindowID] = [:]
 
     /// Apps still reading their windows at startup: `after-startup-command` runs after.
     private var startingApps = 0
@@ -69,9 +74,7 @@ public final class WindowManager {
         self.handlers = handlers
     }
 
-    public var isRunning: Bool { model != nil }
     public var focusedWorkspace: String? { model?.focusedWorkspace.name }
-    public var focusFollowsMouse: Bool { model != nil && settings.focusFollowsMouse }
 
     // MARK: - Lifecycle
 
@@ -118,6 +121,8 @@ public final class WindowManager {
         targets = [:]
         setAt = [:]
         parked = [:]
+        tabs = [:]
+        shownTab = [:]
         model = nil
         setMode("main")
         log.info("window manager stopped")
@@ -547,17 +552,32 @@ public final class WindowManager {
         records[record.id] = (app, record)
         frames[record.id] = record.frame
         guard managed else { return }
+        if let group = tabGroup(of: record, app) {
+            tabs[record.id] = group
+            shownTab[group] = record.id // a new tab is the one shown
+            return
+        }
         manage(record.id)
         windowDetected(record.id)
     }
 
+    /// A window with a tab bar sitting exactly on a managed window of the same app is a
+    /// new tab of that window's group, not a window to tile.
+    private func tabGroup(of record: WindowRecord, _ app: AXApp) -> WindowID? {
+        guard record.hasTabs, let frame = record.frame, let model else { return nil }
+        return records.first { id, entry in
+            id != record.id && entry.app.pid == app.pid && tabs[id] == nil && model.windows[id] != nil
+                && (targets[id] ?? frames[id]).map { $0.isClose(to: frame) } == true
+        }?.key
+    }
+
     private func manage(_ id: WindowID) {
-        guard let model, let (app, record) = records[id] else { return }
+        guard let model, let record = records[id]?.record else { return }
         // At startup windows stay on the monitor they're on; later ones join the focused workspace.
         let monitor = isStartingUp ? record.frame.flatMap { frame in
             model.monitors.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }?.id
         } : nil
-        model.add(WMWindowInfo(id: id, pid: app.pid, bundleID: app.bundleID, floating: record.floating), monitor: monitor)
+        model.add(WMWindowInfo(id: id, floating: record.floating), monitor: monitor)
     }
 
     /// `on-window-detected`: the first matching callback runs on the new window (and the
@@ -591,7 +611,19 @@ public final class WindowManager {
     }
 
     private func forget(window id: WindowID) {
-        model?.remove(id)
+        if let heir = tabs.first(where: { $0.value == id })?.key {
+            // The group's window closed but other tabs remain: one of them stands in.
+            model?.replace(id, with: heir)
+            tabs[heir] = nil
+            for (tab, group) in tabs where group == id { tabs[tab] = heir }
+            shownTab[heir] = shownTab[id] == heir ? nil : shownTab[id]
+            targets[heir] = targets[id]
+        } else {
+            model?.remove(id)
+        }
+        tabs[id] = nil
+        shownTab[id] = nil
+        for (group, tab) in shownTab where tab == id { shownTab[group] = nil }
         records[id] = nil
         frames[id] = nil
         targets[id] = nil
@@ -607,7 +639,7 @@ public final class WindowManager {
     }
 
     private func setHidden(_ pid: pid_t, _ hidden: Bool) {
-        for (id, entry) in records where entry.app.pid == pid { setManaged(id, !hidden) }
+        for (id, entry) in records where entry.app.pid == pid && tabs[id] == nil { setManaged(id, !hidden) }
         apply()
     }
 
@@ -622,6 +654,14 @@ public final class WindowManager {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, let model = self.model, let before = self.focusState else { return }
+                    // A tab: its group is what the model knows; remember which tab is shown.
+                    var id = id
+                    if let tab = id, let group = self.tabs[tab] {
+                        self.shownTab[group] = tab
+                        id = group
+                    } else if let window = id, self.shownTab[window] != nil {
+                        self.shownTab[window] = nil
+                    }
                     // Still nothing we manage: one of the app's managed windows will do.
                     let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
                         ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
@@ -651,6 +691,13 @@ public final class WindowManager {
                         self.frames[id] = frame
                         // Right after our own change it's the app settling (e.g. a minimum size).
                         let ours = self.setAt[id].map { ContinuousClock.now - $0 < .seconds(1) } ?? false
+                        // A tab that no longer sits on its group was dragged out: a window now.
+                        if let group = self.tabs[id], !ours, let target = self.targets[group], !target.isClose(to: frame) {
+                            self.tabs[id] = nil
+                            self.manage(id)
+                            self.apply()
+                            return
+                        }
                         guard !ours, let target = self.targets[id], !target.isClose(to: frame),
                               self.model?.windows[id]?.floating == false else { return }
                         self.targets[id] = nil // dragged by the user: put it back
@@ -692,12 +739,24 @@ public final class WindowManager {
             // Bottom right corner, one point inside so macOS doesn't pull the window back.
             set(id, CGRect(origin: CGPoint(x: monitor.visible.maxX - 1, y: monitor.visible.maxY - 1), size: frame.size))
         }
+        // Tabs follow their group: same frame, parked with it.
+        for (tab, group) in tabs {
+            if let frame = parked[group] {
+                if parked[tab] == nil, let target = targets[group] {
+                    parked[tab] = frame
+                    set(tab, target)
+                }
+            } else if let target = targets[group] {
+                parked[tab] = nil
+                set(tab, target)
+            }
+        }
         for (_, (app, changes)) in batches { app.setFrames(changes) }
     }
 
     /// Raises and focuses the model's focused window, as macOS would on a click.
     private func focusNative() {
-        guard let id = model?.focused, let (app, record) = records[id] else { return }
+        guard let focused = model?.focused, let (app, record) = records[shownTab[focused] ?? focused] else { return }
         nonisolated(unsafe) let element = record.element
         app.queue.async {
             // Raise first, so the window is on top by the time the app is active. The app is

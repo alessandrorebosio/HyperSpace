@@ -156,7 +156,7 @@ public struct NavigateConfig: Sendable, Equatable {
 // MARK: - Window manager (wm.toml, AeroSpace's format)
 
 /// wm.toml uses AeroSpace's config format and keys, so an `~/.aerospace.toml` can be copied
-/// over as is. See https://nikitabobko.github.io/AeroSpace/guide. An empty file (or one with
+/// over as is. An empty file (or one with
 /// only comments) leaves the window manager off.
 public struct WMConfig: Sendable, Equatable {
     /// True when the file sets nothing: the window manager stays off.

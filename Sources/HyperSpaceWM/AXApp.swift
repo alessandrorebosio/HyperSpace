@@ -11,6 +11,8 @@ struct WindowRecord: @unchecked Sendable {
     let frame: CGRect?
     /// Kept up to date through title notifications, for rules and `list-windows`.
     var title: String
+    /// Shows a tab bar: with macOS native tabs every tab is a window of its own.
+    let hasTabs: Bool
 }
 
 /// One running app as the window manager sees it. Every AX call to the app runs on the
@@ -87,8 +89,10 @@ final class AXApp: @unchecked Sendable {
                 AXObserverAddNotification(observer, window, notification as CFString, refcon)
             }
         }
+        let children: [AXUIElement] = AX.value(window, kAXChildrenAttribute) ?? []
         return WindowRecord(id: id, element: window, floating: floating, frame: AX.frame(window),
-                            title: AX.string(window, kAXTitleAttribute) ?? "")
+                            title: AX.string(window, kAXTitleAttribute) ?? "",
+                            hasTabs: children.contains { AX.string($0, kAXRoleAttribute) == kAXTabGroupRole })
     }
 
     func windows() -> [AXUIElement] {

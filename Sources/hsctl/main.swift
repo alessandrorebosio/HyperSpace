@@ -15,8 +15,7 @@ usage: hsctl <command>
   apps          list running apps with their bundle id (for per-app rules)
   version       print HyperSpace's version
 
-window manager: every AeroSpace command, as with the `aerospace` CLI
-(https://nikitabobko.github.io/AeroSpace/commands), e.g.
+window manager: every AeroSpace command, as with the `aerospace` CLI, e.g.
   workspace 2 | move-node-to-workspace Develop | focus left | layout tiles accordion
   list-windows --all --format '%{window-id} | %{app-name} | %{workspace}'
   list-workspaces --all | list-monitors | list-modes | list-apps

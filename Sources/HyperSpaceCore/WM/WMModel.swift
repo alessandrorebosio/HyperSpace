@@ -23,15 +23,11 @@ public struct WMMonitor: Sendable, Equatable {
 
 public struct WMWindowInfo: Sendable, Equatable {
     public let id: WindowID
-    public let pid: Int32
-    public let bundleID: String?
     /// Floating windows keep their own frame; the others are tiled.
     public var floating: Bool
 
-    public init(id: WindowID, pid: Int32, bundleID: String?, floating: Bool) {
+    public init(id: WindowID, floating: Bool) {
         self.id = id
-        self.pid = pid
-        self.bundleID = bundleID
         self.floating = floating
     }
 }
@@ -94,6 +90,9 @@ public final class WMModel {
     private var history: [WindowID] = []
     /// The window a command acts on: `--window-id`, a callback's window, or the focused one.
     private var subject: WindowID?
+    /// Window -> name of its workspace, kept by every attach and detach so lookups don't
+    /// search every workspace's tree.
+    private var location: [WindowID: String] = [:]
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -110,7 +109,7 @@ public final class WMModel {
     }
 
     public func workspace(of window: WindowID) -> WMWorkspace? {
-        workspaces.values.first { $0.floating.contains(window) || $0.root.find(window) != nil }
+        location[window].flatMap { workspaces[$0] }
     }
 
     public func isVisible(_ name: String) -> Bool { visible.values.contains(name) }
@@ -158,7 +157,7 @@ public final class WMModel {
         windows[info.id] = info
         let target = monitor.flatMap { visible[$0] }.map { workspace($0) } ?? focusedWorkspace
         if info.floating {
-            target.floating.append(info.id)
+            attachFloating(info.id, to: target)
         } else {
             insertTiled(info.id, into: target)
         }
@@ -170,6 +169,19 @@ public final class WMModel {
         history.removeAll { $0 == window }
         if focused == window { focused = recent(in: workspace) }
         collectEmptyWorkspaces()
+    }
+
+    /// `new` takes `old`'s place everywhere: tree position, workspace, focus history. Used
+    /// when the shown tab of a native tab group closes and another tab stands in for it.
+    public func replace(_ old: WindowID, with new: WindowID) {
+        guard let info = windows.removeValue(forKey: old), let workspace = workspace(of: old) else { return }
+        windows[new] = WMWindowInfo(id: new, floating: info.floating)
+        location[new] = location.removeValue(forKey: old)
+        if let index = workspace.floating.firstIndex(of: old) { workspace.floating[index] = new }
+        workspace.root.find(old)?.window = new
+        if workspace.fullscreen == old { workspace.fullscreen = new }
+        history = history.map { $0 == old ? new : $0 }
+        if focused == old { focused = new }
     }
 
     /// macOS focused a window (click, ⌘-Tab, an app opening one). If it sits on a hidden
@@ -478,7 +490,7 @@ public final class WMModel {
         let floating = from.floating.contains(window)
         detach(window, from: from)
         let target = workspace(name)
-        if floating { target.floating.append(window) } else { insertTiled(window, into: target) }
+        if floating { attachFloating(window, to: target) } else { insertTiled(window, into: target) }
         if follow {
             switchTo(name)
             focus(window)
@@ -487,7 +499,13 @@ public final class WMModel {
         }
     }
 
+    private func attachFloating(_ window: WindowID, to workspace: WMWorkspace) {
+        workspace.floating.append(window)
+        location[window] = workspace.name
+    }
+
     private func detach(_ window: WindowID, from workspace: WMWorkspace) {
+        location[window] = nil
         workspace.floating.removeAll { $0 == window }
         workspace.root.find(window)?.removeFromParent()
         if workspace.fullscreen == window { workspace.fullscreen = nil }
@@ -500,6 +518,7 @@ public final class WMModel {
 
     private func insertTiled(_ window: WindowID, into workspace: WMWorkspace) {
         let node = WMNode(window: window)
+        location[window] = workspace.name
         if workspace.root.children.isEmpty {
             let monitor = monitors.first { $0.id == assignedMonitor(workspace.name) } ?? mainMonitor
             workspace.root.layout = settings.rootLayout
@@ -809,7 +828,7 @@ public final class WMModel {
         case .floating:
             guard let window, node != nil else { return false }
             detach(window, from: workspace)
-            workspace.floating.append(window)
+            attachFloating(window, to: workspace)
             windows[window]?.floating = true
         case .tiling:
             guard let window, node == nil else { return false }

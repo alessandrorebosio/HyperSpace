@@ -321,19 +321,18 @@ public enum ConfigLoader {
     # HyperSpace — window manager
     \#(header)
     #
-    # The same format and options as AeroSpace (https://nikitabobko.github.io/AeroSpace/guide):
+    # The same format and options as AeroSpace:
     # an ~/.aerospace.toml can be pasted here as is. While this file sets nothing (only
     # comments), the window manager is off. Below is AeroSpace's default config, commented out.
     # Commands also work from the terminal, like the `aerospace` CLI: hsctl workspace 2
     # Not supported: pipes ('|') and --stdin, the socket protocol and `subscribe`.
 
     # Config version for compatibility and deprecations
-    # See: https://nikitabobko.github.io/AeroSpace/guide#config-version
     # Fallback value (if you omit the key): config-version = 1
     # config-version = 2
 
     # You can use it to add commands that run after AeroSpace startup.
-    # Available commands : https://nikitabobko.github.io/AeroSpace/commands
+    # Available commands: hsctl --help
     # after-startup-command = []
 
     # Start AeroSpace at login
@@ -343,11 +342,10 @@ public enum ConfigLoader {
     # After setting this to true, reload once manually to start the auto-reloading
     # auto-reload-config = false
 
-    # Normalizations. See: https://nikitabobko.github.io/AeroSpace/guide#normalization
+    # Normalizations:
     # enable-normalization-flatten-containers = true
     # enable-normalization-opposite-orientation-for-nested-containers = true
 
-    # See: https://nikitabobko.github.io/AeroSpace/guide#layouts
     # The 'accordion-padding' specifies the size of accordion padding
     # You can set 0 to disable the padding feature
     # accordion-padding = 30
@@ -362,14 +360,11 @@ public enum ConfigLoader {
 
     # Mouse follows focus when focused monitor changes
     # Drop it from your config, if you don't like this behavior
-    # See https://nikitabobko.github.io/AeroSpace/guide#on-focus-changed-callbacks
-    # See https://nikitabobko.github.io/AeroSpace/commands#move-mouse
     # Fallback value (if you omit the key): on-focused-monitor-changed = []
     # on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 
     # You can effectively turn off macOS "Hide application" (cmd-h) feature by toggling this flag
     # Useful if you don't use this macOS feature, but accidentally hit cmd-h or cmd-alt-h key
-    # Also see: https://nikitabobko.github.io/AeroSpace/goodies#disable-hide-app
     # automatically-unhide-macos-hidden-apps = false
 
     # List of workspaces that should stay alive even when they contain no windows,
@@ -381,14 +376,11 @@ public enum ConfigLoader {
     #                          "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
 
     # A callback that runs every time binding mode changes
-    # See: https://nikitabobko.github.io/AeroSpace/guide#binding-modes
-    # See: https://nikitabobko.github.io/AeroSpace/commands#mode
     # on-mode-changed = []
 
     # focus-follows-mouse.enabled = false
 
     # Possible values: (qwerty|dvorak|colemak)
-    # See https://nikitabobko.github.io/AeroSpace/guide#key-mapping
     # key-mapping.preset = 'qwerty'
 
     # Gaps between windows (inner-*) and between monitor edges (outer-*).
@@ -397,8 +389,6 @@ public enum ConfigLoader {
     # - Per monitor:  gaps.outer.top = [{ monitor.main = 16 }, { monitor."some-pattern" = 32 }, 24]
     #                 In this example, 24 is a default value when there is no match.
     #                 Monitor pattern is the same as for 'workspace-to-monitor-force-assignment'.
-    #                 See:
-    #                 https://nikitabobko.github.io/AeroSpace/guide#assign-workspaces-to-monitors
     # gaps.inner.horizontal = 0
     # gaps.inner.vertical =   0
     # gaps.outer.left =       0
@@ -407,7 +397,6 @@ public enum ConfigLoader {
     # gaps.outer.right =      0
 
     # 'main' binding mode declaration
-    # See: https://nikitabobko.github.io/AeroSpace/guide#binding-modes
     # 'main' binding mode must be always presented
     # Fallback value (if you omit the key): mode.main.binding = {}
     # [mode.main.binding]
@@ -427,35 +416,29 @@ public enum ConfigLoader {
 
         # All possible modifiers: cmd, alt, ctrl, shift
 
-        # All possible commands: https://nikitabobko.github.io/AeroSpace/commands
+        # All possible commands: hsctl --help
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#exec-and-forget
         # You can uncomment the following lines to open up terminal with alt + enter shortcut
         # (like in i3)
         # alt-enter = '''exec-and-forget osascript -e \
         # 'tell application "Terminal" to tell (do script) to activate' '''
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#layout
     #     alt-slash = 'layout tiles horizontal vertical'
     #     alt-comma = 'layout accordion horizontal vertical'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#focus
     #     alt-h = 'focus left'
     #     alt-j = 'focus down'
     #     alt-k = 'focus up'
     #     alt-l = 'focus right'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#move
     #     alt-shift-h = 'move left'
     #     alt-shift-j = 'move down'
     #     alt-shift-k = 'move up'
     #     alt-shift-l = 'move right'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#resize
     #     alt-minus = 'resize smart -50'
     #     alt-equal = 'resize smart +50'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#workspace
     #     alt-1 = 'workspace 1'
     #     alt-2 = 'workspace 2'
     #     alt-3 = 'workspace 3'
@@ -488,7 +471,6 @@ public enum ConfigLoader {
     #     alt-y = 'workspace Y'
     #     alt-z = 'workspace Z'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#move-node-to-workspace
     #     alt-shift-1 = 'move-node-to-workspace 1'
     #     alt-shift-2 = 'move-node-to-workspace 2'
     #     alt-shift-3 = 'move-node-to-workspace 3'
@@ -521,23 +503,19 @@ public enum ConfigLoader {
     #     alt-shift-y = 'move-node-to-workspace Y'
     #     alt-shift-z = 'move-node-to-workspace Z'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#workspace-back-and-forth
     #     alt-tab = 'workspace-back-and-forth'
-        # See: https://nikitabobko.github.io/AeroSpace/commands#move-workspace-to-monitor
     #     alt-shift-tab = 'move-workspace-to-monitor --wrap-around next'
 
-        # See: https://nikitabobko.github.io/AeroSpace/commands#mode
     #     alt-shift-semicolon = 'mode service'
 
     # 'service' binding mode declaration.
-    # See: https://nikitabobko.github.io/AeroSpace/guide#binding-modes
     # [mode.service.binding]
     #     esc = ['reload-config', 'mode main']
     #     r = ['flatten-workspace-tree', 'mode main'] # reset layout
     #     f = ['layout floating tiling', 'mode main'] # Toggle between floating and tiling layout
     #     backspace = ['close-all-windows-but-current', 'mode main']
 
-        # sticky is not yet supported https://github.com/nikitabobko/AeroSpace/issues/2
+        # sticky is not supported
         #s = ['layout sticky tiling', 'mode main']
 
     #     alt-shift-h = ['join-with left', 'mode main']

@@ -10,7 +10,7 @@ struct WMTests {
     private func model(_ count: WindowID, settings: WMSettings = WMSettings()) -> WMModel {
         let model = WMModel(monitors: [WMTests.screen], settings: settings)
         for id in 1...count {
-            model.add(WMWindowInfo(id: id, pid: 1, bundleID: "app", floating: false))
+            model.add(WMWindowInfo(id: id, floating: false))
             model.nativeFocus(id)
         }
         return model
@@ -85,7 +85,7 @@ struct WMTests {
 
     @Test func commandsWorkWithoutAReportedFocus() throws {
         let m = WMModel(monitors: [WMTests.screen])
-        for id: WindowID in 1...2 { m.add(WMWindowInfo(id: id, pid: 1, bundleID: nil, floating: false)) }
+        for id: WindowID in 1...2 { m.add(WMWindowInfo(id: id, floating: false)) }
         #expect(m.focused == nil, "the app never reported its focused window")
         try run(m, "move right")
         #expect(tree(m.focusedWorkspace.root) == "h[2 1]", "acted on the workspace's first window")
@@ -178,7 +178,7 @@ struct WMTests {
                               visible: CGRect(x: 1000, y: 0, width: 800, height: 600))
         let m = WMModel(monitors: [WMTests.screen, right])
         #expect(m.visible == [1: "1", 2: "2"])
-        m.add(WMWindowInfo(id: 1, pid: 1, bundleID: nil, floating: false), monitor: 2)
+        m.add(WMWindowInfo(id: 1, floating: false), monitor: 2)
         #expect(m.workspace(of: 1)?.name == "2")
         try run(m, "focus-monitor right")
         #expect(m.focusedMonitor == 2)
@@ -271,7 +271,7 @@ struct WMTests {
         config.enableNormalizationOppositeOrientationForNestedContainers = false
         let m = WMModel(monitors: [WMTests.screen], settings: try WMSettings(config))
         for id: WindowID in 1...2 {
-            m.add(WMWindowInfo(id: id, pid: 1, bundleID: nil, floating: false))
+            m.add(WMWindowInfo(id: id, floating: false))
             m.nativeFocus(id)
         }
         try run(m, "split vertical")
@@ -288,7 +288,7 @@ struct WMTests {
         let monitor = WMMonitor(id: 1, name: "Built-in Retina Display", isMain: true, frame: WMTests.screen.frame, visible: WMTests.screen.visible)
         let m = WMModel(monitors: [monitor], settings: try WMSettings(config))
         for id: WindowID in 1...2 {
-            m.add(WMWindowInfo(id: id, pid: 1, bundleID: nil, floating: false))
+            m.add(WMWindowInfo(id: id, floating: false))
             m.nativeFocus(id)
         }
         #expect(m.layout().tiled[1] == CGRect(x: 5, y: 40, width: 493, height: 560))
