@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 @testable import HyperSpaceCore
 import Testing
 
@@ -302,5 +303,42 @@ struct WMTests {
         // In the service mode only its own bindings are active.
         let service = plan.tables(forApp: nil, mode: "service")
         #expect(e.handle(code: 53, down: true, isRepeat: false, now: 5, tables: service) == .emit(.wm("mode main")))
+    }
+
+    @Test func savedLayoutComesBack() throws {
+        let m = model(4)
+        try run(m, "move down")
+        try run(m, "resize smart +100")
+        try run(m, "focus up")
+        try run(m, "move-node-to-workspace 2")
+        try run(m, "layout floating tiling")
+        let names = Dictionary(uniqueKeysWithValues: (WindowID(1)...4).map { ($0, WMSnapshot.Identity(app: "a", title: "\($0)")) })
+        let snapshot = try JSONDecoder().decode(WMSnapshot.self, from: JSONEncoder().encode(m.snapshot { names[$0]! }))
+
+        // A restart: the same windows come back in another order, all on the focused workspace.
+        let fresh = WMModel(monitors: [WMTests.screen])
+        for id: WindowID in [4, 3, 2, 1] { fresh.add(WMWindowInfo(id: id, floating: false)) }
+        fresh.restore(snapshot, map: snapshot.match(names))
+        #expect(tree(fresh.workspace("1").root) == tree(m.workspace("1").root))
+        #expect(fresh.workspace("1").floating == m.workspace("1").floating)
+        #expect(fresh.windows == m.windows)
+        #expect((1...4).allSatisfy { fresh.workspace(of: $0)?.name == m.workspace(of: $0)?.name })
+        #expect(m.workspace("2").windows.count == 1)
+        #expect(fresh.layout() == m.layout(), "weights and visible workspace included")
+
+        // A window the layout didn't know stays, after the restored ones.
+        let more = WMModel(monitors: [WMTests.screen])
+        for id: WindowID in [5, 1, 2, 3, 4] { more.add(WMWindowInfo(id: id, floating: false)) }
+        more.restore(snapshot, map: snapshot.match(names))
+        #expect(tree(more.workspace("1").root).hasSuffix(" 5]"))
+    }
+
+    @Test func savedWindowsMatchByIdThenAppAndTitle() {
+        let saved = WMSnapshot(workspaces: [], visible: [:], focusedWorkspace: "1", windows: [
+            1: .init(app: "a", title: "x"), 2: .init(app: "b", title: "y"), 3: .init(app: "b", title: "y"),
+        ])
+        // Window 1 is still there; app b restarted: its windows have new ids, matched by title once each.
+        let map = saved.match([1: .init(app: "a", title: "changed"), 10: .init(app: "b", title: "y"), 11: .init(app: "b", title: "z")])
+        #expect(map == [1: 1, 2: 10])
     }
 }

@@ -67,6 +67,8 @@ public final class WindowManager {
     /// Apps still reading their windows at startup (for `if.during-aerospace-startup`).
     private var startingApps = 0
     private var isStartingUp = true
+    /// The layout saved by the last `stop()`, put back once every app's windows are read.
+    private var savedLayout: WMSnapshot?
     /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
     private var inCallback = false
 
@@ -90,18 +92,20 @@ public final class WindowManager {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), AXApp.timeout)
         model = WMModel(monitors: WindowManager.monitors(), settings: settings)
         isStartingUp = true
+        savedLayout = (try? Data(contentsOf: WindowManager.layoutURL)).flatMap { try? JSONDecoder().decode(WMSnapshot.self, from: $0) }
         observe()
         let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
         startingApps = apps.count
         for app in apps { watch(app) }
-        if apps.isEmpty { isStartingUp = false }
+        if apps.isEmpty { startedUp() }
         log.info("window manager started")
         handlers.changed()
     }
 
     /// Gives every window back: parked ones return on screen, nothing stays managed.
     public func stop() {
-        guard model != nil else { return }
+        guard let current = model else { return }
+        if !isStartingUp { saveLayout(current) }
         for (id, frame) in parked {
             guard let (app, record) = records[id] else { continue }
             nonisolated(unsafe) let element = record.element
@@ -503,7 +507,39 @@ public final class WindowManager {
     private func appStarted() {
         guard isStartingUp else { return }
         startingApps -= 1
-        if startingApps <= 0 { isStartingUp = false }
+        if startingApps <= 0 { startedUp() }
+    }
+
+    private func startedUp() {
+        isStartingUp = false
+        guard let model, let saved = savedLayout else { return }
+        savedLayout = nil
+        model.restore(saved, map: saved.match(records.mapValues { identity($0.app, $0.record) }))
+        apply()
+        handlers.changed()
+    }
+
+    // MARK: - Saved layout
+
+    /// `~/Library/Application Support/HyperSpace/layout.json`, next to the IPC socket.
+    static let layoutURL = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/HyperSpace/layout.json")
+
+    private func identity(_ app: AXApp, _ record: WindowRecord) -> WMSnapshot.Identity {
+        WMSnapshot.Identity(app: app.bundleID, title: record.title)
+    }
+
+    /// Written once, when the window manager stops (quit, `kill`, disable).
+    private func saveLayout(_ model: WMModel) {
+        let snapshot = model.snapshot { id in
+            records[id].map { identity($0.app, $0.record) } ?? WMSnapshot.Identity(app: nil, title: "")
+        }
+        do {
+            try FileManager.default.createDirectory(at: WindowManager.layoutURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(snapshot).write(to: WindowManager.layoutURL, options: .atomic)
+        } catch {
+            log.error("saving the layout failed: \(error)")
+        }
     }
 
     private func handle(_ app: AXApp, _ event: AXApp.Event) {
