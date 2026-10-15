@@ -466,7 +466,14 @@ public final class WindowManager {
             if app.activationPolicy == .regular { self?.watch(app) }
         }
         on(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in self?.forget(app: app.processIdentifier) }
-        on(NSWorkspace.didActivateApplicationNotification) { [weak self] app in self?.syncFocus(app.processIdentifier) }
+        on(NSWorkspace.didActivateApplicationNotification) { [weak self] app in
+            // An app launched for the first time may not be `.regular` yet when it launches.
+            if AXApp.live[app.processIdentifier] == nil, app.activationPolicy == .regular {
+                self?.watch(app)
+            } else {
+                self?.syncFocus(app.processIdentifier)
+            }
+        }
         on(NSWorkspace.didHideApplicationNotification) { [weak self] app in
             guard let self else { return }
             if self.settings.automaticallyUnhideMacosHiddenApps {
@@ -476,14 +483,22 @@ public final class WindowManager {
             }
         }
         on(NSWorkspace.didUnhideApplicationNotification) { [weak self] app in self?.setHidden(app.processIdentifier, false) }
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.model?.setMonitors(WindowManager.monitors())
-                self?.apply()
-            }
-        })
+        for (center, name) in [(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification),
+                               (center, NSWorkspace.didWakeNotification)] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.monitorsChanged() }
+            })
+        }
+    }
+
+    /// Displays connected, disconnected or woken up: workspaces are redistributed, and every
+    /// frame is set again, since macOS moves windows of displays that left on its own.
+    private func monitorsChanged() {
+        guard let model else { return }
+        let before = model.focusedWorkspace.name
+        model.setMonitors(WindowManager.monitors())
+        apply(force: true)
+        if model.focusedWorkspace.name != before { handlers.changed() }
     }
 
     private func watch(_ running: NSRunningApplication) {
@@ -784,16 +799,17 @@ public final class WindowManager {
 
     // MARK: - Applying the model
 
-    /// Puts every window where the model says, touching only what changed.
-    private func apply() {
+    /// Puts every window where the model says, touching only what changed (everything when
+    /// `force`d: our idea of where windows are may be stale).
+    private func apply(force: Bool = false) {
         guard let model else { return }
         let layout = model.layout()
         var batches: [pid_t: (AXApp, [(AXUIElement, WindowID, CGRect, CGRect?)])] = [:]
         let now = ContinuousClock.now
         func set(_ id: WindowID, _ frame: CGRect) {
             guard let (app, record) = records[id] else { return }
-            guard targets[id].map({ !$0.isClose(to: frame) }) ?? true else { return }
-            let old = frames[id]
+            guard force || targets[id].map({ !$0.isClose(to: frame) }) ?? true else { return }
+            let old = force ? nil : frames[id]
             frames[id] = frame
             targets[id] = frame
             setAt[id] = now
@@ -804,26 +820,34 @@ public final class WindowManager {
             parked[id] = nil
             set(id, frame)
         }
-        for (id, _) in layout.floating {
-            if let frame = parked.removeValue(forKey: id) { set(id, frame) }
+        for (id, monitorID) in layout.floating {
+            let parkedFrame = parked.removeValue(forKey: id)
+            guard let frame = parkedFrame ?? frames[id] else { continue }
+            // A floating window off every display (its display left) comes back on its monitor.
+            if !model.monitors.contains(where: { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }),
+               let monitor = model.monitors.first(where: { $0.id == monitorID }) {
+                let v = monitor.visible, size = CGSize(width: min(frame.width, v.width), height: min(frame.height, v.height))
+                set(id, CGRect(origin: CGPoint(x: v.midX - size.width / 2, y: v.midY - size.height / 2), size: size).integral)
+            } else if parkedFrame != nil || force {
+                set(id, frame)
+            }
         }
-        for (id, monitorID) in layout.hidden where parked[id] == nil {
-            guard let monitor = model.monitors.first(where: { $0.id == monitorID }), let frame = frames[id] else { continue }
-            parked[id] = frame
-            // Bottom right corner, one point inside so macOS doesn't pull the window back.
+        for (id, monitorID) in layout.hidden {
+            guard let monitor = model.monitors.first(where: { $0.id == monitorID }), let frame = parked[id] ?? frames[id] else { continue }
+            if parked[id] == nil { parked[id] = frame }
+            // Bottom right corner, one point inside so macOS doesn't pull the window back. Set
+            // again when the corner moves (the workspace's display left): a no-op otherwise.
             set(id, CGRect(origin: CGPoint(x: monitor.visible.maxX - 1, y: monitor.visible.maxY - 1), size: frame.size))
         }
         // Tabs follow their group: same frame, parked with it.
         for (tab, group) in tabs {
+            guard let target = targets[group] else { continue }
             if let frame = parked[group] {
-                if parked[tab] == nil, let target = targets[group] {
-                    parked[tab] = frame
-                    set(tab, target)
-                }
-            } else if let target = targets[group] {
+                if parked[tab] == nil { parked[tab] = frame }
+            } else {
                 parked[tab] = nil
-                set(tab, target)
             }
+            set(tab, target)
         }
         for (_, (app, changes)) in batches { app.setFrames(changes) }
     }

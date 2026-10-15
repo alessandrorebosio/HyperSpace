@@ -93,6 +93,9 @@ public final class WMModel {
     /// Window -> name of its workspace, kept by every attach and detach so lookups don't
     /// search every workspace's tree.
     var location: [WindowID: String] = [:]
+    /// Display name -> workspace it showed when it was disconnected, to show it again when
+    /// the display comes back.
+    private var lastShown: [String: String] = [:]
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -130,24 +133,47 @@ public final class WMModel {
 
     // MARK: - Events from the system
 
-    /// Displays changed. Each monitor keeps its workspace if it had one; others get a
-    /// workspace assigned to them, else the first free one.
+    /// Displays changed (connected, disconnected, woken up). Each monitor keeps its
+    /// workspace, unless that workspace is forced onto another monitor that is now there.
+    /// Monitors without one get, in order: a workspace forced onto them, the one they showed
+    /// before they left, one that was last on them, else the first free one. Workspaces of
+    /// displays that left stay hidden, on the main monitor, until shown.
     public func setMonitors(_ monitors: [WMMonitor]) {
+        let old = self.monitors
         self.monitors = monitors.sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
         let ids = Set(monitors.map(\.id))
-        visible = visible.filter { ids.contains($0.key) }
+        // Display ids can change across sleep: a display back under a new id is the same one.
+        for monitor in self.monitors where !old.contains(where: { $0.id == monitor.id }) {
+            guard let previous = old.first(where: { $0.name == monitor.name && !ids.contains($0.id) }) else { continue }
+            if let name = visible.removeValue(forKey: previous.id) { visible[monitor.id] = name }
+            for workspace in workspaces.values where workspace.monitor == previous.id { workspace.monitor = monitor.id }
+            if focusedMonitor == previous.id { focusedMonitor = monitor.id }
+        }
+        for (id, name) in visible where !ids.contains(id) {
+            if let monitor = old.first(where: { $0.id == id }) { lastShown[monitor.name] = name }
+            visible[id] = nil
+        }
+        for (id, name) in visible where settings.workspaceToMonitor[name] != nil && assignedMonitor(name) != id {
+            visible[id] = nil
+        }
         for monitor in self.monitors where visible[monitor.id] == nil {
             let assigned = settings.workspaceToMonitor.keys.sorted(by: WMModel.order).filter { assignedMonitor($0) == monitor.id }
-            // Not a workspace forced onto another monitor, nor one that lives elsewhere.
-            let name = (assigned + workspaceNames).first { name in
-                !isVisible(name) && (settings.workspaceToMonitor[name] == nil || assignedMonitor(name) == monitor.id)
-                    && (workspaces[name]?.monitor.map { $0 == monitor.id } ?? true)
+            let remembered = lastShown.removeValue(forKey: monitor.name).flatMap { workspaces[$0] != nil ? [$0] : nil } ?? []
+            let previous = workspaceNames.filter { workspaces[$0]?.monitor == monitor.id }
+            // Forced ones only on their monitor; the others not if they live on another one.
+            let name = (assigned + remembered + previous + workspaceNames).first { name in
+                guard !isVisible(name) else { return false }
+                if settings.workspaceToMonitor[name] != nil { return assignedMonitor(name) == monitor.id }
+                return workspaces[name]?.monitor.map { $0 == monitor.id || !ids.contains($0) } ?? true
             }
                 ?? (1...).lazy.map(String.init).first { !isVisible($0) && workspaces[$0] == nil }!
             visible[monitor.id] = name
             workspace(name).monitor = monitor.id
         }
         if !ids.contains(focusedMonitor) { focusedMonitor = mainMonitor?.id ?? 0 }
+        // The focused window left with its display: focus what the focused monitor shows.
+        if focused.flatMap({ workspace(of: $0) }).map({ !isVisible($0.name) }) ?? false { focusRecent(in: focusedWorkspace) }
+        collectEmptyWorkspaces()
     }
 
     /// A new window: it joins the workspace shown on `monitor` (where it appeared) or the

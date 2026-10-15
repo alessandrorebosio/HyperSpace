@@ -53,20 +53,28 @@ final class AXApp: @unchecked Sendable {
 
     /// Starts observing and reads the app's current windows (on the app's queue).
     func start(_ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
-        queue.async { [self] in
-            var observer: AXObserver?
-            guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else {
-                DispatchQueue.main.async { MainActor.assumeIsolated { completion([]) } } // startup still counts it
-                return
-            }
-            self.observer = observer
-            for notification in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification] {
-                AXObserverAddNotification(observer, element, notification as CFString, nil)
-            }
-            CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
-            let records = windows().compactMap { record($0) }
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(records) } }
+        queue.async { [self] in subscribe(attempt: 0, completion) }
+    }
+
+    /// An app that just launched may not answer Accessibility yet: subscribing is tried
+    /// again, without blocking the queue, for up to a second.
+    private func subscribe(attempt: Int, _ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
+        var observer: AXObserver?
+        guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else {
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion([]) } } // startup still counts it
+            return
         }
+        let subscribed = [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification].allSatisfy { notification in
+            [.success, .notificationAlreadyRegistered].contains(AXObserverAddNotification(observer, element, notification as CFString, nil))
+        }
+        if !subscribed, attempt < 10 {
+            queue.asyncAfter(deadline: .now() + .milliseconds(100)) { [self] in subscribe(attempt: attempt + 1, completion) }
+            return
+        }
+        self.observer = observer
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        let records = windows().compactMap { record($0) }
+        DispatchQueue.main.async { MainActor.assumeIsolated { completion(records) } }
     }
 
     func stop() {
