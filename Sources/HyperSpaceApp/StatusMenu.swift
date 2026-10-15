@@ -20,9 +20,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Updates the icon; the menu content is rebuilt in `menuNeedsUpdate`.
     func refresh() {
         let healthy = controller.accessibility.isGranted && controller.configErrors.isEmpty
-        item.button?.image = healthy
+        item.button?.image = healthy || !controller.isEnabled
             ? MenuBarIcon.image
             : NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
+        item.button?.appearsDisabled = !controller.isEnabled // dimmed while off
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -30,6 +31,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         menu.addItem(disabled("HyperSpace \(HyperSpace.version)"))
+        let enabled = action("Enabled", #selector(toggleEnabled), key: "e")
+        enabled.state = controller.isEnabled ? .on : .off
+        menu.addItem(enabled)
         menu.addItem(.separator())
 
         if controller.accessibility.isGranted {
@@ -70,6 +74,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return item
     }
 
+    @objc private func toggleEnabled() { controller.setEnabled(!controller.isEnabled) }
     @objc private func grantAccessibility() { controller.openAccessibilitySettings() }
     @objc private func reloadConfig() { controller.reloadConfig() }
     @objc private func openConfig() { controller.openConfig() }
