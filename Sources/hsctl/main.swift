@@ -17,6 +17,7 @@ usage: hsctl <command>
 
 window manager (same commands as AeroSpace):
   list-workspaces                     workspaces and their windows (* focused, + visible)
+  list-windows                        windows, their workspace and state (* focused)
   focus|move|join-with left|right|up|down
   workspace <name>|next|prev          workspace-back-and-forth
   move-node-to-workspace <name>|next|prev [--focus-follows-window]

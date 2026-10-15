@@ -137,6 +137,17 @@ public final class WindowManager {
         }.joined(separator: "\n")
     }
 
+    /// `hsctl list-windows`: every window seen, how it's managed, and the focused one.
+    public var windowList: String {
+        guard let model else { return "window manager off" }
+        return records.sorted { $0.key < $1.key }.map { id, entry in
+            let name = NSRunningApplication(processIdentifier: entry.app.pid)?.localizedName ?? "?"
+            let state = model.windows[id].map { $0.floating ? "floating" : "tiled" } ?? "not managed"
+            let workspace = model.workspace(of: id)?.name ?? "-"
+            return "\(model.focused == id ? "*" : " ") \(id)  \(name)  workspace \(workspace)  \(state)"
+        }.joined(separator: "\n")
+    }
+
     // MARK: - System events
 
     private func observe() {
@@ -248,13 +259,19 @@ public final class WindowManager {
     private func syncFocus(_ pid: pid_t?) {
         guard let pid, let app = AXApp.live[pid] else { return }
         app.queue.async { [weak self] in
-            let window: AXUIElement? = AX.value(app.element, kAXFocusedWindowAttribute)
+            // Some apps (Electron ones, mostly) don't always report a focused window: fall
+            // back to their main window.
+            let window: AXUIElement? = AX.value(app.element, kAXFocusedWindowAttribute) ?? AX.value(app.element, kAXMainWindowAttribute)
             let id = window.flatMap(AX.windowID)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, let model = self.model else { return }
                     let workspace = model.focusedWorkspace.name
-                    if model.nativeFocus(id) { self.apply() }
+                    // Still nothing we manage: the app's most recently focused window will do.
+                    let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
+                        ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
+                    self.log.debug("focus: pid \(pid) window \(id.map(String.init) ?? "none") -> \(known.map(String.init) ?? "none")")
+                    if model.nativeFocus(known) { self.apply() }
                     if model.focusedWorkspace.name != workspace { self.handlers.changed() }
                 }
             }
