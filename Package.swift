@@ -22,5 +22,7 @@ let package = Package(
         .executableTarget(name: "HyperSpaceApp", dependencies: ["HyperSpaceCore", "HyperSpaceIPC", "HyperSpaceInput", "HyperSpaceWM"]),
         .executableTarget(name: "hsctl", dependencies: ["HyperSpaceIPC"]),
         .testTarget(name: "HyperSpaceCoreTests", dependencies: ["HyperSpaceCore", "HyperSpaceIPC"]),
+        // The window manager service against a fake Accessibility layer.
+        .testTarget(name: "HyperSpaceWMTests", dependencies: ["HyperSpaceCore", "HyperSpaceWM"]),
     ]
 )
