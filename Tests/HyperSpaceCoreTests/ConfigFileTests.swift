@@ -3,35 +3,70 @@ import Foundation
 import Testing
 
 struct ConfigFileTests {
-    private func tempConfigURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appending(path: "hyperspace-tests-\(UUID().uuidString)/hyperspace/hyperspace.toml")
+    private func tempDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "hyperspace-tests-\(UUID().uuidString)/hyperspace")
     }
 
-    @Test func missingFileMeansDefaultConfig() throws {
-        #expect(try ConfigLoader.load(from: tempConfigURL()).get() == Config())
+    private func write(_ text: String, _ file: ConfigFile, in dir: URL) throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try text.write(to: ConfigLoader.url(file, in: dir), atomically: true, encoding: .utf8)
     }
 
-    @Test func templateIsCreatedOnceAndNeverOverwritten() throws {
-        let url = tempConfigURL()
-        try ConfigLoader.createTemplateIfMissing(at: url)
-        #expect(try String(contentsOf: url, encoding: .utf8) == ConfigLoader.template)
+    @Test func missingFilesMeanDefaultConfig() {
+        let (config, errors) = ConfigLoader.load(from: tempDirectory())
+        #expect(config == Config())
+        #expect(errors.isEmpty)
+    }
 
-        try "[wm]\nenabled = true\n".write(to: url, atomically: true, encoding: .utf8)
-        try ConfigLoader.createTemplateIfMissing(at: url)
-        #expect(try ConfigLoader.load(from: url).get().wm.enabled)
+    @Test func eachFileFillsItsSection() throws {
+        let dir = tempDirectory()
+        try write("[capslock]\nhold = \"meh\"", .keyboard, in: dir)
+        try write("[buttons]\nback = \"navigate.back\"", .mouse, in: dir)
+        try write("enabled = true", .wm, in: dir)
+        let (config, errors) = ConfigLoader.load(from: dir)
+        #expect(errors.isEmpty)
+        #expect(config.keyboard.capslock?.hold == "meh")
+        #expect(config.mouse.buttons["back"] == .keys("navigate.back"))
+        #expect(config.wm.enabled)
+    }
+
+    @Test func brokenFileKeepsItsLastGoodSectionOnly() throws {
+        let dir = tempDirectory()
+        try write("[capslock]\nhold = \"meh\"", .keyboard, in: dir)
+        try write("[buttons]\nback = \"navigate.back\"", .mouse, in: dir)
+        let good = ConfigLoader.load(from: dir).config
+
+        try write("[capslock]\nhold = \"hyper\"", .keyboard, in: dir)
+        try write("[buttons]\nback = \"nope-nope\"", .mouse, in: dir)
+        let (config, errors) = ConfigLoader.load(from: dir, previous: good)
+        #expect(errors.count == 1)
+        #expect(errors.first?.path.hasSuffix("mouse.toml") == true)
+        #expect(config.keyboard.capslock?.hold == "hyper", "the valid file is applied")
+        #expect(config.mouse == good.mouse, "the broken file keeps its last good settings")
+    }
+
+    @Test func templatesAreCreatedOnceAndNeverOverwritten() throws {
+        let dir = tempDirectory()
+        let urls = try ConfigLoader.createTemplatesIfMissing(in: dir)
+        #expect(urls.map(\.lastPathComponent) == ["keyboard.toml", "mouse.toml", "wm.toml"])
+        #expect(try String(contentsOf: urls[2], encoding: .utf8) == ConfigLoader.template(.wm))
+
+        try write("enabled = true\n", .wm, in: dir)
+        try ConfigLoader.createTemplatesIfMissing(in: dir)
+        #expect(ConfigLoader.load(from: dir).config.wm.enabled)
     }
 
     @Test(arguments: ["in-place", "atomic"])
     func watcherSeesSaves(style: String) async throws {
-        let url = tempConfigURL()
-        try ConfigLoader.createTemplateIfMissing(at: url)
+        let dir = tempDirectory()
+        let urls = try ConfigLoader.createTemplatesIfMissing(in: dir)
         let changes = AsyncStream<Void>.makeStream()
-        let watcher = ConfigWatcher(url: url) { changes.continuation.yield() }
+        let watcher = ConfigWatcher(directory: dir, files: urls) { changes.continuation.yield() }
         watcher.start()
         defer { watcher.stop() }
 
-        let text = "[wm]\nenabled = true\n"
+        let url = ConfigLoader.url(.mouse, in: dir)
+        let text = "[buttons]\nmiddle = \"none\"\n"
         if style == "atomic" {
             try text.write(to: url, atomically: true, encoding: .utf8) // temp file + rename
         } else {

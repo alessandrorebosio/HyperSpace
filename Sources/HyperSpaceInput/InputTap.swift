@@ -18,6 +18,7 @@ public final class InputTap: @unchecked Sendable {
 
     private let snapshot = Mutex(Snapshot(ActiveTables()))
     private let perform: @Sendable (Output) -> Void
+    private let capsLock: CapsLockState
 
     // Input thread only.
     private var engine = KeyEngine()
@@ -27,7 +28,8 @@ public final class InputTap: @unchecked Sendable {
     private var runLoop: CFRunLoop?
 
     /// - Parameter perform: runs `.shell` and `.wm` outputs; called on the input thread, must not block.
-    public init(perform: @escaping @Sendable (Output) -> Void) {
+    init(capsLock: CapsLockState, perform: @escaping @Sendable (Output) -> Void) {
+        self.capsLock = capsLock
         self.perform = perform
     }
 
@@ -116,13 +118,16 @@ public final class InputTap: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
-        let decision = engine.handle(
-            code: UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode)),
-            down: type == .keyDown,
-            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
-            now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW),
-            tables: current.tables
-        )
+        let tables = current.tables
+        let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        if let layer = tables.layer, layer.led == .held, code == Layer.trigger.code, !isRepeat {
+            capsLock.set(type == .keyDown) // LED on while Caps Lock is held
+        }
+        let decision = engine.handle(code: code, down: type == .keyDown, isRepeat: isRepeat,
+                                     now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: tables)
+        // The LED is the caps lock state: keep it from turning keys into capitals.
+        if engine.isLayerHeld { event.flags.remove(.maskAlphaShift) }
 
         switch decision {
         case .pass:

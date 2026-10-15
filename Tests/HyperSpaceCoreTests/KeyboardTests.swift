@@ -3,11 +3,11 @@ import Testing
 
 struct KeyboardPlanTests {
     private func plan(_ toml: String) throws -> KeyboardPlan {
-        try KeyboardPlan(ConfigLoader.parse(toml).get().keyboard)
+        try KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, toml).get())
     }
 
     private func error(_ toml: String) -> String? {
-        if case let .failure(e) = ConfigLoader.parse(toml) { return e.message }
+        if case let .failure(e) = ConfigLoader.parse(KeyboardConfig.self, toml) { return e.message }
         return nil
     }
 
@@ -29,7 +29,6 @@ struct KeyboardPlanTests {
 
     @Test func simpleKeyRemapsGoToHIDLevel() throws {
         let p = try plan("""
-        [keyboard]
         simple = [
           { from = "command.right", to = "option.right", device = { vendor = 0x05ac } },
           { from = "f1", to = "cmd-space" },
@@ -43,13 +42,13 @@ struct KeyboardPlanTests {
 
     @Test func capsLockBecomesLayerTrigger() throws {
         let p = try plan("""
-        [keyboard.capslock]
+        [capslock]
         alone = "escape"
-        [keyboard.capslock.map]
+        [capslock.map]
         h = "arrow.left"
         q = "none"
         x = "passthrough"
-        [[keyboard.capslock.app]]
+        [[capslock.app]]
         bundle_id = "com.example.app"
         map = { h = "home", j = "passthrough" }
         """)
@@ -65,12 +64,13 @@ struct KeyboardPlanTests {
     }
 
     @Test func invalidKeysAreConfigErrors() {
-        #expect(error("[keyboard.capslock.map]\nhh = \"arrow.left\"") == "keyboard.capslock.map.hh: unknown key 'hh'")
-        #expect(error("[keyboard.capslock.map]\nh = \"cmd-lefty\"") == "keyboard.capslock.map.h: unknown key or combo 'cmd-lefty'")
-        #expect(error("[keyboard]\nsimple = [{ from = \"shift.left\", to = \"cmd-a\" }]")?.contains("modifier to a combo") == true)
-        #expect(error("[keyboard]\nsimple = [{ from = \"capslock\", to = \"escape\" }]\n[keyboard.capslock]")?.contains("already configured") == true)
-        #expect(error("[keyboard.capslock]\nhold = \"shift-k\"")?.contains("isn't a modifier list") == true)
-        #expect(error("[keyboard.capslock.map]\nh = \"left_arrow\"")?.contains("use dots, e.g. arrow.left") == true)
+        #expect(error("[capslock.map]\nhh = \"arrow.left\"") == "capslock.map.hh: unknown key 'hh'")
+        #expect(error("[capslock.map]\nh = \"cmd-lefty\"") == "capslock.map.h: unknown key or combo 'cmd-lefty'")
+        #expect(error("simple = [{ from = \"shift.left\", to = \"cmd-a\" }]")?.contains("modifier to a combo") == true)
+        #expect(error("simple = [{ from = \"capslock\", to = \"escape\" }]\n[capslock]")?.contains("already configured") == true)
+        #expect(error("[capslock]\nhold = \"shift-k\"")?.contains("isn't a modifier list") == true)
+        #expect(error("[capslock]\nled = \"blink\"")?.contains("use \"off\" or \"held\"") == true)
+        #expect(error("[capslock.map]\nh = \"left_arrow\"")?.contains("use dots, e.g. arrow.left") == true)
     }
 }
 
@@ -80,17 +80,16 @@ struct KeyEngineTests {
     let ms: UInt64 = 1_000_000
 
     var tables: ActiveTables {
-        try! InputPlan(ConfigLoader.parse("""
-        [keyboard]
+        try! InputPlan(keyboard: KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, """
         simple = [{ from = "f1", to = "cmd-space" }]
-        [keyboard.capslock]
+        [capslock]
         alone = "escape"
         tap_timeout_ms = 200
-        [keyboard.capslock.map]
+        [capslock.map]
         h = "arrow.left"
         q = "none"
         t = { shell = "open -a Terminal" }
-        """).get()).tables(forApp: nil)
+        """).get())).tables(forApp: nil)
     }
 
     private func combo(_ s: String) -> KeyEngine.Decision { .rewrite(Combo(parsing: s)!) }
@@ -147,13 +146,13 @@ struct KeyEngineTests {
     }
 
     @Test func holdAddsModifiersToUnmappedKeys() throws {
-        let tables = try InputPlan(ConfigLoader.parse("""
-        [keyboard.capslock]
+        let tables = try InputPlan(keyboard: KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, """
+        [capslock]
         hold = "shift-ctrl-opt"
         alone = "escape"
-        [keyboard.capslock.map]
+        [capslock.map]
         h = "arrow.left"
-        """).get()).tables(forApp: nil)
+        """).get())).tables(forApp: nil)
         var e = KeyEngine()
         _ = e.handle(code: trigger, down: true, isRepeat: false, now: 0, tables: tables)
         #expect(e.handle(code: t, down: true, isRepeat: false, now: 1, tables: tables) == combo("shift-ctrl-opt-t"))
@@ -162,6 +161,12 @@ struct KeyEngineTests {
         _ = e.handle(code: trigger, down: false, isRepeat: false, now: 4, tables: tables)
         #expect(e.handle(code: t, down: false, isRepeat: false, now: 5, tables: tables) == combo("shift-ctrl-opt-t"), "release matches press")
         #expect(e.handle(code: t, down: true, isRepeat: false, now: 6, tables: tables) == .pass)
+    }
+
+    @Test func capsLockLED() throws {
+        let plan = { (toml: String) in try KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, toml).get()) }
+        #expect(try plan("[capslock]").layer?.led == CapsLockLED.off)
+        #expect(try plan("[capslock]\nled = \"held\"").layer?.led == CapsLockLED.held)
     }
 
     @Test func holdModifierNames() {

@@ -21,6 +21,9 @@ public struct KeyEngine: Sendable {
 
     public init() {}
 
+    /// True while the Caps Lock layer trigger is held.
+    public var isLayerHeld: Bool { layerDown }
+
     /// - Parameter now: monotonic time in nanoseconds.
     public mutating func handle(code: UInt16, down: Bool, isRepeat: Bool, now: UInt64,
                                 tables: ActiveTables) -> Decision {

@@ -177,9 +177,11 @@ public enum ConfigLoader {
     #   { from = "f1", to = "cmd-space" },
     # ]
 
-    # Caps Lock. Once this section exists, Caps Lock no longer toggles caps lock.
+    # Caps Lock. Once this section exists, Caps Lock no longer toggles caps lock
+    # (if it was on, HyperSpace turns it off).
     # [capslock]
     # hold = "shift-ctrl-opt"     # while held, Caps Lock acts as these modifiers
+    # led = "held"                # LED: "held" = on while Caps Lock is held, "off" = always off (default)
     # alone = "escape"            # action when tapped alone (default: nothing)
     # tap_timeout_ms = 200        # held longer than this = not a tap, "alone" doesn't fire
 

@@ -11,6 +11,7 @@ public final class InputService {
 
     private let log = HyperSpace.logger("input")
     private let mapper = HIDMapper()
+    private let capsLock = CapsLockState()
     private var tap: InputTap?
     private var plan = InputPlan()
     private var frontmostApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
@@ -46,6 +47,8 @@ public final class InputService {
         let layerMapping = Layer.trigger.usage
         let hid = plan.keyboard.hid
         mapper.apply(tapState == .running ? hid : hid.filter { $0.to != layerMapping })
+        // Remapped Caps Lock: turn off a caps lock that was on before, LED included.
+        if tapState == .running, plan.keyboard.layer != nil { capsLock.set(false) }
         pushTables()
     }
 
@@ -57,7 +60,7 @@ public final class InputService {
     private func startTap() {
         guard tap == nil else { return }
         let onWMCommand = onWMCommand
-        let tap = InputTap { output in
+        let tap = InputTap(capsLock: capsLock) { output in
             switch output {
             case let .shell(command): ActionRunner.shell(command)
             case let .wm(command): Task { @MainActor in onWMCommand(command) }

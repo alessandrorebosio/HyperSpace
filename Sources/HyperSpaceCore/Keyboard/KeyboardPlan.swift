@@ -5,6 +5,14 @@ public struct HIDMapping: Sendable, Equatable {
     public var device: DeviceMatch?
 }
 
+/// What the Caps Lock LED shows once Caps Lock is remapped.
+public enum CapsLockLED: String, Sendable, Equatable {
+    /// Always off.
+    case off
+    /// On while Caps Lock is held.
+    case held
+}
+
 /// The Caps Lock layer.
 public struct Layer: Sendable, Equatable {
     /// Caps Lock is turned into this key at L0, then tracked by the event tap.
@@ -13,6 +21,7 @@ public struct Layer: Sendable, Equatable {
     public var alone: Output?
     /// Added to unmapped keys while the layer is held.
     public var hold: Modifiers
+    public var led: CapsLockLED
     public var tapTimeoutNs: UInt64
     public var base: OutputTable
     public var apps: [String: OutputTable]
@@ -61,6 +70,13 @@ public struct KeyboardPlan: Sendable, Equatable {
             }
             hold = parsed
         }
+        var led = CapsLockLED.off
+        if let text = caps.led {
+            guard let parsed = CapsLockLED(rawValue: text) else {
+                throw InvalidConfig(message: "capslock.led: '\(text)' isn't valid; use \"off\" or \"held\"")
+            }
+            led = parsed
+        }
         let base = try KeyboardPlan.table(caps.map, path: "capslock.map", over: .keys)
         var apps: [String: OutputTable] = [:]
         for (i, app) in caps.app.enumerated() {
@@ -69,6 +85,7 @@ public struct KeyboardPlan: Sendable, Equatable {
         layer = Layer(
             alone: try Compile.output(caps.alone, path: "capslock.alone"),
             hold: hold,
+            led: led,
             tapTimeoutNs: UInt64(max(0, caps.tapTimeoutMs)) * 1_000_000,
             base: base,
             apps: apps

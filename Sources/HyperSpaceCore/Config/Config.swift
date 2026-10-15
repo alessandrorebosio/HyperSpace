@@ -31,6 +31,8 @@ public struct CapsLockConfig: Sendable, Equatable {
     /// Modifiers added to every unmapped key while Caps Lock is held, e.g. `"shift-ctrl-opt"`,
     /// `"meh"` (⇧⌃⌥) or `"hyper"` (⇧⌃⌥⌘).
     public var hold: String?
+    /// Caps Lock LED: "off" (always off, default) or "held" (on while Caps Lock is held).
+    public var led: String?
     public var tapTimeoutMs = 200
     /// Caps + key. Keys not listed keep their normal behavior.
     public var map: [String: Action] = [:]
@@ -122,7 +124,7 @@ extension SimpleRemap: Decodable {
 
 extension CapsLockConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case alone, hold, tapTimeoutMs = "tap_timeout_ms", map, app
+        case alone, hold, led, tapTimeoutMs = "tap_timeout_ms", map, app
     }
 
     public init(from decoder: any Decoder) throws {
@@ -130,6 +132,7 @@ extension CapsLockConfig: Decodable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         alone = try c.decode(.alone, default: .none)
         hold = try c.decodeIfPresent(String.self, forKey: .hold)
+        led = try c.decodeIfPresent(String.self, forKey: .led)
         tapTimeoutMs = try c.decode(.tapTimeoutMs, default: 200)
         map = try c.decode(.map, default: [:])
         app = try c.decode(.app, default: [])
