@@ -170,7 +170,8 @@ public final class InputTap: @unchecked Sendable {
     }
 
     private func handleKey(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
-        let tables = current.tables
+        let snapshot = current
+        let tables = snapshot.tables
         let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         if code == Layer.capsLockTrigger, !isRepeat, tables.layers.first?.trigger == code, tables.layers[0].led == .held {
@@ -181,7 +182,7 @@ public final class InputTap: @unchecked Sendable {
                                    now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: tables)
         // A Caps Lock LED that is on is the caps lock state: keep it from making capitals.
         if keys.isLayerHeld { event.flags.remove(.maskAlphaShift) }
-        let pid = current.frontmostPID
+        let pid = snapshot.frontmostPID
         if let before = keys.takeEmitBefore() { emit(before, pid: pid, location: Post.cursor) }
 
         switch decision {
@@ -206,10 +207,10 @@ public final class InputTap: @unchecked Sendable {
     private func handleModifier(_ event: CGEvent) {
         let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         guard let mask = InputTap.modifierMasks[code] else { return }
-        let tables = current.tables
+        let snapshot = current
         if let output = keys.modifier(code: code, down: event.flags.contains(mask),
-                                      now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: tables) {
-            emit(output, pid: current.frontmostPID, location: Post.cursor)
+                                      now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: snapshot.tables) {
+            emit(output, pid: snapshot.frontmostPID, location: Post.cursor)
         }
     }
 
@@ -314,30 +315,33 @@ public final class InputTap: @unchecked Sendable {
     /// Reverses and/or makes linear (a fixed number of lines per notch, no macOS
     /// acceleration) a wheel event in place. Axis 1 is vertical, axis 2 horizontal.
     static func adjust(_ event: CGEvent, _ scroll: ScrollPlan, factor: Double) {
-        let axes: [(CGEventField, CGEventField, CGEventField, Bool)] = [
-            (.scrollWheelEventDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventPointDeltaAxis1, scroll.reverseVertical),
-            (.scrollWheelEventDeltaAxis2, .scrollWheelEventFixedPtDeltaAxis2, .scrollWheelEventPointDeltaAxis2, scroll.reverseHorizontal),
-        ]
-        for (lineField, fixedField, pointField, reverse) in axes {
-            var lines = Double(event.getIntegerValueField(lineField))
-            var fixed = event.getDoubleValueField(fixedField)
-            var points = Double(event.getIntegerValueField(pointField))
-            guard lines != 0 || fixed != 0 || points != 0 else { continue }
-            let sign = reverse ? -1.0 : 1.0
-            if scroll.linear {
-                let direction = lines != 0 ? lines.sign : points != 0 ? points.sign : fixed.sign
-                lines = (direction == .minus ? -1 : 1) * Double(scroll.lines) * factor * sign
-                fixed = lines
-                points = lines * 10
-            } else {
-                lines *= factor * sign
-                fixed *= factor * sign
-                points *= factor * sign
-            }
-            event.setIntegerValueField(lineField, value: Int64(lines.rounded()))
-            event.setDoubleValueField(fixedField, value: fixed)
-            event.setIntegerValueField(pointField, value: Int64(points.rounded()))
+        adjust(event, scroll, factor: factor, .scrollWheelEventDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis1,
+               .scrollWheelEventPointDeltaAxis1, reverse: scroll.reverseVertical)
+        adjust(event, scroll, factor: factor, .scrollWheelEventDeltaAxis2, .scrollWheelEventFixedPtDeltaAxis2,
+               .scrollWheelEventPointDeltaAxis2, reverse: scroll.reverseHorizontal)
+    }
+
+    /// One axis: its delta in lines, fixed point lines and points. No allocation, it runs per notch.
+    private static func adjust(_ event: CGEvent, _ scroll: ScrollPlan, factor: Double, _ lineField: CGEventField,
+                               _ fixedField: CGEventField, _ pointField: CGEventField, reverse: Bool) {
+        var lines = Double(event.getIntegerValueField(lineField))
+        var fixed = event.getDoubleValueField(fixedField)
+        var points = Double(event.getIntegerValueField(pointField))
+        guard lines != 0 || fixed != 0 || points != 0 else { return }
+        let sign = reverse ? -1.0 : 1.0
+        if scroll.linear {
+            let direction = lines != 0 ? lines.sign : points != 0 ? points.sign : fixed.sign
+            lines = (direction == .minus ? -1 : 1) * Double(scroll.lines) * factor * sign
+            fixed = lines
+            points = lines * 10
+        } else {
+            lines *= factor * sign
+            fixed *= factor * sign
+            points *= factor * sign
         }
+        event.setIntegerValueField(lineField, value: Int64(lines.rounded()))
+        event.setDoubleValueField(fixedField, value: fixed)
+        event.setIntegerValueField(pointField, value: Int64(points.rounded()))
     }
 
     // MARK: - Outputs (input thread)

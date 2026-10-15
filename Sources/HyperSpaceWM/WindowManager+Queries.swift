@@ -121,9 +121,9 @@ extension WindowManager {
     /// `focus-follows-mouse`: the window under the pointer gets focus.
     public func mouseMoved(to point: CGPoint) {
         guard let model, settings.focusFollowsMouse, let before = focusState else { return }
-        let layout = model.layout()
-        let under = layout.floating.keys.first { frames[$0]?.contains(point) == true }
-            ?? layout.tiled.first { $0.value.contains(point) }?.key
+        // Called on every pointer move: frames from the last apply, no layout computed.
+        let under = lastLayout.floating.keys.first { frames[$0]?.contains(point) == true }
+            ?? lastLayout.tiled.first { $0.value.contains(point) }?.key
         guard let under, under != model.focused else { return }
         model.nativeFocus(under)
         focusNative()

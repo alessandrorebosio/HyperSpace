@@ -62,6 +62,8 @@ public struct WMLayout: Sendable, Equatable {
     public var floating: [WindowID: UInt32] = [:]
     /// Windows of hidden workspaces, with the monitor whose corner hides them.
     public var hidden: [WindowID: UInt32] = [:]
+
+    public init() {}
 }
 
 /// What a command asks the service to do besides layout.

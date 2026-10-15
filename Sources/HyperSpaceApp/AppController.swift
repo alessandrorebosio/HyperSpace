@@ -15,6 +15,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private(set) var config = Config()
     /// `config` compiled; recompiled only when the config changes.
     private var plan = InputPlan()
+    /// wm.toml compiled; nil when it's empty (window manager off).
+    private var wmSettings: WMSettings?
     /// One per broken file; those files keep their last good settings.
     private(set) var configErrors: [ConfigError] = []
     private(set) var input: InputService!
@@ -98,15 +100,14 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Applies the config to the input layers and the window manager, or undoes everything
     /// while HyperSpace is disabled.
     private func applyInput() {
-        let settings = config.wm.isEmpty ? nil : try? WMSettings(config.wm)
-        let runWM = isEnabled && accessibility.isGranted && settings != nil
-        if runWM, let settings {
+        let settings = isEnabled && accessibility.isGranted ? wmSettings : nil
+        if let settings {
             wm.start(settings)
         } else {
             wm.stop()
         }
         var trackMouse: (@MainActor @Sendable (CGPoint) -> Void)?
-        if runWM, settings?.focusFollowsMouse == true {
+        if settings?.focusFollowsMouse == true {
             trackMouse = { [weak self] point in self?.wm.mouseMoved(to: point) }
         }
         input.apply(isEnabled ? plan : InputPlan(), accessibilityGranted: accessibility.isGranted, trackMouse: trackMouse)
@@ -131,6 +132,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         for error in errors { log.error("config error: \(error.description)") }
         config = new
         plan = (try? InputPlan(new)) ?? InputPlan() // validated by the loader: can't fail
+        wmSettings = new.wm.isEmpty ? nil : try? WMSettings(new.wm)
         applyInput()
         log.info("config loaded")
         menu?.refresh()
