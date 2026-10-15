@@ -86,8 +86,9 @@ public final class InputTap: @unchecked Sendable {
         runLoop = CFRunLoopGetCurrent()
         CFRunLoopAddSource(runLoop, CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
-        // The first CGEvent created in a process costs ~100 ms (see docs/SPIKE.md): pay it now.
-        _ = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)
+        // The first CGEvent created in a process costs ~100 ms (see docs/SPIKE.md), and the
+        // posting resources are created lazily: pay both now, not on the first remapped input.
+        Post.warmUp()
         return true
     }
 
@@ -136,12 +137,23 @@ public final class InputTap: @unchecked Sendable {
             return nil
         case let .rewrite(combo):
             event.setIntegerValueField(.keyboardEventKeycode, value: Int64(combo.key.code))
-            event.flags = InputTap.flags(for: combo, physical: event.flags)
+            event.flags = Post.flags(for: combo, physical: event.flags)
             return Unmanaged.passUnretained(event)
         case let .emit(output):
             emit(output, for: event)
             return nil
         }
+    }
+
+    /// Performs an output outside of any input event (`hsctl do`), on the input thread.
+    /// Returns false if the tap isn't running.
+    public func run(_ output: Output, targetPID: pid_t) -> Bool {
+        guard let runLoop else { return false }
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) { [self] in
+            emit(output, pid: targetPID, location: CGEvent(source: nil)?.location ?? .zero)
+        }
+        CFRunLoopWakeUp(runLoop)
+        return true
     }
 
     private func handleButton(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -162,14 +174,20 @@ public final class InputTap: @unchecked Sendable {
     }
 
     private func emit(_ output: Output, for event: CGEvent) {
+        emit(output, pid: pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID)), location: event.location)
+    }
+
+    private func emit(_ output: Output, pid: pid_t, location: CGPoint) {
         switch output {
         case let .key(combo):
-            InputTap.post(combo)
-        case let .navigate(direction):
-            let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
-            navigation.send(direction, targetPID: pid, location: event.location, rules: current.tables.navigation)
-        case let .media(key):
-            MediaKeys.post(key)
+            Post.combo(combo)
+        case .system(.navigateBack), .system(.navigateForward):
+            navigation.send(output == .system(.navigateBack) ? .back : .forward, targetPID: pid,
+                            location: location, rules: current.tables.navigation)
+        case let .system(action):
+            SystemActions.perform(action, at: location)
+        case let .scroll(step):
+            Post.scroll(step)
         case .shell, .wm:
             perform(output)
         case .drop:
@@ -205,29 +223,6 @@ public final class InputTap: @unchecked Sendable {
             event.setIntegerValueField(lineField, value: lines)
             event.setDoubleValueField(fixedField, value: fixed)
             event.setIntegerValueField(pointField, value: points)
-        }
-    }
-
-    /// Physical modifiers are kept (Shift + Caps + h selects to the left), the combo's are added.
-    static func flags(for combo: Combo, physical: CGEventFlags = []) -> CGEventFlags {
-        var flags = physical.subtracting([.maskSecondaryFn, .maskNumericPad])
-        if combo.modifiers.contains(.command) { flags.insert(.maskCommand) }
-        if combo.modifiers.contains(.shift) { flags.insert(.maskShift) }
-        if combo.modifiers.contains(.option) { flags.insert(.maskAlternate) }
-        if combo.modifiers.contains(.control) { flags.insert(.maskControl) }
-        if combo.modifiers.contains(.fn) || combo.key.hasFnFlag { flags.insert(.maskSecondaryFn) }
-        if combo.key.isArrow { flags.insert(.maskNumericPad) }
-        return flags
-    }
-
-    /// Sends a full key press (down + up).
-    static func post(_ combo: Combo) {
-        let flags = flags(for: combo)
-        for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: combo.key.code, keyDown: down) else { continue }
-            event.flags = flags
-            event.setIntegerValueField(.eventSourceUserData, value: marker)
-            event.post(tap: .cgSessionEventTap)
         }
     }
 }

@@ -244,7 +244,9 @@ map = { d = "cmd-shift-k" }
 [buttons]                    # button1...button31, middle, back, forward
 back = "navigate.back"
 forward = "navigate.forward"
-middle = "media.play"        # also volume.up/.down/.mute, brightness.up/.down, media.next/.previous
+middle = "media.play"        # named actions: volume.*, brightness.*, media.*, mission.*, space.*,
+button5 = "mission.control"  #   window.*, click.*, scroll.*, lookup, zoom.smart (list in mouse.toml)
+button6 = { scroll = "down", lines = 5 }
 
 [[app]]
 bundle_id = "com.google.Chrome"

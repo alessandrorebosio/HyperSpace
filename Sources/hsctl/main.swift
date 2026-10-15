@@ -9,6 +9,7 @@ usage: hsctl <command>
   enable        turn remapping on
   disable       turn remapping off (HyperSpace stays open)
   toggle        switch between enabled and disabled
+  do <action>   perform an action now, e.g. `hsctl do volume.up`, `hsctl do mission.control`
   reload        reload the config file
   config-path   print the config directory (keyboard.toml, mouse.toml, wm.toml)
   apps          list running apps with their bundle id (for per-app rules)

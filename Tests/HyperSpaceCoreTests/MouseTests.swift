@@ -19,6 +19,9 @@ struct MouseTests {
     button5 = { shell = "say hi" }
     button6 = "volume.up"
     button7 = "media.next"
+    button8 = "scroll.down"
+    button9 = { scroll = "right", pixels = 40 }
+    button10 = "click.double"
 
     [[app]]
     bundle_id = "com.google.Chrome"
@@ -28,12 +31,15 @@ struct MouseTests {
     @Test func buttonsCompile() throws {
         let p = try plan(config)
         let tables = p.tables(forApp: nil)
-        #expect(tables.buttons[3] == .navigate(.back))
-        #expect(tables.buttons[4] == .navigate(.forward))
+        #expect(tables.buttons[3] == .system(.navigateBack))
+        #expect(tables.buttons[4] == .system(.navigateForward))
         #expect(tables.buttons[2] == .drop)
         #expect(tables.buttons[5] == .shell("say hi"))
-        #expect(tables.buttons[6] == .media(.volumeUp))
-        #expect(tables.buttons[7] == .media(.next))
+        #expect(tables.buttons[6] == .system(.volumeUp))
+        #expect(tables.buttons[7] == .system(.mediaNext))
+        #expect(tables.buttons[8] == .scroll(ScrollStep(dx: 0, dy: -3, pixels: false)))
+        #expect(tables.buttons[9] == .scroll(ScrollStep(dx: -40, dy: 0, pixels: true)))
+        #expect(tables.buttons[10] == .system(.clickDouble))
         #expect(tables.buttons[1] == nil)
         #expect(p.needsEventTap)
 
@@ -49,12 +55,15 @@ struct MouseTests {
         #expect(error("[buttons]\nback = \"cmd-nope\"")?.contains("unknown key or combo") == true)
         #expect(error("[[device]]\nmatch = { vendor = 1 }")?.hasPrefix("device: unknown key") == true)
         #expect(error("[scroll]\nlines = 0")?.contains("between 1 and 20") == true)
+        #expect(error("[buttons]\nmiddle = \"scroll.sideways\"")?.contains("unknown scroll direction") == true)
+        #expect(error("[buttons]\nmiddle = { scroll = \"up\", lines = 2, pixels = 3 }")?.contains("either `lines` or `pixels`") == true)
+        #expect(error("[buttons]\nmiddle = { shell = \"x\", lines = 2 }")?.contains("go with `scroll`") == true)
     }
 
     @Test func backButtonFiresOnceAndReleaseIsSwallowed() throws {
         let tables = try plan(config).tables(forApp: nil)
         var e = MouseEngine()
-        #expect(e.button(3, down: true, tables: tables) == .emit(.navigate(.back)))
+        #expect(e.button(3, down: true, tables: tables) == .emit(.system(.navigateBack)))
         #expect(e.isSwallowed(3))
         #expect(e.button(3, down: false, tables: tables) == .drop)
         #expect(!e.isSwallowed(3))

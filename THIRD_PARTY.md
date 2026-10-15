@@ -7,6 +7,11 @@ https://github.com/linearmouse/linearmouse
 (`UniversalBackForwardTransformer`, `GestureKit`): navigation swipe gesture events for apps
 that support them, mouse buttons 4/5 for the others.
 
+`Sources/HyperSpaceInput/SystemActions.swift` and the media keys in `Post.swift` follow
+LinearMouse's `ButtonActionExecutor`, `DockKit`, `KeyKit` and `GestureKit`: Dock
+notifications, symbolic hot keys, the zoom toggle gesture, window maximize and
+IOHIDSystem auxiliary keys.
+
 ## TOMLDecoder — MIT License, Copyright (c) Daniel Duan
 https://github.com/dduan/TOMLDecoder
 

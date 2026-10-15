@@ -165,7 +165,8 @@ public enum ConfigLoader {
     #            different characters on other layouts.
     # Modifiers: shift, ctrl, opt, cmd, fn, joined with "-" (e.g. "cmd-shift-k").
     # Actions:   "arrow.left" / "cmd-arrow.left"  a key or combo
-    #            "volume.up", "brightness.down", "media.next"...  media keys (list in mouse.toml)
+    #            "volume.up", "media.next", "mission.control"...  named actions (full list in mouse.toml)
+    #            { scroll = "down", lines = 5 }   scroll
     #            { shell = "open -a Safari" }     run a shell command
     #            "none"                           do nothing
     #            "passthrough"                    keep the normal behavior (for app exceptions)
@@ -215,14 +216,23 @@ public enum ConfigLoader {
     # Buttons: button1 = right, button2 (or middle) = wheel click,
     #          button3 (or back) / button4 (or forward) = side buttons, button5...31 = extra.
     #          The left button can't be remapped.
-    # Actions: "navigate.back" / "navigate.forward"  back/forward in every app
-    #          "cmd-w"                                a key or combo (US key positions)
-    #          "volume.up" / "volume.down" / "volume.mute"
-    #          "brightness.up" / "brightness.down"
-    #          "media.play" / "media.next" / "media.previous"  play/pause and skip (Spotify, Music...)
-    #          { shell = "open -a Safari" }           run a shell command
-    #          "none"                                 disable the button
-    #          "passthrough"                          keep the normal behavior (for app exceptions)
+    # Actions: "navigate.back" / "navigate.forward"   back/forward in every app
+    #          "cmd-w"                                 a key or combo (US key positions)
+    #          "volume.up" / ".down" / ".mute"          volume
+    #          "brightness.up" / ".down"                display brightness
+    #          "keyboard.brightness.up" / ".down"       keyboard backlight
+    #          "media.play" / ".next" / ".previous" / ".forward" / ".rewind"   playback (Spotify, Music...)
+    #          "mission.control" / ".windows" / ".desktop" / ".launchpad"     Mission Control, app windows, show desktop
+    #          "space.left" / "space.right"            move one space (Desktop)
+    #          "lookup" / "zoom.smart"                 Look Up & data detectors, smart zoom
+    #          "window.maximize" / "window.minimize"   the focused window
+    #          "click.left" / ".double" / ".right" / ".middle" / ".back" / ".forward"   a click
+    #          "scroll.up" / ".down" / ".left" / ".right"   scroll 3 lines
+    #          { scroll = "down", lines = 5 }          scroll a set amount (or pixels = 40)
+    #          { shell = "open -a Safari" }            run a shell command
+    #          "none"                                  disable the button
+    #          "passthrough"                           keep the normal behavior (for app exceptions)
+    #          Try any action right away: hsctl do volume.up
 
     # [buttons]
     # button3 = "navigate.back"     # side button: back
