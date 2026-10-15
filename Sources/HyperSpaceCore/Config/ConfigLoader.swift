@@ -228,7 +228,7 @@ public enum ConfigLoader {
     # Caps Lock. Once this section exists, Caps Lock no longer toggles caps lock
     # (if it was on, HyperSpace turns it off).
     # [capslock]
-    # hold = "shift-ctrl-opt"     # while held, other keys get these modifiers ("meh", "hyper")
+    # hold = "shift-ctrl-opt"     # while held, other keys get these modifiers ("shift-ctrl-opt-cmd" for all four)
     # led = "held"                # LED: "held" = on while Caps Lock is held, "off" = always off (default)
     # alone = "escape"            # action when tapped alone (default: nothing)
     # tap_timeout_ms = 200        # held longer than this = not a tap, "alone" doesn't fire

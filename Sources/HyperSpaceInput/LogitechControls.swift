@@ -23,7 +23,10 @@ final class LogitechControls: @unchecked Sendable {
     /// Control id -> button index (`MouseButtons`), from the plan.
     private var controls: [UInt16: Int] = [:]
     private var targets: [Target] = []
+    /// Reports that may answer the request in flight; collected only while one waits, so
+    /// unrelated traffic (battery, other apps) doesn't pile up.
     private var inbox: [(IOHIDDevice, [UInt8])] = []
+    private var waiting = false
     private var buffers: [UnsafeMutablePointer<UInt8>] = []
 
     /// One device behind a receiver slot (or a Bluetooth device, index 0xFF).
@@ -207,7 +210,7 @@ final class LogitechControls: @unchecked Sendable {
         // divertedButtons notification: function 0, software id 0, up to 4 held control ids.
         guard report[0] == HIDPP.longReport, report.count >= 12, report[3] == 0,
               let i = targets.firstIndex(where: { $0.device == device && $0.index == report[1] && $0.feature == report[2] }) else {
-            inbox.append((device, report))
+            if waiting { inbox.append((device, report)) }
             return
         }
         let held = Set(stride(from: 4, to: 12, by: 2).map { UInt16(report[$0]) << 8 | UInt16(report[$0 + 1]) }.filter { $0 != 0 })
@@ -224,6 +227,11 @@ final class LogitechControls: @unchecked Sendable {
         var message: [UInt8] = [HIDPP.longReport, index, feature, tag] + params
         message += [UInt8](repeating: 0, count: 20 - message.count)
         inbox.removeAll()
+        waiting = true
+        defer {
+            waiting = false
+            inbox.removeAll()
+        }
         let sent = message.withUnsafeBufferPointer {
             IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(HIDPP.longReport), $0.baseAddress!, $0.count)
         }

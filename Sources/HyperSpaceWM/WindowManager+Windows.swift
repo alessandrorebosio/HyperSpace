@@ -25,7 +25,7 @@ extension WindowManager {
 
     func watch(_ pid: pid_t) {
         guard apps[pid] == nil, let app = system.app(pid) else {
-            appStarted()
+            appStarted(pid)
             return
         }
         apps[pid] = app
@@ -36,20 +36,21 @@ extension WindowManager {
         }) { [weak self] records in
             guard let self, self.apps[pid] === app else { return }
             self.add(records, of: app, managed: !hidden)
-            self.syncFocus(self.system.frontmost)
+            if self.system.frontmost == pid { self.syncFocus(pid) }
             self.apply()
-            self.appStarted()
+            self.appStarted(pid)
         }
     }
 
-    private func appStarted() {
-        guard isStartingUp else { return }
-        startingApps -= 1
-        if startingApps <= 0 { startedUp() }
+    /// One of the apps present at launch has reported its windows, or is gone.
+    private func appStarted(_ pid: pid_t) {
+        guard isStartingUp, startingApps.remove(pid) != nil, startingApps.isEmpty else { return }
+        startedUp()
     }
 
     private func forget(app pid: pid_t) {
         apps.removeValue(forKey: pid)?.stop()
+        appStarted(pid) // quit before reporting its windows
         for (id, entry) in records where entry.app.pid == pid { forget(window: id) }
         apply()
     }

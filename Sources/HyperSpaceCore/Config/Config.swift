@@ -35,8 +35,8 @@ public struct KeyboardConfig: Sendable, Equatable {
 public struct LayerConfig: Sendable, Equatable {
     /// Action when the key is tapped alone.
     public var alone: Action = .none
-    /// Modifiers added to every unmapped key while held, e.g. `"shift-ctrl-opt"`, `"meh"`
-    /// (⇧⌃⌥) or `"hyper"` (⇧⌃⌥⌘). A layer with only `alone` and `hold` is a dual-role key.
+    /// Modifiers added to every unmapped key while held, e.g. `"shift-ctrl-opt"` (⇧⌃⌥) or
+    /// `"shift-ctrl-opt-cmd"` (⇧⌃⌥⌘). A layer with only `alone` and `hold` is a dual-role key.
     public var hold: String?
     /// Caps Lock only. LED: "off" (always off, default) or "held" (on while Caps Lock is held).
     public var led: String?

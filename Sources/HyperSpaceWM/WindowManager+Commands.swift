@@ -165,22 +165,7 @@ extension WindowManager {
         }
     }
 
-    /// HyperSpace's environment with Homebrew on the PATH, built once.
-    private static let environment: [String: String] = {
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:" + (environment["PATH"] ?? "/usr/bin:/bin")
-        return environment
-    }()
-
     private func exec(_ argv: [String], extra: [String: String] = [:]) {
-        guard let path = argv.first else { return }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = Array(argv.dropFirst())
-        process.environment = Self.environment.merging(extra) { $1 }
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { log.error("exec failed: \(error)") }
+        HyperSpace.launch(argv, environment: extra)
     }
 }

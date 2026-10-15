@@ -8,7 +8,8 @@ public struct Modifiers: OptionSet, Sendable, Hashable {
     public static let control = Modifiers(rawValue: 1 << 3)
     public static let fn = Modifiers(rawValue: 1 << 4)
 
-    /// Every modifier name, plus `meh` (⇧⌃⌥) and `hyper` (⇧⌃⌥⌘) as shortcuts.
+    /// Every modifier name. `meh` (⇧⌃⌥) and `hyper` (⇧⌃⌥⌘) are still read, for old
+    /// configs; templates and messages spell the modifiers out.
     static let names: [String: Modifiers] = [
         "cmd": .command, "command": .command,
         "shift": .shift,
@@ -19,7 +20,7 @@ public struct Modifiers: OptionSet, Sendable, Hashable {
         "hyper": [.shift, .control, .option, .command],
     ]
 
-    /// `"shift-ctrl-opt"`, `"meh"`, `"hyper"`...
+    /// `"shift-ctrl-opt"`, `"cmd-shift"`...
     public init?(parsing text: String) {
         var result: Modifiers = []
         for part in text.lowercased().split(separator: "-") {

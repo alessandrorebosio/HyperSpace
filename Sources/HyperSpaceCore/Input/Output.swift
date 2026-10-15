@@ -166,7 +166,7 @@ enum Compile {
 
     static func modifiers(_ text: String, path: String) throws(InvalidConfig) -> Modifiers {
         guard let modifiers = Modifiers(parsing: text) else {
-            throw InvalidConfig(message: "\(path): '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\", \"meh\" or \"hyper\"")
+            throw InvalidConfig(message: "\(path): '\(text)' isn't a modifier list; use e.g. \"shift-ctrl-opt\" or \"shift-ctrl-opt-cmd\"")
         }
         return modifiers
     }

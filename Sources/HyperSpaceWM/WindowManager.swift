@@ -66,13 +66,16 @@ public final class WindowManager {
     /// Group window -> the tab currently shown, which is what focusing the group raises.
     var shownTab: [WindowID: WindowID] = [:]
 
-    /// Apps still reading their windows at startup (for `if.during-aerospace-startup`).
-    var startingApps = 0
+    /// Apps present at launch still reading their windows (for `if.during-aerospace-startup`
+    /// and the saved layout). Other apps launching meanwhile don't count.
+    var startingApps: Set<pid_t> = []
     var isStartingUp = true
     /// The layout saved by the last `stop()`, put back once every app's windows are read.
     var savedLayout: WMSnapshot?
     /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
     var inCallback = false
+    /// The last layout applied: what `focus-follows-mouse` looks windows up in.
+    var lastLayout = WMLayout()
 
     public convenience init(handlers: Handlers) {
         self.init(handlers: handlers, system: MacSystem())
@@ -99,10 +102,9 @@ public final class WindowManager {
         isStartingUp = true
         savedLayout = loadLayout()
         system.observe { [weak self] event in self?.handle(event) }
-        let pids = system.runningApps().map(\.pid)
-        startingApps = pids.count
-        for pid in pids { watch(pid) }
-        if pids.isEmpty { startedUp() }
+        startingApps = Set(system.runningApps().map(\.pid))
+        for pid in startingApps { watch(pid) }
+        if startingApps.isEmpty { startedUp() }
         log.info("window manager started")
         handlers.changed()
     }
@@ -125,6 +127,8 @@ public final class WindowManager {
         tabs = [:]
         shownTab = [:]
         savedLayout = nil
+        startingApps = []
+        lastLayout = WMLayout()
         model = nil
         setMode("main")
         log.info("window manager stopped")
@@ -138,6 +142,7 @@ public final class WindowManager {
     func apply(force: Bool = false) {
         guard let model else { return }
         let layout = model.layout()
+        lastLayout = layout
         var batches: [pid_t: (WindowApp, [(window: WindowID, frame: CGRect, old: CGRect?)])] = [:]
         let now = ContinuousClock.now
         func set(_ id: WindowID, _ frame: CGRect) {

@@ -18,6 +18,9 @@ final class FakeApp: WindowApp, @unchecked Sendable {
     var focused: WindowID?
     var raised: [WindowID] = []
     var closed: [WindowID] = []
+    /// Set to report the windows only on `finishStart()`, like a slow app.
+    var slowStart = false
+    private var pendingStart: (@MainActor () -> Void)?
     private var events: (@MainActor (WindowEvent) -> Void)?
 
     init(pid: pid_t, bundleID: String, windows: [WindowRecord] = []) {
@@ -30,7 +33,17 @@ final class FakeApp: WindowApp, @unchecked Sendable {
 
     func start(events: @escaping @MainActor (WindowEvent) -> Void, _ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
         self.events = events
-        MainActor.assumeIsolated { completion(initial) }
+        let initial = self.initial
+        if slowStart {
+            pendingStart = { completion(initial) }
+        } else {
+            MainActor.assumeIsolated { completion(initial) }
+        }
+    }
+
+    @MainActor func finishStart() {
+        pendingStart?()
+        pendingStart = nil
     }
 
     func stop() { events = nil }

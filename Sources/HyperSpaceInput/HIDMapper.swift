@@ -23,7 +23,9 @@ final class HIDMapper {
         }
     }
 
+    /// Unchanged mappings aren't written again: every config reload calls this.
     func apply(_ mappings: [HIDMapping]) {
+        guard mappings != self.mappings else { return }
         self.mappings = mappings
         applyToAll()
     }

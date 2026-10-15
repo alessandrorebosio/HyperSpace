@@ -90,6 +90,40 @@ struct WindowManagerTests {
         #expect(app.frames[1] == Self.full, "window 2 floats: window 1 has the workspace")
     }
 
+    @Test func layoutWaitsForEveryAppPresentAtLaunch() {
+        let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let b = FakeApp(pid: 11, bundleID: "b", windows: [window(3)])
+        let system = FakeSystem(screens: [Self.main], apps: [a, b])
+        let first = started(system)
+        #expect(first.run("move-node-to-workspace 7 --window-id 3") == nil)
+        first.stop()
+
+        b.slowStart = true
+        let wm = started(system)
+        // Other apps coming and going meanwhile don't end the startup.
+        system.send(.activated(99))
+        system.send(.launched(98))
+        #expect(wm.isStartingUp)
+        b.finishStart()
+        #expect(!wm.isStartingUp)
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "3",
+                "the slow app's window is put back too")
+    }
+
+    @Test func anAppQuittingDuringStartupDoesNotHoldItUp() {
+        let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1)])
+        let b = FakeApp(pid: 11, bundleID: "b", windows: [window(2)])
+        b.slowStart = true
+        let system = FakeSystem(screens: [Self.main], apps: [a, b])
+        let wm = started(system)
+        #expect(wm.isStartingUp)
+        system.apps[11] = nil
+        system.send(.terminated(11))
+        #expect(!wm.isStartingUp)
+        #expect(a.frames[1] == Self.full)
+        wm.stop()
+    }
+
     @Test func windowsOfADisplayThatLeftStayReachable() {
         let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2, CGRect(x: 1100, y: 100, width: 300, height: 200))])
         let system = FakeSystem(screens: [Self.main, Self.dell], apps: [app])
