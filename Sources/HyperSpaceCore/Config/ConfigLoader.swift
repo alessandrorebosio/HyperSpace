@@ -165,6 +165,7 @@ public enum ConfigLoader {
     #            different characters on other layouts.
     # Modifiers: shift, ctrl, opt, cmd, fn, joined with "-" (e.g. "cmd-shift-k").
     # Actions:   "arrow.left" / "cmd-arrow.left"  a key or combo
+    #            "volume.up", "brightness.down", "media.next"...  media keys (list in mouse.toml)
     #            { shell = "open -a Safari" }     run a shell command
     #            "none"                           do nothing
     #            "passthrough"                    keep the normal behavior (for app exceptions)
@@ -216,6 +217,9 @@ public enum ConfigLoader {
     #          The left button can't be remapped.
     # Actions: "navigate.back" / "navigate.forward"  back/forward in every app
     #          "cmd-w"                                a key or combo (US key positions)
+    #          "volume.up" / "volume.down" / "volume.mute"
+    #          "brightness.up" / "brightness.down"
+    #          "media.play" / "media.next" / "media.previous"  play/pause and skip (Spotify, Music...)
     #          { shell = "open -a Safari" }           run a shell command
     #          "none"                                 disable the button
     #          "passthrough"                          keep the normal behavior (for app exceptions)
@@ -223,7 +227,7 @@ public enum ConfigLoader {
     # [buttons]
     # button3 = "navigate.back"     # side button: back
     # button4 = "navigate.forward"  # side button: forward
-    # middle = "cmd-w"              # wheel click: close tab
+    # middle = "media.play"         # wheel click: play/pause
 
     # Per-app exceptions: these buttons behave differently in one app.
     # [[app]]

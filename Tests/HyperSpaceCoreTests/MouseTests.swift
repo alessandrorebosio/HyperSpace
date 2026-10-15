@@ -17,6 +17,8 @@ struct MouseTests {
     forward = "navigate.forward"
     middle = "none"
     button5 = { shell = "say hi" }
+    button6 = "volume.up"
+    button7 = "media.next"
 
     [[app]]
     bundle_id = "com.google.Chrome"
@@ -30,6 +32,8 @@ struct MouseTests {
         #expect(tables.buttons[4] == .navigate(.forward))
         #expect(tables.buttons[2] == .drop)
         #expect(tables.buttons[5] == .shell("say hi"))
+        #expect(tables.buttons[6] == .media(.volumeUp))
+        #expect(tables.buttons[7] == .media(.next))
         #expect(tables.buttons[1] == nil)
         #expect(p.needsEventTap)
 

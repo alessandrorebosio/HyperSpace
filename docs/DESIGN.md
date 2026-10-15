@@ -244,6 +244,7 @@ map = { d = "cmd-shift-k" }
 [buttons]                    # button1...button31, middle, back, forward
 back = "navigate.back"
 forward = "navigate.forward"
+middle = "media.play"        # also volume.up/.down/.mute, brightness.up/.down, media.next/.previous
 
 [[app]]
 bundle_id = "com.google.Chrome"
