@@ -1,15 +1,21 @@
 import CoreGraphics
+import Foundation
 
 /// A display, in AX coordinates (origin at the top left of the main display, y down).
 public struct WMMonitor: Sendable, Equatable {
     public let id: UInt32
+    public var name: String
+    /// The "main" display (System Settings > Displays > Use as).
+    public var isMain: Bool
     /// The whole display.
     public var frame: CGRect
     /// Without the menu bar and the Dock: where windows go.
     public var visible: CGRect
 
-    public init(id: UInt32, frame: CGRect, visible: CGRect) {
+    public init(id: UInt32, name: String = "", isMain: Bool = false, frame: CGRect, visible: CGRect) {
         self.id = id
+        self.name = name
+        self.isMain = isMain
         self.frame = frame
         self.visible = visible
     }
@@ -34,14 +40,18 @@ public struct WMWindowInfo: Sendable, Equatable {
 /// Spaces: one is shown per monitor, the windows of the others wait off-screen.
 public final class WMWorkspace {
     public let name: String
-    public let root = WMNode(orientation: .horizontal)
+    public let root: WMNode
     public internal(set) var floating: [WindowID] = []
     /// A tiled window shown over the whole workspace.
     public internal(set) var fullscreen: WindowID?
-    /// The monitor the workspace was last shown on.
+    var fullscreenWithoutGaps = false
+    /// The monitor the workspace belongs to (it was last shown on, or was moved to).
     public internal(set) var monitor: UInt32?
 
-    init(name: String) { self.name = name }
+    init(name: String, root: WMNode) {
+        self.name = name
+        self.root = root
+    }
 
     public var windows: [WindowID] { root.windows + floating }
     public var isEmpty: Bool { root.children.isEmpty && floating.isEmpty }
@@ -61,15 +71,15 @@ public struct WMLayout: Sendable, Equatable {
 /// What a command asks the service to do besides layout.
 public enum WMEffect: Sendable, Equatable {
     case none
-    case close(WindowID)
-    case exec(String)
-    case reloadConfig
-    case enable(Bool?)
+    case close([WindowID], quitIfLastWindow: Bool)
+    case minimize(WindowID)
+    case nativeFullscreen(WindowID, Bool?)
 }
 
-/// The window manager's state and every command, as pure logic over ids and rectangles.
-/// The service feeds it AX events (windows appearing, focus changes, monitors) and applies
-/// `layout()` back; nothing here talks to other processes, so it's fast and testable.
+/// The window manager's state and every tree, workspace and monitor command, as pure logic
+/// over ids and rectangles. The service feeds it AX events (windows appearing, focus,
+/// monitors), runs the commands that touch other processes itself, and applies `layout()`.
+/// Nothing here talks to other processes, so it's fast and testable.
 public final class WMModel {
     public var settings: WMSettings
     public private(set) var monitors: [WMMonitor] = []
@@ -79,9 +89,11 @@ public final class WMModel {
     public private(set) var focusedMonitor: UInt32 = 0
     public private(set) var focused: WindowID?
     public private(set) var windows: [WindowID: WMWindowInfo] = [:]
-    private var previousWorkspace: String?
-    /// Recently focused windows, most recent last: where focus goes when a window leaves.
+    public private(set) var previousWorkspace: String?
+    /// Recently focused windows, most recent last.
     private var history: [WindowID] = []
+    /// The window a command acts on: `--window-id`, a callback's window, or the focused one.
+    private var subject: WindowID?
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -92,7 +104,7 @@ public final class WMModel {
 
     public func workspace(_ name: String) -> WMWorkspace {
         if let workspace = workspaces[name] { return workspace }
-        let workspace = WMWorkspace(name: name)
+        let workspace = WMWorkspace(name: name, root: WMNode(orientation: .horizontal, layout: settings.rootLayout))
         workspaces[name] = workspace
         return workspace
     }
@@ -101,47 +113,50 @@ public final class WMModel {
         workspaces.values.first { $0.floating.contains(window) || $0.root.find(window) != nil }
     }
 
+    public func isVisible(_ name: String) -> Bool { visible.values.contains(name) }
+
     /// Workspace names in display order: numbers first, by value, then the others.
     public var workspaceNames: [String] {
-        workspaces.keys.sorted { a, b in
-            switch (Int(a), Int(b)) {
-            case let (x?, y?): x < y
-            case (_?, nil): true
-            case (nil, _?): false
-            default: a < b
-            }
+        Set(workspaces.keys).union(settings.persistentWorkspaces).sorted(by: WMModel.order)
+    }
+
+    static func order(_ a: String, _ b: String) -> Bool {
+        switch (Int(a), Int(b)) {
+        case let (x?, y?): x < y
+        case (_?, nil): true
+        case (nil, _?): false
+        default: a.localizedStandardCompare(b) == .orderedAscending
         }
     }
 
     // MARK: - Events from the system
 
-    /// Displays changed. Each monitor keeps its workspace if it had one; new monitors get
-    /// the first free workspace; workspaces of removed monitors become hidden.
+    /// Displays changed. Each monitor keeps its workspace if it had one; others get a
+    /// workspace assigned to them, else the first free one.
     public func setMonitors(_ monitors: [WMMonitor]) {
         self.monitors = monitors.sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
         let ids = Set(monitors.map(\.id))
         visible = visible.filter { ids.contains($0.key) }
         for monitor in self.monitors where visible[monitor.id] == nil {
-            let name = (1...).lazy.map(String.init).first { name in
-                !self.visible.values.contains(name) && (self.workspaces[name]?.isEmpty ?? true)
-            }!
+            let assigned = settings.workspaceToMonitor.keys.sorted(by: WMModel.order).filter { assignedMonitor($0) == monitor.id }
+            // Not a workspace forced onto another monitor, nor one that lives elsewhere.
+            let name = (assigned + workspaceNames).first { name in
+                !isVisible(name) && (settings.workspaceToMonitor[name] == nil || assignedMonitor(name) == monitor.id)
+                    && (workspaces[name]?.monitor.map { $0 == monitor.id } ?? true)
+            }
+                ?? (1...).lazy.map(String.init).first { !isVisible($0) && workspaces[$0] == nil }!
             visible[monitor.id] = name
             workspace(name).monitor = monitor.id
         }
-        if !ids.contains(focusedMonitor) { focusedMonitor = self.monitors.first?.id ?? 0 }
+        if !ids.contains(focusedMonitor) { focusedMonitor = mainMonitor?.id ?? 0 }
     }
 
-    /// A new window. It joins the workspace a rule names, else the one shown on `monitor`
-    /// (where it appeared), else the focused one; tiled windows go next to the focused window.
+    /// A new window: it joins the workspace shown on `monitor` (where it appeared) or the
+    /// focused one, next to the focused window. `on-window-detected` callbacks then run on it.
     public func add(_ info: WMWindowInfo, monitor: UInt32? = nil) {
         guard windows[info.id] == nil else { return }
-        var info = info
-        let rule = settings.rule(for: info.bundleID)
-        if rule?.floating == true { info.floating = true }
         windows[info.id] = info
-        let target = rule?.workspace.map { workspace($0) }
-            ?? monitor.flatMap { visible[$0] }.map { workspace($0) }
-            ?? focusedWorkspace
+        let target = monitor.flatMap { visible[$0] }.map { workspace($0) } ?? focusedWorkspace
         if info.floating {
             target.floating.append(info.id)
         } else {
@@ -158,87 +173,130 @@ public final class WMModel {
     }
 
     /// macOS focused a window (click, ⌘-Tab, an app opening one). If it sits on a hidden
-    /// workspace, that workspace is shown, as in AeroSpace.
+    /// workspace, that workspace is shown, as in AeroSpace. Returns whether visibility changed.
     @discardableResult
     public func nativeFocus(_ window: WindowID?) -> Bool {
         guard let window, let workspace = workspace(of: window) else { return false }
         let before = visible
-        if let monitor = visible.first(where: { $0.value == workspace.name })?.key {
-            focusedMonitor = monitor
-        } else {
-            show(workspace.name, on: focusedMonitor)
-        }
+        show(workspace.name)
         focus(window)
         return before != visible
     }
 
     // MARK: - Commands
 
-    /// Runs a command. Returns what else the service must do; errors are user mistakes
-    /// worth reporting (`hsctl`), not failures.
-    public func run(_ command: WMCommand) throws(InvalidConfig) -> WMEffect {
+    /// Runs a tree, workspace or monitor command, on `window` if given (`--window-id`, a
+    /// callback's window), else on the focused window. Returns whether it succeeded (for
+    /// `&&`/`||`) and what else the service must do. Errors are user mistakes worth
+    /// reporting, not crashes.
+    public func run(_ command: WMCommand, window explicit: WindowID? = nil) throws(InvalidConfig) -> (ok: Bool, effect: WMEffect) {
         // macOS didn't report a focused window we manage (some apps don't answer, or the
         // focus is on a panel): act on the workspace's most recent window, as AeroSpace does.
         if focused.map({ !focusedWorkspace.windows.contains($0) }) ?? true { focusRecent(in: focusedWorkspace) }
+        if let explicit, windows[explicit] == nil { throw InvalidConfig(message: "no window with id \(explicit)") }
+        subject = explicit ?? focused
+        defer {
+            for workspace in workspaces.values { normalize(workspace) }
+            collectEmptyWorkspaces()
+        }
+        var effect = WMEffect.none
+        let ok: Bool
         switch command {
-        case let .focus(direction):
-            guard let node = focusedNode, let target = neighbor(of: node, direction) else { return .none }
-            focus(target)
-        case let .move(direction):
-            guard let node = focusedNode else { throw InvalidConfig(message: "no tiled window is focused") }
-            move(node, direction)
-        case let .joinWith(direction):
-            guard let node = focusedNode else { throw InvalidConfig(message: "no tiled window is focused") }
-            join(node, direction)
-        case let .resize(target, amount):
-            guard let node = focusedNode else { throw InvalidConfig(message: "no tiled window is focused") }
-            resize(node, target, amount)
-        case .balanceSizes:
-            balance(focusedWorkspace.root)
-        case .flattenWorkspaceTree:
-            let root = focusedWorkspace.root
+        case let .focus(target, boundaries): ok = try focusCommand(target, boundaries)
+        case let .move(direction, boundaries, window: id): ok = try move(id, direction, boundaries)
+        case let .swap(target, swapFocus, wrapAround, window: id): ok = try swap(id, target, swapFocus: swapFocus, wrapAround: wrapAround)
+        case let .joinWith(direction, window: id): ok = join(try tiledNode(id), direction)
+        case let .split(kind, window: id): ok = try split(try tiledNode(id), kind)
+        case let .resize(target, amount, window: id): ok = resize(try tiledNode(id), target, amount)
+        case let .balanceSizes(name):
+            balance(try workspace(named: name).root)
+            ok = true
+        case let .flattenWorkspaceTree(name):
+            let root = try workspace(named: name).root
             for window in root.windows { if let node = root.find(window) { root.insert(node) } }
             balance(root)
-        case let .layout(choices):
-            try layout(choices)
-        case let .fullscreen(on):
-            guard let window = focused, focusedNode != nil else { throw InvalidConfig(message: "no tiled window is focused") }
-            let workspace = focusedWorkspace
-            workspace.fullscreen = (on ?? (workspace.fullscreen != window)) ? window : nil
-        case let .workspace(target):
-            switchTo(try name(of: target))
+            ok = true
+        case let .layout(choices, window: id, workspace: name, root, failIfNoop):
+            ok = try layout(choices, window: id, workspace: name, root: root) || !failIfNoop
+        case let .fullscreen(on, noOuterGaps, window: id, failIfNoop):
+            let node = try tiledNode(id)
+            let workspace = workspace(of: node.window!)!
+            let wanted = on ?? (workspace.fullscreen != node.window)
+            let changed = (workspace.fullscreen == node.window) != wanted
+            workspace.fullscreen = wanted ? node.window : nil
+            workspace.fullscreenWithoutGaps = noOuterGaps
+            ok = changed || !failIfNoop
+        case let .macosNativeFullscreen(on, window: id):
+            effect = .nativeFullscreen(try window(id), on)
+            ok = true
+        case let .macosNativeMinimize(window: id):
+            effect = .minimize(try window(id))
+            ok = true
+        case let .workspace(target, autoBackAndForth, wrapAround, failIfNoop):
+            guard let name = name(of: target, wrapAround: wrapAround) else { return (!failIfNoop, .none) }
+            if autoBackAndForth, name == focusedWorkspace.name, let previous = previousWorkspace {
+                ok = switchTo(previous)
+            } else {
+                ok = switchTo(name) || !failIfNoop
+            }
         case .workspaceBackAndForth:
-            if let previous = previousWorkspace { switchTo(previous) }
-        case let .moveNodeToWorkspace(target, follows):
-            guard let window = focused else { throw InvalidConfig(message: "no window is focused") }
-            moveWindow(window, to: try name(of: target), follow: follows)
-        case let .focusMonitor(target):
-            guard let monitor = monitor(target) else { return .none }
+            ok = previousWorkspace.map { switchTo($0) } ?? false
+        case let .summonWorkspace(name, failIfNoop):
+            guard name != focusedWorkspace.name else { return (!failIfNoop, .none) }
+            if let other = visible.first(where: { $0.value == name })?.key {
+                visible[other] = focusedWorkspace.name
+                workspace(focusedWorkspace.name).monitor = other
+            }
+            previousWorkspace = focusedWorkspace.name
+            visible[focusedMonitor] = name
+            workspace(name).monitor = focusedMonitor
+            focusRecent(in: workspace(name))
+            ok = true
+        case let .moveNodeToWorkspace(target, follows, wrapAround, window: id, failIfNoop):
+            let window = try window(id)
+            guard let name = name(of: target, wrapAround: wrapAround), name != self.workspace(of: window)?.name else {
+                return (!failIfNoop, .none)
+            }
+            moveWindow(window, to: name, follow: follows)
+            ok = true
+        case let .focusMonitor(target, wrapAround):
+            guard let monitor = monitor(target, wrapAround: wrapAround) else { return (false, .none) }
             focusedMonitor = monitor
             focusRecent(in: focusedWorkspace)
-        case let .moveNodeToMonitor(target):
-            guard let window = focused, let monitor = monitor(target), let name = visible[monitor] else { return .none }
-            moveWindow(window, to: name, follow: true)
-        case let .moveWorkspaceToMonitor(target):
-            guard let monitor = monitor(target), let other = visible[monitor] else { return .none }
-            let current = focusedWorkspace.name
-            visible[monitor] = current
-            visible[focusedMonitor] = other
-            workspace(current).monitor = monitor
-            workspace(other).monitor = focusedMonitor
-            focusedMonitor = monitor
-        case .close:
-            guard let window = focused else { throw InvalidConfig(message: "no window is focused") }
-            return .close(window)
-        case let .exec(command):
-            return .exec(command)
-        case .reloadConfig:
-            return .reloadConfig
-        case let .enable(on):
-            return .enable(on)
+            ok = true
+        case let .moveNodeToMonitor(target, follows, wrapAround, window: id):
+            let window = try window(id)
+            guard let monitor = monitor(target, wrapAround: wrapAround), let name = visible[monitor] else { return (false, .none) }
+            moveWindow(window, to: name, follow: follows)
+            ok = true
+        case let .moveWorkspaceToMonitor(target, wrapAround, workspace: name):
+            let workspace = try workspace(named: name)
+            // Workspaces with a forced assignment stay where they're assigned.
+            guard settings.workspaceToMonitor[workspace.name] == nil,
+                  let from = visible.first(where: { $0.value == workspace.name })?.key,
+                  let monitor = monitor(target, wrapAround: wrapAround, from: from), monitor != from else { return (false, .none) }
+            let other = visible[monitor]!
+            visible[monitor] = workspace.name
+            visible[from] = other
+            workspace.monitor = monitor
+            self.workspace(other).monitor = from
+            if from == focusedMonitor { focusedMonitor = monitor }
+            ok = true
+        case .focusBackAndForth:
+            guard let previous = history.dropLast().last else { return (false, .none) }
+            nativeFocus(previous)
+            ok = true
+        case let .close(quitIfLastWindow, window: id):
+            effect = .close([try window(id)], quitIfLastWindow: quitIfLastWindow)
+            ok = true
+        case let .closeAllWindowsButCurrent(quitIfLastWindow):
+            let current = try window(nil)
+            effect = .close(focusedWorkspace.windows.filter { $0 != current }, quitIfLastWindow: quitIfLastWindow)
+            ok = true
+        default:
+            throw InvalidConfig(message: "not a window manager model command")
         }
-        focusedWorkspace.root.normalize()
-        return .none
+        return (ok, effect)
     }
 
     // MARK: - Layout
@@ -248,20 +306,25 @@ public final class WMModel {
         var result = WMLayout()
         for monitor in monitors {
             guard let name = visible[monitor.id], let workspace = workspaces[name] else { continue }
-            let outer = settings.outerGap
-            let rect = monitor.visible.insetBy(dx: outer, dy: outer)
-            frames(workspace.root, rect, into: &result.tiled)
-            if let fullscreen = workspace.fullscreen, result.tiled[fullscreen] != nil { result.tiled[fullscreen] = rect.pixelAligned }
+            let gaps = settings.resolvedGaps(for: monitor, in: monitors)
+            let v = monitor.visible
+            let rect = CGRect(x: v.minX + gaps.left, y: v.minY + gaps.top,
+                              width: v.width - gaps.left - gaps.right, height: v.height - gaps.top - gaps.bottom)
+            frames(workspace.root, rect, gaps: (gaps.horizontal, gaps.vertical), into: &result.tiled)
+            if let fullscreen = workspace.fullscreen, result.tiled[fullscreen] != nil {
+                result.tiled[fullscreen] = (workspace.fullscreenWithoutGaps ? v : rect).pixelAligned
+            }
             for window in workspace.floating { result.floating[window] = monitor.id }
         }
-        for (name, workspace) in workspaces where !visible.values.contains(name) {
-            let monitor = workspace.monitor.flatMap { id in monitors.first { $0.id == id }?.id } ?? monitors.first?.id ?? 0
+        for (name, workspace) in workspaces where !isVisible(name) {
+            let monitor = assignedMonitor(name) ?? monitors.first?.id ?? 0
             for window in workspace.windows { result.hidden[window] = monitor }
         }
         return result
     }
 
-    private func frames(_ node: WMNode, _ rect: CGRect, into result: inout [WindowID: CGRect]) {
+    private func frames(_ node: WMNode, _ rect: CGRect, gaps: (horizontal: Double, vertical: Double),
+                        into result: inout [WindowID: CGRect]) {
         if let window = node.window {
             result[window] = rect.pixelAligned
             return
@@ -271,7 +334,7 @@ public final class WMModel {
         let horizontal = node.orientation == .horizontal
         switch node.layout {
         case .tiles:
-            let gap = settings.innerGap
+            let gap = horizontal ? gaps.horizontal : gaps.vertical
             let length = (horizontal ? rect.width : rect.height) - gap * Double(count - 1)
             node.lastLength = length
             let total = node.children.reduce(0) { $0 + $1.weight }
@@ -281,12 +344,12 @@ public final class WMModel {
                 let childRect = horizontal
                     ? CGRect(x: offset, y: rect.minY, width: size, height: rect.height)
                     : CGRect(x: rect.minX, y: offset, width: rect.width, height: size)
-                frames(child, childRect, into: &result)
+                frames(child, childRect, gaps: gaps, into: &result)
                 offset += size + gap
             }
         case .accordion:
-            // Every child gets nearly the whole rect, shifted so the others peek out by the
-            // padding on each side of the most recent one.
+            // AeroSpace's accordion: every child gets nearly the whole rect, shifted so the
+            // others peek out by the padding on each side of the most recent one.
             let padding = settings.accordionPadding
             let recent = node.recent.flatMap { $0.index } ?? 0
             for (i, child) in node.children.enumerated() {
@@ -301,17 +364,31 @@ public final class WMModel {
                 let childRect = horizontal
                     ? CGRect(x: rect.minX + before, y: rect.minY, width: rect.width - before - after, height: rect.height)
                     : CGRect(x: rect.minX, y: rect.minY + before, width: rect.width, height: rect.height - before - after)
-                frames(child, childRect, into: &result)
+                frames(child, childRect, gaps: gaps, into: &result)
             }
         }
     }
 
-    // MARK: - Private: focus and workspaces
+    // MARK: - Private: subjects
 
-    /// The focused window's tree node, if it's tiled on the focused workspace.
-    private var focusedNode: WMNode? {
-        focused.flatMap { focusedWorkspace.root.find($0) }
+    private func window(_ id: WindowID?) throws(InvalidConfig) -> WindowID {
+        guard let window = id ?? subject else { throw InvalidConfig(message: "no window is focused") }
+        return window
     }
+
+    private func tiledNode(_ id: WindowID?) throws(InvalidConfig) -> WMNode {
+        let window = try window(id)
+        guard let node = workspace(of: window)?.root.find(window) else { throw InvalidConfig(message: "the window is floating") }
+        return node
+    }
+
+    private func workspace(named name: String?) throws(InvalidConfig) -> WMWorkspace {
+        guard let name else { return subject.flatMap { workspace(of: $0) } ?? focusedWorkspace }
+        guard let workspace = workspaces[name] else { throw InvalidConfig(message: "no workspace named '\(name)'") }
+        return workspace
+    }
+
+    // MARK: - Private: focus, workspaces, monitors
 
     private func focus(_ window: WindowID) {
         focused = window
@@ -319,6 +396,10 @@ public final class WMModel {
         history.removeAll { $0 == window }
         history.append(window)
         if history.count > 64 { history.removeFirst() }
+    }
+
+    private func focus(_ node: WMNode) {
+        if let window = node.recentWindow?.window { nativeFocus(window) }
     }
 
     private func focusRecent(in workspace: WMWorkspace) {
@@ -331,41 +412,63 @@ public final class WMModel {
         return history.last { windows.contains($0) } ?? workspace.root.recentWindow?.window ?? workspace.floating.last
     }
 
-    private func focus(_ node: WMNode) {
-        if let window = node.recentWindow?.window { focus(window) }
+    private var mainMonitor: WMMonitor? { monitors.first(where: \.isMain) ?? monitors.first }
+
+    /// Where a workspace appears: its forced assignment, else where it was last, else main.
+    public func assignedMonitor(_ name: String) -> UInt32? {
+        if let patterns = settings.workspaceToMonitor[name] {
+            for pattern in patterns {
+                if let monitor = monitors.first(where: { WMMonitor.matches(pattern, $0, in: monitors) }) { return monitor.id }
+            }
+        }
+        if let monitor = workspaces[name]?.monitor, monitors.contains(where: { $0.id == monitor }) { return monitor }
+        return mainMonitor?.id
     }
 
-    private func name(of target: WMCommand.WorkspaceTarget) throws(InvalidConfig) -> String {
+    /// Workspaces for next/prev: those of the focused monitor that have windows (or are
+    /// persistent, or shown), in display order.
+    private func name(of target: WMCommand.WorkspaceTarget, wrapAround: Bool) -> String? {
         switch target {
         case let .named(name):
             return name
         case .next, .prev:
-            let names = workspaceNames.filter { !workspace($0).isEmpty || $0 == focusedWorkspace.name }
-            guard let index = names.firstIndex(of: focusedWorkspace.name), names.count > 1 else { return focusedWorkspace.name }
-            return names[(index + (target == .next ? 1 : -1) + names.count) % names.count]
+            let names = workspaceNames.filter { name in
+                assignedMonitor(name) == focusedMonitor
+                    && (!(workspaces[name]?.isEmpty ?? true) || settings.persistentWorkspaces.contains(name) || name == focusedWorkspace.name)
+            }
+            guard let index = names.firstIndex(of: focusedWorkspace.name) else { return names.first }
+            let next = index + (target == .next ? 1 : -1)
+            if names.indices.contains(next) { return names[next] }
+            return wrapAround ? names[(next + names.count) % names.count] : nil
         }
     }
 
-    private func switchTo(_ name: String) {
-        guard name != focusedWorkspace.name else { return }
+    @discardableResult
+    private func switchTo(_ name: String) -> Bool {
+        guard name != focusedWorkspace.name else { return false }
         previousWorkspace = focusedWorkspace.name
-        if let monitor = visible.first(where: { $0.value == name })?.key {
-            focusedMonitor = monitor // already shown on another monitor: go there
-        } else {
-            show(name, on: focusedMonitor)
-        }
+        show(name)
         focusRecent(in: focusedWorkspace)
+        return true
     }
 
-    private func show(_ name: String, on monitor: UInt32) {
+    /// Shows a workspace on its monitor (AeroSpace: its assigned monitor, main by default)
+    /// and focuses that monitor.
+    private func show(_ name: String) {
+        if let monitor = visible.first(where: { $0.value == name })?.key {
+            focusedMonitor = monitor
+            return
+        }
+        let monitor = assignedMonitor(name) ?? focusedMonitor
         visible[monitor] = name
         workspace(name).monitor = monitor
+        focusedMonitor = monitor
         collectEmptyWorkspaces()
     }
 
-    /// Hidden empty workspaces are dropped; they come back when named again.
+    /// Hidden empty workspaces are dropped, unless persistent; they come back when named.
     private func collectEmptyWorkspaces() {
-        for (name, workspace) in workspaces where workspace.isEmpty && !visible.values.contains(name) {
+        for (name, workspace) in workspaces where workspace.isEmpty && !isVisible(name) && !settings.persistentWorkspaces.contains(name) {
             workspaces[name] = nil
         }
     }
@@ -379,7 +482,7 @@ public final class WMModel {
         if follow {
             switchTo(name)
             focus(window)
-        } else {
+        } else if focused == window {
             focused = recent(in: from)
         }
     }
@@ -388,43 +491,111 @@ public final class WMModel {
         workspace.floating.removeAll { $0 == window }
         workspace.root.find(window)?.removeFromParent()
         if workspace.fullscreen == window { workspace.fullscreen = nil }
-        workspace.root.normalize()
+        normalize(workspace)
+    }
+
+    private func normalize(_ workspace: WMWorkspace) {
+        workspace.root.normalize(flatten: settings.flattenContainers, opposite: settings.oppositeOrientationForNestedContainers)
     }
 
     private func insertTiled(_ window: WindowID, into workspace: WMWorkspace) {
         let node = WMNode(window: window)
-        if workspace.root.children.isEmpty, let monitor = monitors.first(where: { $0.id == workspace.monitor }) ?? monitors.first {
-            workspace.root.orientation = monitor.visible.width >= monitor.visible.height ? .horizontal : .vertical
+        if workspace.root.children.isEmpty {
+            let monitor = monitors.first { $0.id == assignedMonitor(workspace.name) } ?? mainMonitor
+            workspace.root.layout = settings.rootLayout
+            workspace.root.orientation = settings.rootOrientation
+                ?? ((monitor?.visible.width ?? 1) >= (monitor?.visible.height ?? 0) ? .horizontal : .vertical)
         }
-        if let focused, let anchor = workspace.root.find(focused), let parent = anchor.parent, let index = anchor.index {
+        if let anchorID = focused, anchorID != window, let anchor = workspace.root.find(anchorID),
+           let parent = anchor.parent, let index = anchor.index {
             parent.insert(node, at: index + 1)
         } else {
             workspace.root.insert(node)
         }
-        workspace.root.normalize()
+        normalize(workspace)
     }
 
-    private func monitor(_ target: WMCommand.MonitorTarget) -> UInt32? {
-        guard let current = monitors.firstIndex(where: { $0.id == focusedMonitor }), monitors.count > 1 else { return nil }
+    /// A monitor by direction (from `from`, default the focused one), next/prev, or pattern.
+    private func monitor(_ target: WMCommand.MonitorTarget, wrapAround: Bool, from: UInt32? = nil) -> UInt32? {
+        let from = from ?? focusedMonitor
+        guard let current = monitors.firstIndex(where: { $0.id == from }) else { return nil }
         switch target {
-        case .next: return monitors[(current + 1) % monitors.count].id
-        case .prev: return monitors[(current - 1 + monitors.count) % monitors.count].id
+        case .next, .prev:
+            let next = current + (target == .next ? 1 : -1)
+            if monitors.indices.contains(next) { return monitors[next].id }
+            return wrapAround && monitors.count > 1 ? monitors[(next + monitors.count) % monitors.count].id : nil
+        case let .patterns(patterns):
+            for pattern in patterns {
+                if let monitor = monitors.first(where: { WMMonitor.matches(pattern, $0, in: monitors) }) { return monitor.id }
+            }
+            return nil
         case let .direction(direction):
-            let from = monitors[current].frame
-            let candidates = monitors.filter { monitor in
+            let frame = monitors[current].frame
+            func inDirection(_ m: WMMonitor) -> Bool {
                 switch direction {
-                case .left: monitor.frame.maxX <= from.minX
-                case .right: monitor.frame.minX >= from.maxX
-                case .up: monitor.frame.maxY <= from.minY
-                case .down: monitor.frame.minY >= from.maxY
+                case .left: m.frame.maxX <= frame.minX
+                case .right: m.frame.minX >= frame.maxX
+                case .up: m.frame.maxY <= frame.minY
+                case .down: m.frame.minY >= frame.maxY
                 }
             }
-            func distance(_ m: WMMonitor) -> Double { hypot(m.frame.midX - from.midX, m.frame.midY - from.midY) }
-            return candidates.min { distance($0) < distance($1) }?.id
+            func distance(_ m: WMMonitor) -> Double { hypot(m.frame.midX - frame.midX, m.frame.midY - frame.midY) }
+            if let nearest = monitors.filter(inDirection).min(by: { distance($0) < distance($1) }) { return nearest.id }
+            guard wrapAround else { return nil }
+            // Wrap: the farthest monitor the other way.
+            return monitors.filter { $0.id != from }.max { distance($0) < distance($1) }?.id
         }
     }
 
     // MARK: - Private: tree commands
+
+    private func focusCommand(_ target: WMCommand.FocusTarget, _ boundaries: WMCommand.Boundaries) throws(InvalidConfig) -> Bool {
+        switch target {
+        case let .window(id):
+            guard windows[id] != nil else { throw InvalidConfig(message: "no window with id \(id)") }
+            nativeFocus(id)
+            return true
+        case let .dfsIndex(index):
+            let order = focusedWorkspace.root.windows
+            guard order.indices.contains(index) else { return false }
+            nativeFocus(order[index])
+            return true
+        case .dfsNext, .dfsPrev:
+            let order = focusedWorkspace.root.windows
+            guard let current = subject.flatMap({ order.firstIndex(of: $0) }) else { return false }
+            var next = current + (target == .dfsNext ? 1 : -1)
+            if !order.indices.contains(next) {
+                guard boundaries.action == .wrapAroundTheWorkspace else { return boundaries.action != .fail }
+                next = (next + order.count) % order.count
+            }
+            nativeFocus(order[next])
+            return true
+        case let .direction(direction):
+            guard let node = subject.flatMap({ focusedWorkspace.root.find($0) }) else { return false }
+            if boundaries.failIfFullscreen, focusedWorkspace.fullscreen != nil { return false }
+            if let neighbor = neighbor(of: node, direction) {
+                focus(neighbor)
+                return true
+            }
+            if boundaries.scope == .allMonitorsOuterFrame,
+               let monitor = monitor(.direction(direction), wrapAround: boundaries.action == .wrapAroundAllMonitors) {
+                focusedMonitor = monitor
+                if let entry = descend(focusedWorkspace.root, direction) { focus(entry) } else { focusRecent(in: focusedWorkspace) }
+                return true
+            }
+            switch boundaries.action {
+            case .stop, .createImplicitContainer: return true
+            case .fail: return false
+            case .wrapAroundTheWorkspace, .wrapAroundAllMonitors:
+                if boundaries.action == .wrapAroundAllMonitors, let monitor = monitor(.direction(direction), wrapAround: true) {
+                    focusedMonitor = monitor
+                }
+                guard let entry = descend(focusedWorkspace.root, direction) else { return false }
+                focus(entry)
+                return true
+            }
+        }
+    }
 
     /// The window in `direction` from `node`: up the tree to the first container laid out
     /// along that axis with a sibling there, then down that sibling to the window nearest
@@ -441,8 +612,10 @@ public final class WMModel {
         return nil
     }
 
-    private func descend(_ node: WMNode, _ direction: Direction) -> WMNode {
-        guard node.isContainer, !node.children.isEmpty else { return node }
+    /// Down from `node` to a window, entering from the side opposite to `direction`.
+    private func descend(_ node: WMNode, _ direction: Direction) -> WMNode? {
+        guard node.isContainer else { return node }
+        guard !node.children.isEmpty else { return nil }
         if node.orientation == direction.orientation {
             return descend(direction.offset > 0 ? node.children.first! : node.children.last!, direction)
         }
@@ -450,16 +623,17 @@ public final class WMModel {
     }
 
     /// AeroSpace's `move`: swap with a sibling window, enter a sibling container, or leave
-    /// the container in that direction; at the workspace edge the root is wrapped in a new
-    /// container along the direction.
-    private func move(_ node: WMNode, _ direction: Direction) {
-        guard let parent = node.parent, let index = node.index else { return }
+    /// the container in that direction; at the workspace edge, by default, the root is
+    /// wrapped in a new container along the direction.
+    private func move(_ id: WindowID?, _ direction: Direction, _ boundaries: WMCommand.Boundaries) throws(InvalidConfig) -> Bool {
+        let node = try tiledNode(id)
+        let window = node.window!
+        if boundaries.failIfFullscreen, workspace(of: window)?.fullscreen == window { return false }
+        guard let parent = node.parent, let index = node.index else { return false }
         let target = index + direction.offset
         if parent.orientation == direction.orientation, parent.children.indices.contains(target) {
             let sibling = parent.children[target]
             if sibling.isContainer {
-                // Into the container: its edge facing us if it runs along the direction,
-                // else next to its most recent window.
                 let deep = deepTarget(sibling, direction.orientation)
                 if deep.isContainer {
                     deep.insert(node, at: direction.offset > 0 ? 0 : deep.children.count)
@@ -467,22 +641,30 @@ public final class WMModel {
                     deepParent.insert(node, at: deepIndex + 1)
                 }
             } else {
-                let weight = node.weight
-                parent.insert(node, at: target) // swap places
-                node.weight = weight
+                WMNode.swap(node, sibling)
             }
-            return
+            return true
         }
         // Leave: find the closest ancestor whose parent runs along the direction.
         var current = parent
         while let up = current.parent, up.orientation != direction.orientation { current = up }
         if let up = current.parent, let currentIndex = current.index {
             up.insert(node, at: currentIndex + (direction.offset > 0 ? 1 : 0))
-            return
+            return true
         }
-        // At the workspace edge: wrap the root's content and put the window beside it.
+        // At the workspace edge.
+        if boundaries.scope == .allMonitorsOuterFrame, let monitor = monitor(.direction(direction), wrapAround: false),
+           let name = visible[monitor] {
+            moveWindow(window, to: name, follow: true)
+            return true
+        }
+        switch boundaries.action {
+        case .stop: return true
+        case .fail: return false
+        default: break
+        }
         let root = current
-        guard root.children.count > 1 || root.orientation != direction.orientation else { return }
+        guard root.children.count > 1 || root.orientation != direction.orientation else { return true }
         let wrapper = WMNode(orientation: root.orientation, layout: root.layout)
         for child in root.children where child !== node {
             let weight = child.weight
@@ -494,6 +676,7 @@ public final class WMModel {
         node.removeFromParent()
         root.insert(wrapper)
         root.insert(node, at: direction.offset > 0 ? 1 : 0)
+        return true
     }
 
     private func deepTarget(_ node: WMNode, _ orientation: Orientation) -> WMNode {
@@ -501,32 +684,81 @@ public final class WMModel {
         return deepTarget(next, orientation)
     }
 
+    private func swap(_ id: WindowID?, _ target: WMCommand.SwapTarget, swapFocus: Bool, wrapAround: Bool) throws(InvalidConfig) -> Bool {
+        let node = try tiledNode(id)
+        guard let root = workspace(of: node.window!)?.root else { return false }
+        let other: WMNode?
+        switch target {
+        case let .direction(direction):
+            other = neighbor(of: node, direction) ?? (wrapAround ? descend(root, direction) : nil)
+        case .dfsNext, .dfsPrev:
+            let order = root.windows
+            guard let index = order.firstIndex(of: node.window!) else { return false }
+            var next = index + (target == .dfsNext ? 1 : -1)
+            if !order.indices.contains(next) {
+                guard wrapAround else { return false }
+                next = (next + order.count) % order.count
+            }
+            other = root.find(order[next])
+        }
+        guard let other, other !== node else { return false }
+        WMNode.swap(node, other)
+        if swapFocus, let window = other.window { focus(window) }
+        return true
+    }
+
     /// AeroSpace's `join-with`: the window and its neighbor in `direction` share a new
     /// container laid out across the current one.
-    private func join(_ node: WMNode, _ direction: Direction) {
+    private func join(_ node: WMNode, _ direction: Direction) -> Bool {
         guard let parent = node.parent, parent.orientation == direction.orientation,
-              let index = node.index, parent.children.indices.contains(index + direction.offset) else { return }
+              let index = node.index, parent.children.indices.contains(index + direction.offset) else { return false }
         let sibling = parent.children[index + direction.offset]
         let container = WMNode(orientation: parent.orientation.opposite)
         parent.insert(container, at: min(index, index + direction.offset))
         container.weight = node.weight + sibling.weight
         for child in direction.offset > 0 ? [node, sibling] : [sibling, node] { container.insert(child) }
         node.markRecent()
+        return true
     }
 
-    private func resize(_ node: WMNode, _ target: WMCommand.ResizeTarget, _ amount: WMCommand.ResizeAmount) {
-        // The node whose parent runs along the axis being resized.
+    /// i3's `split`, only meaningful with flattening off (as in AeroSpace).
+    private func split(_ node: WMNode, _ kind: WMCommand.SplitKind) throws(InvalidConfig) -> Bool {
+        guard !settings.flattenContainers else {
+            throw InvalidConfig(message: "split works only with enable-normalization-flatten-containers = false")
+        }
+        guard let parent = node.parent, let index = node.index else { return false }
+        let orientation: Orientation = switch kind {
+        case .horizontal: .horizontal
+        case .vertical: .vertical
+        case .opposite: parent.orientation.opposite
+        }
+        if parent.children.count == 1 {
+            parent.orientation = orientation
+            return true
+        }
+        let container = WMNode(orientation: orientation)
+        parent.insert(container, at: index)
+        container.weight = node.weight
+        container.insert(node)
+        return true
+    }
+
+    /// Resizes along the axis the target names: the nearest tiles container running along
+    /// it (smart: the window's own container; smart-opposite: the first one across it).
+    private func resize(_ node: WMNode, _ target: WMCommand.ResizeTarget, _ amount: WMCommand.ResizeAmount) -> Bool {
+        let base = node.parent?.orientation
         var current = node
         while let parent = current.parent {
-            let axis: Orientation? = switch target {
-            case .smart: nil
-            case .width: .horizontal
-            case .height: .vertical
+            let matches = switch target {
+            case .smart: true
+            case .smartOpposite: parent.orientation != base
+            case .width: parent.orientation == .horizontal
+            case .height: parent.orientation == .vertical
             }
-            if parent.layout == .tiles, parent.children.count > 1, axis == nil || parent.orientation == axis { break }
+            if parent.layout == .tiles, parent.children.count > 1, matches { break }
             current = parent
         }
-        guard let parent = current.parent, parent.lastLength > 0 else { return }
+        guard let parent = current.parent, parent.lastLength > 0 else { return false }
         let others = parent.children.reduce(0) { $0 + ($1 === current ? 0 : $1.weight) }
         let total = others + current.weight
         let pixels = current.weight / total * parent.lastLength
@@ -536,6 +768,7 @@ public final class WMModel {
         }
         let clamped = min(max(wanted, 50), parent.lastLength - 50 * Double(parent.children.count - 1))
         current.weight = clamped * others / max(parent.lastLength - clamped, 1)
+        return true
     }
 
     private func balance(_ node: WMNode) {
@@ -545,54 +778,64 @@ public final class WMModel {
         }
     }
 
-    private func layout(_ choices: [WMCommand.LayoutChoice]) throws(InvalidConfig) {
-        guard let window = focused, let workspace = workspace(of: window) else { throw InvalidConfig(message: "no window is focused") }
-        let node = workspace.root.find(window)
-        let parent = node?.parent
+    private func layout(_ choices: [WMCommand.LayoutChoice], window id: WindowID?, workspace name: String?, root: Bool) throws(InvalidConfig) -> Bool {
+        let workspace: WMWorkspace
+        var window: WindowID?
+        if let name {
+            workspace = try self.workspace(named: name)
+        } else {
+            window = try self.window(id)
+            guard let found = self.workspace(of: window!) else { throw InvalidConfig(message: "no window is focused") }
+            workspace = found
+        }
+        let node = window.flatMap { workspace.root.find($0) }
+        let container = root || name != nil ? workspace.root : node?.parent
         func isCurrent(_ choice: WMCommand.LayoutChoice) -> Bool {
             switch choice {
-            case .floating: return node == nil
+            case .floating: return window != nil && node == nil
             case .tiling: return node != nil
-            case .tiles: return parent?.layout == .tiles
-            case .accordion: return parent?.layout == .accordion
-            case .horizontal: return parent?.orientation == .horizontal
-            case .vertical: return parent?.orientation == .vertical
-            case .hTiles: return parent?.layout == .tiles && parent?.orientation == .horizontal
-            case .vTiles: return parent?.layout == .tiles && parent?.orientation == .vertical
-            case .hAccordion: return parent?.layout == .accordion && parent?.orientation == .horizontal
-            case .vAccordion: return parent?.layout == .accordion && parent?.orientation == .vertical
+            case .tiles: return container?.layout == .tiles
+            case .accordion: return container?.layout == .accordion
+            case .horizontal: return container?.orientation == .horizontal
+            case .vertical: return container?.orientation == .vertical
+            case .hTiles: return container?.layout == .tiles && container?.orientation == .horizontal
+            case .vTiles: return container?.layout == .tiles && container?.orientation == .vertical
+            case .hAccordion: return container?.layout == .accordion && container?.orientation == .horizontal
+            case .vAccordion: return container?.layout == .accordion && container?.orientation == .vertical
             }
         }
-        let choice = choices.first { !isCurrent($0) } ?? choices[0]
+        guard let choice = choices.first(where: { !isCurrent($0) }) else { return false }
         switch choice {
         case .floating:
-            guard node != nil else { return }
+            guard let window, node != nil else { return false }
             detach(window, from: workspace)
             workspace.floating.append(window)
             windows[window]?.floating = true
         case .tiling:
-            guard node == nil else { return }
+            guard let window, node == nil else { return false }
             workspace.floating.removeAll { $0 == window }
             windows[window]?.floating = false
             insertTiled(window, into: workspace)
         default:
-            guard let parent else { throw InvalidConfig(message: "the focused window is floating") }
+            guard let container else { throw InvalidConfig(message: "the window is floating") }
             switch choice {
-            case .tiles, .hTiles, .vTiles: parent.layout = .tiles
-            case .accordion, .hAccordion, .vAccordion: parent.layout = .accordion
+            case .tiles, .hTiles, .vTiles: container.layout = .tiles
+            case .accordion, .hAccordion, .vAccordion: container.layout = .accordion
             default: break
             }
             switch choice {
-            case .horizontal, .hTiles, .hAccordion: parent.orientation = .horizontal
-            case .vertical, .vTiles, .vAccordion: parent.orientation = .vertical
+            case .horizontal, .hTiles, .hAccordion: container.orientation = .horizontal
+            case .vertical, .vTiles, .vAccordion: container.orientation = .vertical
             default: break
             }
             // A nested container now running along its parent's axis is merged into it, which
             // is what the new orientation means and keeps containers alternating.
-            if let grand = parent.parent, grand.orientation == parent.orientation, let index = parent.index {
-                for (offset, child) in parent.children.enumerated() { grand.insert(child, at: index + offset) }
+            if settings.oppositeOrientationForNestedContainers, let grand = container.parent,
+               grand.orientation == container.orientation, let index = container.index {
+                for (offset, child) in container.children.enumerated() { grand.insert(child, at: index + offset) }
             }
         }
+        return true
     }
 }
 

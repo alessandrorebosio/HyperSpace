@@ -22,12 +22,13 @@ struct ConfigFileTests {
         let dir = tempDirectory()
         try write("[capslock]\nhold = \"meh\"", .keyboard, in: dir)
         try write("[buttons]\nback = \"navigate.back\"", .mouse, in: dir)
-        try write("enabled = true", .wm, in: dir)
+        try write("accordion-padding = 10", .wm, in: dir)
         let (config, errors) = ConfigLoader.load(from: dir)
         #expect(errors.isEmpty)
         #expect(config.keyboard.capslock?.hold == "meh")
         #expect(config.mouse.buttons["back"] == .keys("navigate.back"))
-        #expect(config.wm.enabled)
+        #expect(config.wm.accordionPadding == 10)
+        #expect(!config.wm.isEmpty)
     }
 
     @Test func brokenFileKeepsItsLastGoodSectionOnly() throws {
@@ -51,9 +52,9 @@ struct ConfigFileTests {
         #expect(urls.map(\.lastPathComponent) == ["keyboard.toml", "mouse.toml", "wm.toml"])
         #expect(try String(contentsOf: urls[2], encoding: .utf8) == ConfigLoader.template(.wm))
 
-        try write("enabled = true\n", .wm, in: dir)
+        try write("accordion-padding = 10\n", .wm, in: dir)
         try ConfigLoader.createTemplatesIfMissing(in: dir)
-        #expect(ConfigLoader.load(from: dir).config.wm.enabled)
+        #expect(ConfigLoader.load(from: dir).config.wm.accordionPadding == 10)
     }
 
     @Test(arguments: ["in-place", "atomic"])

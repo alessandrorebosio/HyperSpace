@@ -2,8 +2,10 @@
 public struct InputPlan: Sendable, Equatable {
     public var keyboard = KeyboardPlan()
     public var mouse = MousePlan()
+    /// Window manager hotkeys per binding mode (wm.toml `[mode.<name>.binding]`).
+    public var hotkeys: [String: OutputTable] = [:]
 
-    public var needsEventTap: Bool { keyboard.needsEventTap || mouse.needsEventTap }
+    public var needsEventTap: Bool { keyboard.needsEventTap || mouse.needsEventTap || !hotkeys.isEmpty }
 
     public init(keyboard: KeyboardPlan = KeyboardPlan(), mouse: MousePlan = MousePlan()) {
         self.keyboard = keyboard
@@ -12,12 +14,14 @@ public struct InputPlan: Sendable, Equatable {
 
     public init(_ config: Config) throws(InvalidConfig) {
         keyboard = try KeyboardPlan(config.keyboard)
-        keyboard.hotkeys = try Hotkeys.compile(config.wm)
         mouse = try MousePlan(config.mouse)
+        if !config.wm.isEmpty { hotkeys = try WMSettings(config.wm).hotkeys }
     }
 
-    /// The tables the event tap uses while `bundleID` is the frontmost app.
-    public func tables(forApp bundleID: String?) -> ActiveTables {
+    /// The tables the event tap uses while `bundleID` is the frontmost app and `mode` is the
+    /// window manager's binding mode.
+    public func tables(forApp bundleID: String?, mode: String = "main") -> ActiveTables {
+        let hotkeys = self.hotkeys[mode]
         func pick(_ apps: [String: OutputTable], _ base: OutputTable) -> OutputTable {
             bundleID.flatMap { apps[$0] } ?? base
         }
@@ -27,8 +31,8 @@ public struct InputPlan: Sendable, Equatable {
             layerMaps: keyboard.layers.map { pick($0.apps, $0.base) },
             double: keyboard.double,
             doubleTapNs: keyboard.doubleTapNs,
-            hotkeys: keyboard.hotkeys,
-            hasHotkeys: !keyboard.hotkeys.isEmpty,
+            hotkeys: hotkeys ?? .hotkeys,
+            hasHotkeys: hotkeys.map { !$0.isEmpty } ?? false,
             buttons: pick(mouse.apps, mouse.buttons),
             holds: mouse.holds,
             scroll: mouse.scroll,

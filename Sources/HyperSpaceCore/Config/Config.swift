@@ -153,29 +153,79 @@ public struct NavigateConfig: Sendable, Equatable {
     public var buttons: [String] = []
 }
 
-// MARK: - Window manager (wm.toml)
+// MARK: - Window manager (wm.toml, AeroSpace's format)
 
+/// wm.toml uses AeroSpace's config format and keys, so an `~/.aerospace.toml` can be copied
+/// over as is. See https://nikitabobko.github.io/AeroSpace/guide. An empty file (or one with
+/// only comments) leaves the window manager off.
 public struct WMConfig: Sendable, Equatable {
-    public var enabled = false
-    public var gaps = Gaps()
+    /// True when the file sets nothing: the window manager stays off.
+    public var isEmpty = true
+    public var configVersion = 1
+    public var afterStartupCommand: [String] = []
+    public var onFocusChanged: [String] = []
+    public var onFocusedMonitorChanged: [String] = []
+    public var onModeChanged: [String] = []
+    public var enableNormalizationFlattenContainers = true
+    public var enableNormalizationOppositeOrientationForNestedContainers = true
+    /// tiles | accordion
+    public var defaultRootContainerLayout = "tiles"
+    /// horizontal | vertical | auto
+    public var defaultRootContainerOrientation = "auto"
+    public var startAtLogin: Bool?
+    public var autoReloadConfig = true
+    public var automaticallyUnhideMacosHiddenApps = false
     public var accordionPadding = 30
-    /// Hotkey (e.g. `alt-shift-h`) -> commands run in order (e.g. `["move left"]`).
-    /// A single command can be written as a plain string.
-    public var bindings: [String: [String]] = [:]
-    public var rule: [WMRule] = []
+    public var persistentWorkspaces: [String]?
+    /// A process (argv) run when the focused workspace changes.
+    public var execOnWorkspaceChange: [String] = []
+    public var execInheritEnvVars = true
+    public var execEnvVars: [String: String]?
+    /// qwerty | dvorak | colemak
+    public var keyMappingPreset = "qwerty"
+    public var keyNotationToKeyCode: [String: String] = [:]
+    /// Mode name -> hotkey -> commands.
+    public var modes: [String: [String: [String]]] = [:]
+    public var gaps = GapsConfig()
+    public var focusFollowsMouse = false
+    /// Workspace name -> monitor patterns.
+    public var workspaceToMonitorForceAssignment: [String: [String]] = [:]
+    public var onWindowDetected: [WindowDetectedRule] = []
 
     public init() {}
 }
 
-public struct Gaps: Sendable, Equatable {
-    public var inner = 0
-    public var outer = 0
+/// One gap: a number, or per-monitor values `[{ monitor.main = 16 }, { monitor."dell" = 32 }, 24]`.
+public struct GapValue: Sendable, Equatable {
+    public var perMonitor: [(pattern: String, value: Int)] = []
+    public var fallback = 0
+
+    public init(_ value: Int = 0) { fallback = value }
+
+    public static func == (a: GapValue, b: GapValue) -> Bool {
+        a.fallback == b.fallback && a.perMonitor.map(\.pattern) == b.perMonitor.map(\.pattern)
+            && a.perMonitor.map(\.value) == b.perMonitor.map(\.value)
+    }
 }
 
-public struct WMRule: Sendable, Equatable {
-    public var app: String
-    public var layout: String?
-    public var workspace: String?
+public struct GapsConfig: Sendable, Equatable {
+    public var innerHorizontal = GapValue(), innerVertical = GapValue()
+    public var outerLeft = GapValue(), outerBottom = GapValue(), outerTop = GapValue(), outerRight = GapValue()
+
+    public init() {}
+}
+
+/// `[[on-window-detected]]`: `if` (a command such as `test %{app-bundle-id} = ...`, or the
+/// legacy `if.app-id = ...` table), `run`, `check-further-callbacks`.
+public struct WindowDetectedRule: Sendable, Equatable {
+    public enum Condition: Sendable, Equatable {
+        case script(String)
+        case legacy(appID: String?, appNameRegex: String?, windowTitleRegex: String?, workspace: String?, duringStartup: Bool?)
+    }
+
+    public var condition: Condition?
+    public var checkFurtherCallbacks = false
+    public var run: [String] = []
 }
 
 // MARK: - Decoding
@@ -351,22 +401,74 @@ extension NavigateConfig: Decodable {
 
 extension WMConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled, gaps, accordionPadding = "accordion_padding", bindings, rule
+        case configVersion = "config-version"
+        case afterStartupCommand = "after-startup-command"
+        case afterLoginCommand = "after-login-command"
+        case onFocusChanged = "on-focus-changed"
+        case onFocusedMonitorChanged = "on-focused-monitor-changed"
+        case onModeChanged = "on-mode-changed"
+        case flatten = "enable-normalization-flatten-containers"
+        case opposite = "enable-normalization-opposite-orientation-for-nested-containers"
+        case rootLayout = "default-root-container-layout"
+        case rootOrientation = "default-root-container-orientation"
+        case startAtLogin = "start-at-login"
+        case autoReloadConfig = "auto-reload-config"
+        case unhide = "automatically-unhide-macos-hidden-apps"
+        case accordionPadding = "accordion-padding"
+        case persistentWorkspaces = "persistent-workspaces"
+        case execOnWorkspaceChange = "exec-on-workspace-change"
+        case exec
+        case keyMapping = "key-mapping"
+        case mode
+        case gaps
+        case focusFollowsMouse = "focus-follows-mouse"
+        case assignment = "workspace-to-monitor-force-assignment"
+        case onWindowDetected = "on-window-detected"
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
-        enabled = try c.decode(.enabled, default: false)
-        gaps = try c.decode(.gaps, default: Gaps())
+        isEmpty = c.allKeys.isEmpty
+        configVersion = try c.decode(.configVersion, default: 1)
+        afterStartupCommand = try c.decode(.afterStartupCommand, default: Commands()).list
+        onFocusChanged = try c.decode(.onFocusChanged, default: Commands()).list
+        onFocusedMonitorChanged = try c.decode(.onFocusedMonitorChanged, default: Commands()).list
+        onModeChanged = try c.decode(.onModeChanged, default: Commands()).list
+        enableNormalizationFlattenContainers = try c.decode(.flatten, default: true)
+        enableNormalizationOppositeOrientationForNestedContainers = try c.decode(.opposite, default: true)
+        defaultRootContainerLayout = try c.decode(.rootLayout, default: "tiles")
+        defaultRootContainerOrientation = try c.decode(.rootOrientation, default: "auto")
+        startAtLogin = try c.decodeIfPresent(Bool.self, forKey: .startAtLogin)
+        autoReloadConfig = try c.decode(.autoReloadConfig, default: true)
+        automaticallyUnhideMacosHiddenApps = try c.decode(.unhide, default: false)
         accordionPadding = try c.decode(.accordionPadding, default: 30)
-        bindings = try c.decode(.bindings, default: [String: Commands]()).mapValues(\.list)
-        rule = try c.decode(.rule, default: [])
+        persistentWorkspaces = try c.decodeIfPresent([String].self, forKey: .persistentWorkspaces)
+        execOnWorkspaceChange = try c.decode(.execOnWorkspaceChange, default: [])
+        if c.contains(.afterLoginCommand) {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath + [CodingKeys.afterLoginCommand],
+                                                    debugDescription: "deprecated in AeroSpace; use after-startup-command"))
+        }
+        if let exec = try c.decodeIfPresent(ExecTable.self, forKey: .exec) {
+            execInheritEnvVars = exec.inheritEnvVars
+            execEnvVars = exec.envVars
+        }
+        if let mapping = try c.decodeIfPresent(KeyMappingTable.self, forKey: .keyMapping) {
+            keyMappingPreset = mapping.preset
+            keyNotationToKeyCode = mapping.notation
+        }
+        modes = try c.decode(.mode, default: [String: ModeTable]()).mapValues(\.bindings)
+        gaps = try c.decode(.gaps, default: GapsTable()).gaps
+        focusFollowsMouse = try c.decode(.focusFollowsMouse, default: FocusFollowsMouseTable()).enabled
+        workspaceToMonitorForceAssignment = try c.decode(.assignment, default: [String: Patterns]()).mapValues(\.list)
+        onWindowDetected = try c.decode(.onWindowDetected, default: [])
     }
 }
 
-/// A binding's value: one command, or a list run in order.
+/// A string or an array of strings (commands, monitor patterns).
 private struct Commands: Decodable {
-    let list: [String]
+    var list: [String] = []
+
+    init() {}
 
     init(from decoder: any Decoder) throws {
         if let single = try? decoder.singleValueContainer().decode(String.self) {
@@ -377,23 +479,161 @@ private struct Commands: Decodable {
     }
 }
 
-extension Gaps: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case inner, outer }
+private typealias Patterns = Commands
 
-    public init(from decoder: any Decoder) throws {
+private struct ExecTable: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case inheritEnvVars = "inherit-env-vars", envVars = "env-vars" }
+    var inheritEnvVars = true
+    var envVars: [String: String]?
+
+    init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
-        inner = try c.decode(.inner, default: 0)
-        outer = try c.decode(.outer, default: 0)
+        inheritEnvVars = try c.decode(.inheritEnvVars, default: true)
+        envVars = try c.decodeIfPresent([String: String].self, forKey: .envVars)
     }
 }
 
-extension WMRule: Decodable {
-    enum CodingKeys: String, CodingKey, CaseIterable { case app, layout, workspace }
+private struct KeyMappingTable: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case preset, notation = "key-notation-to-key-code" }
+    var preset = "qwerty"
+    var notation: [String: String] = [:]
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        preset = try c.decode(.preset, default: "qwerty")
+        notation = try c.decode(.notation, default: [:])
+    }
+}
+
+private struct ModeTable: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case binding }
+    var bindings: [String: [String]] = [:]
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        bindings = try c.decode(.binding, default: [String: Commands]()).mapValues(\.list)
+    }
+}
+
+private struct FocusFollowsMouseTable: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case enabled }
+    var enabled = false
+
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        enabled = try decoder.table(CodingKeys.self).decode(.enabled, default: false)
+    }
+}
+
+private struct GapsTable: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case inner, outer }
+    enum InnerKeys: String, CodingKey, CaseIterable { case horizontal, vertical }
+    enum OuterKeys: String, CodingKey, CaseIterable { case left, bottom, top, right }
+    var gaps = GapsConfig()
+
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        if let inner = try c.decodeIfPresent(InnerTable.self, forKey: .inner) {
+            gaps.innerHorizontal = inner.horizontal
+            gaps.innerVertical = inner.vertical
+        }
+        if let outer = try c.decodeIfPresent(OuterTable.self, forKey: .outer) {
+            gaps.outerLeft = outer.left
+            gaps.outerBottom = outer.bottom
+            gaps.outerTop = outer.top
+            gaps.outerRight = outer.right
+        }
+    }
+
+    struct InnerTable: Decodable {
+        var horizontal = GapValue(), vertical = GapValue()
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.table(InnerKeys.self)
+            horizontal = try c.decode(.horizontal, default: GapValue())
+            vertical = try c.decode(.vertical, default: GapValue())
+        }
+    }
+
+    struct OuterTable: Decodable {
+        var left = GapValue(), bottom = GapValue(), top = GapValue(), right = GapValue()
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.table(OuterKeys.self)
+            left = try c.decode(.left, default: GapValue())
+            bottom = try c.decode(.bottom, default: GapValue())
+            top = try c.decode(.top, default: GapValue())
+            right = try c.decode(.right, default: GapValue())
+        }
+    }
+}
+
+extension GapValue: Decodable {
+    /// `8`, or `[{ monitor.main = 16 }, { monitor."some-pattern" = 32 }, 24]`.
+    public init(from decoder: any Decoder) throws {
+        if let value = try? decoder.singleValueContainer().decode(Int.self) {
+            fallback = value
+            return
+        }
+        for entry in try [Entry](from: decoder) {
+            if let pattern = entry.pattern { perMonitor.append((pattern, entry.value)) } else { fallback = entry.value }
+        }
+    }
+
+    /// One array element: a number (the default) or `{ monitor.<pattern> = <number> }`.
+    private struct Entry: Decodable {
+        enum CodingKeys: String, CodingKey, CaseIterable { case monitor }
+        var pattern: String?
+        var value = 0
+
+        init(from decoder: any Decoder) throws {
+            if let value = try? decoder.singleValueContainer().decode(Int.self) {
+                self.value = value
+                return
+            }
+            let monitors = try decoder.table(CodingKeys.self).decode([String: Int].self, forKey: .monitor)
+            guard monitors.count == 1, let (pattern, value) = monitors.first else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "use { monitor.<pattern> = <number> }"))
+            }
+            self.pattern = pattern
+            self.value = value
+        }
+    }
+}
+
+extension WindowDetectedRule: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable { case `if`, checkFurtherCallbacks = "check-further-callbacks", run }
+
+    /// The legacy `if.app-id = ...` table.
+    private struct LegacyCondition: Decodable {
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case appID = "app-id", appName = "app-name-regex-substring", title = "window-title-regex-substring"
+            case workspace, duringStartup = "during-aerospace-startup"
+        }
+        let condition: Condition
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.table(CodingKeys.self)
+            condition = .legacy(appID: try c.decodeIfPresent(String.self, forKey: .appID),
+                                appNameRegex: try c.decodeIfPresent(String.self, forKey: .appName),
+                                windowTitleRegex: try c.decodeIfPresent(String.self, forKey: .title),
+                                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
+                                duringStartup: try c.decodeIfPresent(Bool.self, forKey: .duringStartup))
+        }
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
-        app = try c.decode(String.self, forKey: .app)
-        layout = try c.decodeIfPresent(String.self, forKey: .layout)
-        workspace = try c.decodeIfPresent(String.self, forKey: .workspace)
+        if let script = try? c.decodeIfPresent(String.self, forKey: .if) {
+            condition = .script(script)
+        } else if let legacy = try c.decodeIfPresent(LegacyCondition.self, forKey: .if) {
+            condition = legacy.condition
+        }
+        checkFurtherCallbacks = try c.decode(.checkFurtherCallbacks, default: false)
+        guard c.contains(.run) else {
+            throw DecodingError.keyNotFound(CodingKeys.run, .init(codingPath: c.codingPath, debugDescription: "'run' is mandatory"))
+        }
+        run = try c.decode(Commands.self, forKey: .run).list
     }
 }

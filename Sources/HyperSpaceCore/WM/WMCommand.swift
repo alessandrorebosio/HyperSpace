@@ -1,121 +1,380 @@
-/// A window manager command. Names and arguments follow AeroSpace, so its bindings can be
-/// copied over: `focus left`, `move-node-to-workspace 3`, `layout tiles accordion`...
-public enum WMCommand: Sendable, Equatable {
-    case focus(Direction)
-    case move(Direction)
-    /// Wraps the focused window and its neighbor into a new container.
-    case joinWith(Direction)
-    case resize(ResizeTarget, ResizeAmount)
-    case balanceSizes
-    case flattenWorkspaceTree
-    /// Applies the first layout that isn't the current one, so `layout tiles accordion`
-    /// toggles between the two.
-    case layout([LayoutChoice])
-    case fullscreen(Bool?)
-    case workspace(WorkspaceTarget)
+/// A window manager command, with AeroSpace's names, arguments and flags, so an AeroSpace
+/// config or script works unchanged. See https://nikitabobko.github.io/AeroSpace/commands
+public indirect enum WMCommand: Sendable, Equatable {
+    case focus(FocusTarget, Boundaries)
+    case move(Direction, Boundaries, window: WindowID?)
+    case swap(SwapTarget, swapFocus: Bool, wrapAround: Bool, window: WindowID?)
+    case joinWith(Direction, window: WindowID?)
+    case split(SplitKind, window: WindowID?)
+    case resize(ResizeTarget, ResizeAmount, window: WindowID?)
+    case balanceSizes(workspace: String?)
+    case flattenWorkspaceTree(workspace: String?)
+    /// Applies the first layout that isn't the current one: `layout tiles accordion` toggles.
+    case layout([LayoutChoice], window: WindowID?, workspace: String?, root: Bool, failIfNoop: Bool)
+    case fullscreen(Bool?, noOuterGaps: Bool, window: WindowID?, failIfNoop: Bool)
+    case macosNativeFullscreen(Bool?, window: WindowID?)
+    case macosNativeMinimize(window: WindowID?)
+    case workspace(WorkspaceTarget, autoBackAndForth: Bool, wrapAround: Bool, failIfNoop: Bool)
     case workspaceBackAndForth
-    case moveNodeToWorkspace(WorkspaceTarget, focusFollows: Bool)
-    case focusMonitor(MonitorTarget)
-    case moveNodeToMonitor(MonitorTarget)
-    case moveWorkspaceToMonitor(MonitorTarget)
-    case close
-    /// Runs a shell command (AeroSpace's `exec-and-forget`).
+    case summonWorkspace(String, failIfNoop: Bool)
+    case moveNodeToWorkspace(WorkspaceTarget, focusFollows: Bool, wrapAround: Bool, window: WindowID?, failIfNoop: Bool)
+    case focusMonitor(MonitorTarget, wrapAround: Bool)
+    case moveNodeToMonitor(MonitorTarget, focusFollows: Bool, wrapAround: Bool, window: WindowID?)
+    case moveWorkspaceToMonitor(MonitorTarget, wrapAround: Bool, workspace: String?)
+    case focusBackAndForth
+    case close(quitIfLastWindow: Bool, window: WindowID?)
+    case closeAllWindowsButCurrent(quitIfLastWindow: Bool)
+    case moveMouse(MousePosition, failIfNoop: Bool)
+    case mode(String)
+    case triggerBinding(String, mode: String)
+    case volume(Volume)
+    /// Runs a shell command (`exec-and-forget`).
     case exec(String)
     case reloadConfig
-    case enable(Bool?)
+    case enable(Bool?, failIfNoop: Bool)
+    case list(ListQuery)
+    case test(String, TestOperator, String, negate: Bool)
+    case result(Bool)
+    case echo(String)
 
-    public enum ResizeTarget: String, Sendable { case smart, width, height }
-
-    public enum ResizeAmount: Sendable, Equatable {
-        case add(Double), set(Double)
+    public enum FocusTarget: Sendable, Equatable {
+        case direction(Direction), dfsNext, dfsPrev, window(WindowID), dfsIndex(Int)
     }
+
+    public struct Boundaries: Sendable, Equatable {
+        public enum Scope: String, Sendable { case workspace, allMonitorsOuterFrame = "all-monitors-outer-frame" }
+        public enum Action: String, Sendable {
+            case stop, fail, wrapAroundTheWorkspace = "wrap-around-the-workspace"
+            case wrapAroundAllMonitors = "wrap-around-all-monitors", createImplicitContainer = "create-implicit-container"
+        }
+
+        public var scope = Scope.workspace
+        public var action: Action
+        public var failIfFullscreen = false
+        public var ignoreFloating = false
+
+        public init(action: Action) { self.action = action }
+    }
+
+    public enum SwapTarget: Sendable, Equatable { case direction(Direction), dfsNext, dfsPrev }
+    public enum SplitKind: String, Sendable { case horizontal, vertical, opposite }
+    public enum ResizeTarget: String, Sendable { case smart, smartOpposite = "smart-opposite", width, height }
+    public enum ResizeAmount: Sendable, Equatable { case add(Double), set(Double) }
 
     public enum LayoutChoice: String, Sendable, CaseIterable {
         case tiles, accordion, horizontal, vertical, tiling, floating
         case hTiles = "h_tiles", vTiles = "v_tiles", hAccordion = "h_accordion", vAccordion = "v_accordion"
     }
 
-    public enum WorkspaceTarget: Sendable, Equatable {
-        case named(String), next, prev
-    }
+    public enum WorkspaceTarget: Sendable, Equatable { case named(String), next, prev }
 
     public enum MonitorTarget: Sendable, Equatable {
         case direction(Direction), next, prev
+        /// `main`, `secondary`, a 1-based number from the left, or a name regex.
+        case patterns([String])
+    }
+
+    public enum MousePosition: String, Sendable {
+        case monitorLazyCenter = "monitor-lazy-center", monitorForceCenter = "monitor-force-center"
+        case windowLazyCenter = "window-lazy-center", windowForceCenter = "window-force-center"
+    }
+
+    public enum Volume: Sendable, Equatable { case up, down, muteToggle, muteOn, muteOff, set(Int) }
+
+    public enum TestOperator: String, Sendable { case equals = "=", matches = "~=" }
+
+    public struct ListQuery: Sendable, Equatable {
+        public enum Kind: String, Sendable { case windows = "list-windows", workspaces = "list-workspaces", monitors = "list-monitors", apps = "list-apps", modes = "list-modes" }
+        public var kind: Kind
+        /// Flag -> values, e.g. `--workspace` -> ["1", "focused"]; `--focused` -> [].
+        public var filters: [String: [String]] = [:]
+        public var format: String?
+        public var count = false
+        public var json = false
     }
 }
 
-extension WMCommand {
-    /// Parses one command, e.g. `"move-node-to-workspace 3 --focus-follows-window"`.
-    public init(parsing text: String) throws(InvalidConfig) {
-        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard let name = words.first else { throw InvalidConfig(message: "empty command") }
-        let args = Array(words.dropFirst())
-        func fail(_ usage: String) -> InvalidConfig { InvalidConfig(message: "'\(text)': usage: \(usage)") }
-        func direction() throws(InvalidConfig) -> Direction {
-            guard args.count == 1, let direction = Direction(rawValue: args[0]) else { throw fail("\(name) left|right|up|down") }
-            return direction
-        }
-        func workspace(_ args: [String]) throws(InvalidConfig) -> WorkspaceTarget {
-            guard args.count == 1 else { throw fail("\(name) <name>|next|prev") }
-            return switch args[0] {
-            case "next": .next
-            case "prev": .prev
-            default: .named(args[0])
-            }
-        }
-        func monitor() throws(InvalidConfig) -> MonitorTarget {
-            guard args.count == 1 else { throw fail("\(name) left|right|up|down|next|prev") }
-            if let direction = Direction(rawValue: args[0]) { return .direction(direction) }
-            switch args[0] {
-            case "next": return .next
-            case "prev": return .prev
-            default: throw fail("\(name) left|right|up|down|next|prev")
-            }
-        }
-        func onOff() throws(InvalidConfig) -> Bool? {
-            switch args {
-            case []: return nil
-            case ["on"]: return true
-            case ["off"]: return false
-            case ["toggle"]: return nil
-            default: throw fail("\(name) [on|off|toggle]")
-            }
-        }
+// MARK: - Parsing
 
+extension WMCommand {
+    /// Parses one command from its words, e.g. `["move-node-to-workspace", "3", "--focus-follows-window"]`.
+    public init(words: [String]) throws(InvalidConfig) {
+        guard let name = words.first else { throw InvalidConfig(message: "empty command") }
+        var p = ArgParser(name: name, args: Array(words.dropFirst()))
+        self = try WMCommand.parse(name, &p)
+        try p.finish()
+    }
+
+    /// Parses one command line (no `;`, `&&`, `||`: see `WMScript` for those).
+    public init(parsing text: String) throws(InvalidConfig) {
+        try self.init(words: try Shell.words(text))
+    }
+
+    private static func parse(_ name: String, _ p: inout ArgParser) throws(InvalidConfig) -> WMCommand {
         switch name {
-        case "focus": self = .focus(try direction())
-        case "move": self = .move(try direction())
-        case "join-with": self = .joinWith(try direction())
+        case "focus":
+            if let id = try p.value("--window-id") { return .focus(.window(try p.windowID(id)), Boundaries(action: .stop)) }
+            if let index = try p.value("--dfs-index") {
+                guard let index = Int(index) else { throw p.fail("--dfs-index <number>") }
+                return .focus(.dfsIndex(index), Boundaries(action: .stop))
+            }
+            var boundaries = try p.boundaries(defaultAction: .stop)
+            boundaries.ignoreFloating = p.flag("--ignore-floating")
+            if p.flag("--wrap-around") { boundaries.action = .wrapAroundTheWorkspace }
+            _ = p.flag("--fail-if-macos-native-fullscreen")
+            let target = try p.positional("(left|down|up|right|dfs-next|dfs-prev)")
+            switch target {
+            case "dfs-next": return .focus(.dfsNext, boundaries)
+            case "dfs-prev": return .focus(.dfsPrev, boundaries)
+            default: return .focus(.direction(try p.direction(target)), boundaries)
+            }
+        case "move":
+            let window = try p.windowFlag()
+            let boundaries = try p.boundaries(defaultAction: .createImplicitContainer)
+            _ = p.flag("--fail-if-macos-native-fullscreen")
+            return .move(try p.direction(try p.positional("(left|down|up|right)")), boundaries, window: window)
+        case "swap":
+            let window = try p.windowFlag(), swapFocus = p.flag("--swap-focus"), wrap = p.flag("--wrap-around")
+            let target = try p.positional("(left|down|up|right|dfs-next|dfs-prev)")
+            let swapTarget: SwapTarget = switch target {
+            case "dfs-next": .dfsNext
+            case "dfs-prev": .dfsPrev
+            default: .direction(try p.direction(target))
+            }
+            return .swap(swapTarget, swapFocus: swapFocus, wrapAround: wrap, window: window)
+        case "join-with":
+            let window = try p.windowFlag()
+            return .joinWith(try p.direction(try p.positional("(left|down|up|right)")), window: window)
+        case "split":
+            let window = try p.windowFlag()
+            guard let kind = SplitKind(rawValue: try p.positional("(horizontal|vertical|opposite)")) else { throw p.fail("(horizontal|vertical|opposite)") }
+            return .split(kind, window: window)
         case "resize":
-            guard args.count == 2, let target = ResizeTarget(rawValue: args[0]), let number = Double(args[1]) else {
-                throw fail("resize smart|width|height [+|-]<number>")
+            let window = try p.windowFlag()
+            guard let target = ResizeTarget(rawValue: try p.positional("(smart|smart-opposite|width|height) [+|-]<number>")) else {
+                throw p.fail("(smart|smart-opposite|width|height) [+|-]<number>")
             }
-            self = .resize(target, args[1].hasPrefix("+") || args[1].hasPrefix("-") ? .add(number) : .set(number))
-        case "balance-sizes": self = .balanceSizes
-        case "flatten-workspace-tree": self = .flattenWorkspaceTree
+            let amount = try p.positional("[+|-]<number>")
+            guard let number = Double(amount) else { throw p.fail("(smart|smart-opposite|width|height) [+|-]<number>") }
+            return .resize(target, amount.hasPrefix("+") || amount.hasPrefix("-") ? .add(number) : .set(number), window: window)
+        case "balance-sizes":
+            return .balanceSizes(workspace: try p.value("--workspace"))
+        case "flatten-workspace-tree":
+            return .flattenWorkspaceTree(workspace: try p.value("--workspace"))
         case "layout":
-            let choices = args.compactMap(LayoutChoice.init(rawValue:))
-            guard !choices.isEmpty, choices.count == args.count else {
-                throw fail("layout \(LayoutChoice.allCases.map(\.rawValue).joined(separator: "|"))...")
+            let window = try p.windowFlag(), workspace = try p.value("--workspace"), root = p.flag("--root"), noop = p.flag("--fail-if-noop")
+            let choices = try p.rest().map { word throws(InvalidConfig) in
+                guard let choice = LayoutChoice(rawValue: word) else {
+                    throw p.fail("(\(LayoutChoice.allCases.map(\.rawValue).joined(separator: "|")))...")
+                }
+                return choice
             }
-            self = .layout(choices)
-        case "fullscreen": self = .fullscreen(try onOff())
-        case "workspace": self = .workspace(try workspace(args))
-        case "workspace-back-and-forth": self = .workspaceBackAndForth
+            guard !choices.isEmpty else { throw p.fail("(\(LayoutChoice.allCases.map(\.rawValue).joined(separator: "|")))...") }
+            return .layout(choices, window: window, workspace: workspace, root: root, failIfNoop: noop)
+        case "fullscreen":
+            let window = try p.windowFlag(), noGaps = p.flag("--no-outer-gaps"), noop = p.flag("--fail-if-noop")
+            return .fullscreen(try p.onOff(), noOuterGaps: noGaps, window: window, failIfNoop: noop)
+        case "macos-native-fullscreen":
+            let window = try p.windowFlag()
+            _ = p.flag("--fail-if-noop")
+            return .macosNativeFullscreen(try p.onOff(), window: window)
+        case "macos-native-minimize":
+            return .macosNativeMinimize(window: try p.windowFlag())
+        case "workspace":
+            let auto = p.flag("--auto-back-and-forth"), wrap = p.flag("--wrap-around"), noop = p.flag("--fail-if-noop")
+            _ = p.flag("--no-stdin")
+            return .workspace(try p.workspaceTarget(), autoBackAndForth: auto, wrapAround: wrap, failIfNoop: noop)
+        case "workspace-back-and-forth":
+            return .workspaceBackAndForth
+        case "summon-workspace":
+            let noop = p.flag("--fail-if-noop")
+            return .summonWorkspace(try p.positional("<workspace>"), failIfNoop: noop)
         case "move-node-to-workspace":
-            let follows = args.contains("--focus-follows-window")
-            self = .moveNodeToWorkspace(try workspace(args.filter { $0 != "--focus-follows-window" }), focusFollows: follows)
-        case "focus-monitor": self = .focusMonitor(try monitor())
-        case "move-node-to-monitor": self = .moveNodeToMonitor(try monitor())
-        case "move-workspace-to-monitor": self = .moveWorkspaceToMonitor(try monitor())
-        case "close": self = .close
+            let follows = p.flag("--focus-follows-window"), wrap = p.flag("--wrap-around"), noop = p.flag("--fail-if-noop")
+            let window = try p.windowFlag()
+            _ = p.flag("--no-stdin")
+            return .moveNodeToWorkspace(try p.workspaceTarget(), focusFollows: follows, wrapAround: wrap, window: window, failIfNoop: noop)
+        case "focus-monitor":
+            let wrap = p.flag("--wrap-around")
+            return .focusMonitor(try p.monitorTarget(), wrapAround: wrap)
+        case "move-node-to-monitor":
+            let window = try p.windowFlag(), follows = p.flag("--focus-follows-window"), wrap = p.flag("--wrap-around")
+            _ = p.flag("--fail-if-noop")
+            return .moveNodeToMonitor(try p.monitorTarget(), focusFollows: follows, wrapAround: wrap, window: window)
+        case "move-workspace-to-monitor":
+            let workspace = try p.value("--workspace"), wrap = p.flag("--wrap-around")
+            return .moveWorkspaceToMonitor(try p.monitorTarget(), wrapAround: wrap, workspace: workspace)
+        case "focus-back-and-forth":
+            return .focusBackAndForth
+        case "close":
+            let quit = p.flag("--quit-if-last-window")
+            return .close(quitIfLastWindow: quit, window: try p.windowFlag())
+        case "close-all-windows-but-current":
+            return .closeAllWindowsButCurrent(quitIfLastWindow: p.flag("--quit-if-last-window"))
+        case "move-mouse":
+            let noop = p.flag("--fail-if-noop")
+            guard let position = MousePosition(rawValue: try p.positional("<mouse-position>")) else {
+                throw p.fail("(monitor-lazy-center|monitor-force-center|window-lazy-center|window-force-center)")
+            }
+            return .moveMouse(position, failIfNoop: noop)
+        case "mode":
+            return .mode(try p.positional("<binding-mode>"))
+        case "trigger-binding":
+            guard let mode = try p.value("--mode") else { throw p.fail("--mode <mode-id> <binding>") }
+            return .triggerBinding(try p.positional("<binding>"), mode: mode)
+        case "volume":
+            _ = p.flag("--no-gui")
+            switch try p.positional("(up|down|mute-toggle|mute-on|mute-off|set <number>)") {
+            case "up": return .volume(.up)
+            case "down": return .volume(.down)
+            case "mute-toggle": return .volume(.muteToggle)
+            case "mute-on": return .volume(.muteOn)
+            case "mute-off": return .volume(.muteOff)
+            case "set":
+                guard let level = Int(try p.positional("<number>")), (0...100).contains(level) else { throw p.fail("set <0-100>") }
+                return .volume(.set(level))
+            default: throw p.fail("(up|down|mute-toggle|mute-on|mute-off|set <number>)")
+            }
         case "exec-and-forget":
-            let command = text.drop { !$0.isWhitespace }.drop { $0.isWhitespace }
-            guard !command.isEmpty else { throw fail("exec-and-forget <shell command>") }
-            self = .exec(String(command))
-        case "reload-config": self = .reloadConfig
-        case "enable": self = .enable(try onOff())
-        default: throw InvalidConfig(message: "'\(text)': unknown window manager command '\(name)'")
+            let command = try p.rest().joined(separator: " ")
+            guard !command.isEmpty else { throw p.fail("<bash-script>") }
+            return .exec(command)
+        case "reload-config":
+            _ = p.flag("--no-gui")
+            _ = p.flag("--dry-run")
+            return .reloadConfig
+        case "enable":
+            let noop = p.flag("--fail-if-noop")
+            return .enable(try p.onOff(), failIfNoop: noop)
+        case "list-windows", "list-workspaces", "list-monitors", "list-apps", "list-modes":
+            return .list(try p.listQuery(ListQuery.Kind(rawValue: name)!))
+        case "test", "test-not":
+            let lhs = try p.positional("<lhs> (=|~=) <rhs>")
+            guard let op = TestOperator(rawValue: try p.positional("<lhs> (=|~=) <rhs>")) else { throw p.fail("<lhs> (=|~=) <rhs>") }
+            return .test(lhs, op, try p.positional("<lhs> (=|~=) <rhs>"), negate: name == "test-not")
+        case "true": return .result(true)
+        case "false": return .result(false)
+        case "echo": return .echo(try p.rest().joined(separator: " "))
+        default:
+            throw InvalidConfig(message: "unknown command '\(name)'")
         }
+    }
+}
+
+/// Arguments of one command: flags can appear anywhere, positionals in order.
+private struct ArgParser {
+    let name: String
+    var args: [String]
+
+    func fail(_ usage: String) -> InvalidConfig {
+        InvalidConfig(message: "\(name): usage: \(name) \(usage)")
+    }
+
+    mutating func flag(_ flag: String) -> Bool {
+        guard let index = args.firstIndex(of: flag) else { return false }
+        args.remove(at: index)
+        return true
+    }
+
+    mutating func value(_ flag: String) throws(InvalidConfig) -> String? {
+        guard let index = args.firstIndex(of: flag) else { return nil }
+        guard index + 1 < args.count else { throw InvalidConfig(message: "\(name): \(flag) needs a value") }
+        let value = args[index + 1]
+        args.removeSubrange(index...index + 1)
+        return value
+    }
+
+    mutating func positional(_ usage: String) throws(InvalidConfig) -> String {
+        _ = flag("--")
+        guard let first = args.first(where: { !$0.hasPrefix("--") }), let index = args.firstIndex(of: first) else { throw fail(usage) }
+        args.remove(at: index)
+        return first
+    }
+
+    mutating func rest() throws(InvalidConfig) -> [String] {
+        _ = flag("--")
+        defer { args = [] }
+        return args
+    }
+
+    func finish() throws(InvalidConfig) {
+        if let extra = args.first { throw InvalidConfig(message: "\(name): unexpected argument '\(extra)'") }
+    }
+
+    func direction(_ word: String) throws(InvalidConfig) -> Direction {
+        guard let direction = Direction(rawValue: word) else { throw fail("(left|down|up|right)") }
+        return direction
+    }
+
+    func windowID(_ text: String) throws(InvalidConfig) -> WindowID {
+        guard let id = WindowID(text) else { throw InvalidConfig(message: "\(name): '\(text)' isn't a window id") }
+        return id
+    }
+
+    mutating func windowFlag() throws(InvalidConfig) -> WindowID? {
+        try value("--window-id").map { text throws(InvalidConfig) in try windowID(text) }
+    }
+
+    mutating func onOff() throws(InvalidConfig) -> Bool? {
+        guard let word = args.first(where: { !$0.hasPrefix("--") }) else { return nil }
+        args.removeAll { $0 == word }
+        switch word {
+        case "on": return true
+        case "off": return false
+        case "toggle": return nil
+        default: throw fail("[on|off|toggle]")
+        }
+    }
+
+    mutating func boundaries(defaultAction: WMCommand.Boundaries.Action) throws(InvalidConfig) -> WMCommand.Boundaries {
+        var boundaries = WMCommand.Boundaries(action: defaultAction)
+        if let scope = try value("--boundaries") {
+            guard let parsed = WMCommand.Boundaries.Scope(rawValue: scope) else { throw fail("--boundaries (workspace|all-monitors-outer-frame)") }
+            boundaries.scope = parsed
+        }
+        if let action = try value("--boundaries-action") {
+            guard let parsed = WMCommand.Boundaries.Action(rawValue: action) else {
+                throw fail("--boundaries-action (stop|fail|wrap-around-the-workspace|wrap-around-all-monitors|create-implicit-container)")
+            }
+            boundaries.action = parsed
+        }
+        boundaries.failIfFullscreen = flag("--fail-if-fullscreen")
+        return boundaries
+    }
+
+    mutating func workspaceTarget() throws(InvalidConfig) -> WMCommand.WorkspaceTarget {
+        switch try positional("(<workspace-name>|next|prev)") {
+        case "next": .next
+        case "prev": .prev
+        case let name: .named(name)
+        }
+    }
+
+    mutating func monitorTarget() throws(InvalidConfig) -> WMCommand.MonitorTarget {
+        let words = try rest()
+        guard let first = words.first else { throw fail("(left|down|up|right|next|prev|<monitor-pattern>...)") }
+        if words.count == 1, let direction = Direction(rawValue: first) { return .direction(direction) }
+        if words == ["next"] { return .next }
+        if words == ["prev"] { return .prev }
+        return .patterns(words)
+    }
+
+    mutating func listQuery(_ kind: WMCommand.ListQuery.Kind) throws(InvalidConfig) -> WMCommand.ListQuery {
+        var query = WMCommand.ListQuery(kind: kind)
+        query.format = try value("--format")
+        query.count = flag("--count")
+        query.json = flag("--json")
+        var current: String?
+        for word in try rest() {
+            if word.hasPrefix("--") {
+                current = word
+                query.filters[word, default: []] = []
+            } else if let flag = current {
+                query.filters[flag, default: []].append(word)
+            } else {
+                throw InvalidConfig(message: "\(name): unexpected argument '\(word)'")
+            }
+        }
+        return query
     }
 }

@@ -28,9 +28,12 @@ public final class InputTap: @unchecked Sendable {
     private let snapshot = Mutex(Snapshot(InputPlan().tables(forApp: nil), 0))
     private let perform: @Sendable (Output) -> Void
     private let capsLock: CapsLockState
-    /// Also tap plain mouse moves (for gestures on Logitech controls). Off otherwise: moves
-    /// are the most frequent event and the tap shouldn't see them for nothing.
+    /// Also tap plain mouse moves (gestures on Logitech controls, focus-follows-mouse).
+    /// Off otherwise: moves are the most frequent event and the tap shouldn't see them for nothing.
     private let moveEvents: Bool
+    /// Pointer position for focus-follows-mouse, at most every 30 ms.
+    private let mouseMoved: (@Sendable (CGPoint) -> Void)?
+    private var lastMouseReport: UInt64 = 0
 
     // Input thread only.
     private var keys = KeyEngine()
@@ -43,9 +46,11 @@ public final class InputTap: @unchecked Sendable {
 
     /// - Parameter perform: runs `.shell`, `.wm` and `.app` outputs; called on the input
     ///   thread, must not block.
-    init(capsLock: CapsLockState, moveEvents: Bool, perform: @escaping @Sendable (Output) -> Void) {
+    init(capsLock: CapsLockState, moveEvents: Bool, mouseMoved: (@Sendable (CGPoint) -> Void)? = nil,
+         perform: @escaping @Sendable (Output) -> Void) {
         self.capsLock = capsLock
         self.moveEvents = moveEvents
+        self.mouseMoved = mouseMoved
         self.perform = perform
     }
 
@@ -253,6 +258,13 @@ public final class InputTap: @unchecked Sendable {
                 event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button))
             } else {
                 event.type = .mouseMoved
+            }
+        }
+        if let mouseMoved {
+            let now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+            if now &- lastMouseReport > 30_000_000 {
+                lastMouseReport = now
+                mouseMoved(event.location)
             }
         }
         let dx = Double(event.getIntegerValueField(.mouseEventDeltaX))

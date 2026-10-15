@@ -23,6 +23,10 @@ public final class InputService {
     private var frontmostApp = NSWorkspace.shared.frontmostApplication
     private var appObserver: (any NSObjectProtocol)?
     private let onWMCommand: @MainActor @Sendable (String) -> Void
+    /// The window manager's binding mode: which hotkey table the tap uses.
+    private var mode = "main"
+    /// Pointer moves for focus-follows-mouse; nil when nobody needs them.
+    private var trackMouse: (@MainActor @Sendable (CGPoint) -> Void)?
 
     public private(set) var tapState = TapState.off
     public var mappedKeyboards: Int { mapper.mappedKeyboards }
@@ -40,11 +44,14 @@ public final class InputService {
         }
     }
 
-    public func apply(_ plan: InputPlan, accessibilityGranted: Bool) {
-        let restartTap = plan.mouse.needsMoveEvents != self.plan.mouse.needsMoveEvents
+    /// - Parameter trackMouse: gets pointer moves (throttled), for focus-follows-mouse.
+    public func apply(_ plan: InputPlan, accessibilityGranted: Bool,
+                      trackMouse: (@MainActor @Sendable (CGPoint) -> Void)? = nil) {
+        let restartTap = needsMoves(plan, trackMouse) != needsMoves(self.plan, self.trackMouse)
         self.plan = plan
+        self.trackMouse = trackMouse
         if restartTap { stopTap() } // the event mask changes
-        if plan.needsEventTap, accessibilityGranted {
+        if plan.needsEventTap || trackMouse != nil, accessibilityGranted {
             startTap()
         } else {
             stopTap()
@@ -66,6 +73,16 @@ public final class InputService {
         // Remapped Caps Lock: turn off a caps lock that was on before, LED included.
         if running, plan.keyboard.capsLock != nil { capsLock.set(false) }
         pushTables()
+    }
+
+    /// The window manager switched binding mode.
+    public func setMode(_ mode: String) {
+        self.mode = mode
+        pushTables()
+    }
+
+    private func needsMoves(_ plan: InputPlan, _ track: ((CGPoint) -> Void)?) -> Bool {
+        plan.mouse.needsMoveEvents || track != nil
     }
 
     /// Performs an output now, as if a mapped input fired (`hsctl do`). False if it needs
@@ -99,7 +116,11 @@ public final class InputService {
 
     private func startTap() {
         guard tap == nil else { return }
-        let tap = InputTap(capsLock: capsLock, moveEvents: plan.mouse.needsMoveEvents) { [weak self] output in
+        var mouseMoved: (@Sendable (CGPoint) -> Void)?
+        if let track = trackMouse {
+            mouseMoved = { point in Task { @MainActor in track(point) } }
+        }
+        let tap = InputTap(capsLock: capsLock, moveEvents: needsMoves(plan, trackMouse), mouseMoved: mouseMoved) { [weak self] output in
             Task { @MainActor in self?.perform(output) }
         }
         if tap.start() {
@@ -122,7 +143,7 @@ public final class InputService {
     }
 
     private func pushTables() {
-        tap?.update(plan.tables(forApp: frontmostApp?.bundleIdentifier),
+        tap?.update(plan.tables(forApp: frontmostApp?.bundleIdentifier, mode: mode),
                     frontmostPID: frontmostApp?.processIdentifier ?? 0)
     }
 }

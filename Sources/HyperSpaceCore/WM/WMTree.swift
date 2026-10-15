@@ -20,6 +20,15 @@ public enum Direction: String, Sendable, CaseIterable {
     case left, right, up, down
 
     public var orientation: Orientation { self == .left || self == .right ? .horizontal : .vertical }
+    public var opposite: Direction {
+        switch self {
+        case .left: .right
+        case .right: .left
+        case .up: .down
+        case .down: .up
+        }
+    }
+
     /// -1 towards the start of a container, +1 towards the end.
     public var offset: Int { self == .left || self == .up ? -1 : 1 }
 }
@@ -57,6 +66,18 @@ public final class WMNode {
 
     public var isContainer: Bool { window == nil }
     public var index: Int? { parent?.children.firstIndex { $0 === self } }
+
+    /// Swaps two nodes' places in the tree, weights included.
+    public static func swap(_ a: WMNode, _ b: WMNode) {
+        guard let pa = a.parent, let ia = a.index, let pb = b.parent, let ib = b.index, a !== b else { return }
+        let (wa, wb) = (a.weight, b.weight)
+        pa.children[ia] = b
+        pb.children[ib] = a
+        a.parent = pb
+        b.parent = pa
+        a.weight = wb
+        b.weight = wa
+    }
 
     /// Inserts `node` at `index` (end if nil), taking it from its current parent. The new
     /// child gets the average weight of its siblings, so it takes an even share.
@@ -100,16 +121,18 @@ public final class WMNode {
         return nil
     }
 
-    /// Removes empty containers, lifts single children into their parent and makes nested
-    /// containers alternate orientation. Call on the root after every change.
-    public func normalize() {
-        clean()
-        alternate()
+    /// Removes empty containers and, with AeroSpace's normalizations (both on by default),
+    /// lifts single children into their parent and makes nested containers alternate
+    /// orientation. Call on the root after every change.
+    public func normalize(flatten: Bool = true, opposite: Bool = true) {
+        clean(flatten: flatten)
+        if opposite { alternate() }
     }
 
-    private func clean() {
-        for child in children where child.isContainer { child.clean() }
+    private func clean(flatten: Bool) {
+        for child in children where child.isContainer { child.clean(flatten: flatten) }
         for child in children where child.isContainer && child.children.isEmpty { child.removeFromParent() }
+        guard flatten else { return }
         // A container with one child is replaced by that child.
         for child in children where child.isContainer && child.children.count == 1 {
             let only = child.children[0], weight = child.weight, wasRecent = recent === child, index = child.index!

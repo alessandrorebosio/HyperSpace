@@ -142,6 +142,8 @@ public struct OutputTable: Sendable, Equatable {
 /// A config value that can't be applied. `ConfigLoader` adds the file path.
 public struct InvalidConfig: Error, Equatable {
     public let message: String
+
+    public init(message: String) { self.message = message }
 }
 
 /// Validation helpers shared by the keyboard and mouse plans.
