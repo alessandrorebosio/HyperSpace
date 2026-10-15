@@ -190,6 +190,42 @@ struct WMTests {
         #expect(m.focusedMonitor == 2, "a workspace shown elsewhere: go to its monitor")
     }
 
+    @Test func displaysLeavingAndComingBack() throws {
+        let main = WMMonitor(id: 1, name: "Built-in", isMain: true, frame: WMTests.screen.frame, visible: WMTests.screen.visible)
+        let dell = WMMonitor(id: 2, name: "DELL", frame: CGRect(x: 1000, y: 0, width: 800, height: 600),
+                             visible: CGRect(x: 1000, y: 0, width: 800, height: 600))
+        let m = WMModel(monitors: [main, dell])
+        m.add(WMWindowInfo(id: 1, floating: false), monitor: 1)
+        m.add(WMWindowInfo(id: 2, floating: false), monitor: 2)
+        m.nativeFocus(2)
+        m.setMonitors([main])
+        #expect(m.visible == [1: "1"])
+        #expect(m.layout().hidden[2] == 1, "parked on a display that is there")
+        #expect(m.focused == 1, "focus follows what is still shown")
+        m.setMonitors([main, dell])
+        #expect(m.visible == [1: "1", 2: "2"], "the display shows its workspace again")
+        // Back from sleep under another id: still the same display.
+        let renamed = WMMonitor(id: 7, name: "DELL", frame: dell.frame, visible: dell.visible)
+        m.setMonitors([main, renamed])
+        #expect(m.visible == [1: "1", 7: "2"])
+        #expect(m.layout().tiled[2] != nil)
+    }
+
+    @Test func forcedWorkspacesMoveToTheirDisplay() throws {
+        let main = WMMonitor(id: 1, name: "Built-in", isMain: true, frame: WMTests.screen.frame, visible: WMTests.screen.visible)
+        let dell = WMMonitor(id: 2, name: "DELL", frame: CGRect(x: 1000, y: 0, width: 800, height: 600),
+                             visible: CGRect(x: 1000, y: 0, width: 800, height: 600))
+        var config = WMConfig()
+        config.workspaceToMonitorForceAssignment = ["Develop": ["dell"]]
+        let m = WMModel(monitors: [main], settings: try WMSettings(config))
+        m.add(WMWindowInfo(id: 1, floating: false))
+        try run(m, "move-node-to-workspace Develop --focus-follows-window")
+        #expect(m.visible == [1: "Develop"], "its display isn't there: shown on main")
+        m.setMonitors([main, dell])
+        #expect(m.visible[2] == "Develop" && m.visible[1] != "Develop")
+        #expect(m.layout().tiled[1]?.minX == 1000)
+    }
+
     @Test func commandsParseLikeAeroSpace() throws {
         #expect(try WMCommand(parsing: "move-node-to-workspace 3 --focus-follows-window")
             == .moveNodeToWorkspace(.named("3"), focusFollows: true, wrapAround: false, window: nil, failIfNoop: false))
