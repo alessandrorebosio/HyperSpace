@@ -161,4 +161,48 @@ struct WindowManagerTests {
         #expect(app.frames[1] == tile)
         _ = wm
     }
+
+    @Test func missedWindowsAreCaughtOnFocus() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        // A window appears and another closes without their events.
+        app.miss(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
+        app.frames[2] = nil
+        app.send(.focusChanged)
+        #expect(Set([app.frames[1], app.frames[3]]) == [Self.left, Self.right])
+        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "2")
+    }
+
+    @Test func lostFramesAreSetAgain() async throws {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        app.dropNextFrame = [1]
+        app.create(2, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
+        #expect(app.frames[1] == Self.full, "the busy app missed its new frame")
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(Set([app.frames[1], app.frames[2]]) == [Self.left, Self.right])
+        _ = wm
+    }
+
+    @Test func menuBarShowsEveryDisplaysWorkspace() {
+        // An external display left of the main one: the main display still comes first.
+        let external = WMMonitor(id: 2, name: "DELL", frame: CGRect(x: -800, y: 0, width: 800, height: 600),
+                                 visible: CGRect(x: -800, y: 0, width: 800, height: 600))
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2, CGRect(x: -700, y: 100, width: 300, height: 200))])
+        app.focused = 2
+        let system = FakeSystem(screens: [external, Self.main], apps: [app])
+        var changes = 0
+        let wm = WindowManager(handlers: .init(reloadConfig: {}, enable: { _ in }, modeChanged: { _ in }, mediaKey: { _ in },
+                                               changed: { changes += 1 }), system: system)
+        wm.start(WMSettings())
+        defer { wm.stop() }
+        let shown = wm.shownWorkspaces
+        #expect(shown.count == 2)
+        #expect(shown.map(\.focused) == [false, true], "the focused window is on the external display, second")
+        let before = changes
+        #expect(wm.run("focus-monitor right") == nil)
+        #expect(wm.shownWorkspaces.map(\.focused) == [true, false])
+        #expect(changes == before + 1)
+        #expect(wm.run("focus-monitor right") != nil || changes == before + 1, "nothing changed, nothing redrawn")
+    }
 }

@@ -135,7 +135,7 @@ extension WindowManager {
         let workspace = model.focusedWorkspace.name
         if model.focused != before.window || workspace != before.workspace { focusNative() }
         focusChanged(since: before)
-        if workspace != before.workspace { handlers.changed() }
+        announce()
     }
 
     func focusChanged(since before: FocusState) {

@@ -57,6 +57,11 @@ public final class WindowManager {
     var targets: [WindowID: CGRect] = [:]
     /// When we last set each window's frame: its own move notifications follow shortly.
     var setAt: [WindowID: ContinuousClock.Instant] = [:]
+    /// Windows whose new frame is checked against the window server shortly after it's set,
+    /// and the ones already set a second time for their current target.
+    var unverified: Set<WindowID> = []
+    var resent: Set<WindowID> = []
+    var verifying: Task<Void, Never>?
     /// Windows parked off-screen, with the frame to give back to floating ones.
     var parked: [WindowID: CGRect] = [:]
     var snapChecks: [WindowID: Task<Void, Never>] = [:]
@@ -88,6 +93,27 @@ public final class WindowManager {
 
     public var focusedWorkspace: String? { model?.focusedWorkspace.name }
 
+    /// The workspace each display shows, the main display first and the others left to
+    /// right, and which one is focused: what the menu bar shows.
+    public var shownWorkspaces: [(name: String, focused: Bool)] {
+        guard let model else { return [] }
+        let focused = model.focusedWorkspace.name
+        // `model.monitors` is already left to right; a stable sort brings the main one first.
+        return (model.monitors.filter(\.isMain) + model.monitors.filter { !$0.isMain })
+            .compactMap { model.visible[$0.id] }.map { ($0, $0 == focused) }
+    }
+
+    /// What `changed` last reported, so it's called only when the menu bar would change.
+    private var announced: [String] = []
+
+    /// Tells the menu bar if the focused workspace or any display's workspace changed.
+    func announce() {
+        let shown = shownWorkspaces.map { ($0.focused ? "*" : "") + $0.name }
+        guard shown != announced else { return }
+        announced = shown
+        handlers.changed()
+    }
+
     // MARK: - Lifecycle
 
     public func start(_ settings: WMSettings) {
@@ -106,7 +132,7 @@ public final class WindowManager {
         for pid in startingApps { watch(pid) }
         if startingApps.isEmpty { startedUp() }
         log.info("window manager started")
-        handlers.changed()
+        announce()
     }
 
     /// Gives every window back: parked ones return on screen, nothing stays managed.
@@ -123,6 +149,10 @@ public final class WindowManager {
         frames = [:]
         targets = [:]
         setAt = [:]
+        verifying?.cancel()
+        verifying = nil
+        unverified = []
+        resent = []
         parked = [:]
         tabs = [:]
         shownTab = [:]
@@ -132,6 +162,7 @@ public final class WindowManager {
         model = nil
         setMode("main")
         log.info("window manager stopped")
+        announced = []
         handlers.changed()
     }
 
@@ -152,6 +183,8 @@ public final class WindowManager {
             frames[id] = frame
             targets[id] = frame
             setAt[id] = now
+            resent.remove(id)
+            unverified.insert(id)
             batches[app.pid, default: (app, [])].1.append((id, frame, old))
         }
         // Show first, then hide: less flicker when switching workspaces.
@@ -189,6 +222,37 @@ public final class WindowManager {
             set(tab, target)
         }
         for (_, (app, changes)) in batches { app.setFrames(changes) }
+        if !batches.isEmpty { verifyFrames() }
+    }
+
+    /// A frame can be lost: the app was busy past the AX timeout, our idea of where the
+    /// window was is stale (only what differs is set), or macOS clamped it mid-move. Shortly
+    /// after, the window server (no IPC) says where windows are; ones off their target get
+    /// their whole frame once more, then whatever they took is accepted (a minimum size).
+    private func verifyFrames() {
+        guard verifying == nil else { return }
+        verifying = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, !Task.isCancelled else { return }
+            self.verifying = nil
+            let ids = Array(self.unverified)
+            self.unverified = []
+            let server = self.system.windowServer(ids)
+            var batches: [pid_t: (WindowApp, [(window: WindowID, frame: CGRect, old: CGRect?)])] = [:]
+            for id in ids {
+                guard let target = self.targets[id], let bounds = server[id]?.bounds, !bounds.isClose(to: target),
+                      let app = self.records[id]?.app else { continue }
+                if self.resent.insert(id).inserted {
+                    self.setAt[id] = .now
+                    self.unverified.insert(id)
+                    batches[app.pid, default: (app, [])].1.append((id, target, nil))
+                } else {
+                    self.frames[id] = bounds
+                }
+            }
+            for (_, (app, changes)) in batches { app.setFrames(changes) }
+            if !batches.isEmpty { self.verifyFrames() }
+        }
     }
 
     /// Raises and focuses the model's focused window, as macOS would on a click.

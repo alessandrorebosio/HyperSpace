@@ -23,6 +23,9 @@ final class AXApp: WindowApp, @unchecked Sendable {
     private var observer: AXObserver?
     private var elements: [WindowID: AXUIElement] = [:]
     private var stopped = false
+    /// The app's own notifications are on, and its windows were first read.
+    private var subscribed = false
+    private var started = false
     /// Main thread only.
     nonisolated(unsafe) private var events: (@MainActor (WindowEvent) -> Void)?
 
@@ -44,26 +47,50 @@ final class AXApp: WindowApp, @unchecked Sendable {
     }
 
     /// An app that just launched may not answer Accessibility yet: subscribing is tried
-    /// again, without blocking the queue, for up to a second.
+    /// again, without blocking the queue, for up to a second. Past that the windows are
+    /// read anyway (startup waits for every app) and `windows(_:)` tries again later.
     private func subscribe(attempt: Int, _ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
         guard !stopped else { return }
-        var observer: AXObserver?
-        guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else {
-            onMain { completion([]) } // startup still counts it
-            return
-        }
-        let subscribed = [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification].allSatisfy { notification in
-            [.success, .notificationAlreadyRegistered].contains(AXObserverAddNotification(observer, element, notification as CFString, nil))
-        }
-        if !subscribed, attempt < 10 {
+        if !subscribeApp(), attempt < 10 {
             queue.asyncAfter(deadline: .now() + .milliseconds(100)) { [self] in subscribe(attempt: attempt + 1, completion) }
             return
         }
-        self.observer = observer
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        started = true
         let windows: [AXUIElement] = AX.value(element, kAXWindowsAttribute) ?? []
         let records = windows.compactMap { record($0) }
         onMain { completion(records) }
+    }
+
+    /// Creates the observer and subscribes to the app's own notifications. App queue only.
+    private func subscribeApp() -> Bool {
+        if subscribed { return true }
+        if observer == nil {
+            var observer: AXObserver?
+            guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else { return false }
+            self.observer = observer
+            // Common modes: notifications keep coming while a menu is open or a drag tracks.
+            CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+        }
+        guard let observer else { return false }
+        subscribed = [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification].allSatisfy { notification in
+            [.success, .notificationAlreadyRegistered].contains(AXObserverAddNotification(observer, element, notification as CFString, nil))
+        }
+        return subscribed
+    }
+
+    /// Windows the app has that weren't reported yet: notifications can be missed (an app
+    /// slow to subscribe, a window not ready when it was created, one minimized at startup
+    /// and brought back). Known windows cost one call each; subscribing is tried again.
+    func windows(_ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
+        queue.async { [self] in
+            guard started, !stopped else { return }
+            _ = subscribeApp()
+            let windows: [AXUIElement] = AX.value(element, kAXWindowsAttribute) ?? []
+            let records = windows.compactMap { window in
+                AX.windowID(window).map { elements[$0] != nil } == true ? nil : record(window)
+            }
+            onMain { completion(records) }
+        }
     }
 
     func stop() {
@@ -71,7 +98,7 @@ final class AXApp: WindowApp, @unchecked Sendable {
         MainActor.assumeIsolated { if AXApp.live[pid] === self { AXApp.live[pid] = nil } }
         queue.async { [self] in
             stopped = true
-            if let observer { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode) }
+            if let observer { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes) }
             observer = nil
         }
     }
@@ -102,12 +129,7 @@ final class AXApp: WindowApp, @unchecked Sendable {
         switch notification {
         case kAXWindowCreatedNotification:
             nonisolated(unsafe) let element = element
-            queue.async { [self] in
-                // The read is answered on the app's main thread, so by the time it returns the
-                // app is done creating the window (and a new tab has hidden the previous one).
-                guard let record = record(element) else { return }
-                onMain { [weak self] in self?.events?(.created(record)) }
-            }
+            queue.async { [self] in created(element, attempt: 0) }
         case kAXFocusedWindowChangedNotification:
             events(.focusChanged)
         case kAXUIElementDestroyedNotification where id != 0:
@@ -127,6 +149,20 @@ final class AXApp: WindowApp, @unchecked Sendable {
         default:
             break
         }
+    }
+
+    /// The read is answered on the app's main thread, so by the time it returns the app is
+    /// done creating the window (and a new tab has hidden the previous one). Some apps
+    /// announce a window before it has its role or id: it's read again a few times.
+    private func created(_ element: AXUIElement, attempt: Int) {
+        guard !stopped else { return }
+        guard let record = record(element) else {
+            guard attempt < 3, AX.string(element, kAXRoleAttribute) != kAXMenuRole else { return }
+            nonisolated(unsafe) let element = element
+            queue.asyncAfter(deadline: .now() + .milliseconds(150)) { [self] in created(element, attempt: attempt + 1) }
+            return
+        }
+        onMain { [weak self] in self?.events?(.created(record)) }
     }
 
     // MARK: - Driving windows

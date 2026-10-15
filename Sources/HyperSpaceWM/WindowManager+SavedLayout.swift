@@ -15,7 +15,7 @@ extension WindowManager {
         savedLayout = nil
         model.restore(saved, map: saved.match(records.mapValues { identity($0.app, $0.record) }))
         apply()
-        handlers.changed()
+        announce()
     }
 
     /// Written once, when the window manager stops (quit, `kill`, disable).

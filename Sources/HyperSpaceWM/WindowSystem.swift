@@ -31,6 +31,8 @@ protocol WindowApp: AnyObject, Sendable {
     /// Starts reporting `events` and reads the windows the app already has.
     func start(events: @escaping @MainActor (WindowEvent) -> Void, _ completion: @escaping @MainActor ([WindowRecord]) -> Void)
     func stop()
+    /// Windows the app has that it hasn't reported (their events were missed), read now.
+    func windows(_ completion: @escaping @MainActor ([WindowRecord]) -> Void)
     /// The focused window, or the main one for apps that don't report focus.
     func focusedWindow(_ completion: @escaping @MainActor (WindowID?) -> Void)
     func frame(of window: WindowID, _ completion: @escaping @MainActor (CGRect?) -> Void)
