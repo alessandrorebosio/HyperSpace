@@ -11,7 +11,13 @@ Keyboard remapping (Caps Lock and other layers, dual-role keys, double taps, per
 
 ## Install
 
-Download `HyperSpace-<version>.zip` from [Releases](https://github.com/alessandrorebosio/HyperSpace/releases), unzip it and move `HyperSpace.app` to `/Applications`.
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask alessandrorebosio/tap/hyperspace
+```
+
+`hsctl` is linked onto the PATH. Or download `HyperSpace-<version>.zip` from [Releases](https://github.com/alessandrorebosio/HyperSpace/releases), unzip it and move `HyperSpace.app` to `/Applications`.
 
 The app is signed with a self-signed identity, not notarized: the first time, macOS blocks it. Allow it in System Settings → Privacy & Security ("Open Anyway"), or run:
 
@@ -19,7 +25,7 @@ The app is signed with a self-signed identity, not notarized: the first time, ma
 xattr -dr com.apple.quarantine /Applications/HyperSpace.app
 ```
 
-Then grant Accessibility when asked (System Settings → Privacy & Security → Accessibility). To use `hsctl` from the terminal:
+Then grant Accessibility when asked (System Settings → Privacy & Security → Accessibility). To use `hsctl` from the terminal without Homebrew:
 
 ```sh
 ln -s /Applications/HyperSpace.app/Contents/MacOS/hsctl /opt/homebrew/bin/hsctl
