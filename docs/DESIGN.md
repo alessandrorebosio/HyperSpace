@@ -307,16 +307,17 @@ swipe = ["com.example."]
 buttons = ["com.apple.Xcode"]
 
 # ── wm.toml ──────────────────────────────────────────────
-# AeroSpace's format, key for key: an ~/.aerospace.toml works unchanged.
-# Supported: config-version, after-startup-command, start-at-login, auto-reload-config,
-# normalizations, accordion-padding, default-root-container-*, on-focus-changed,
-# on-focused-monitor-changed, on-mode-changed, exec-on-workspace-change, exec.*,
-# automatically-unhide-macos-hidden-apps, persistent-workspaces, focus-follows-mouse,
-# key-mapping (presets and notation), gaps (per side, per monitor),
+# AeroSpace's keys for windows only; app-level options (config-version, start-at-login,
+# auto-reload-config, normalization toggles, key-mapping, exec.*, after-startup-command)
+# aren't accepted: HyperSpace handles those itself (menu, always-on reload, qwerty notation).
+# Supported: accordion-padding, default-root-container-*, on-focus-changed,
+# on-focused-monitor-changed, on-mode-changed, exec-on-workspace-change,
+# automatically-unhide-macos-hidden-apps, persistent-workspaces (omitted = workspaces named
+# in bindings), focus-follows-mouse, gaps (per side, per monitor),
 # workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected
-# (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except
+# (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except split,
 # subscribe, config and debug-windows; shell syntax ; && || ( ) without pipes.
-config-version = 2
+# The menu bar shows the focused workspace, preceded by the mode's initial outside main.
 persistent-workspaces = ['1', '2', 'Develop']
 gaps.inner.horizontal = 5
 gaps.outer.top = [{ monitor.main = 16 }, 24]

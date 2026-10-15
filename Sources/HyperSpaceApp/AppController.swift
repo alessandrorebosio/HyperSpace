@@ -43,7 +43,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         wm = WindowManager(handlers: .init(
             reloadConfig: { [weak self] in self?.reloadConfig() },
             enable: { [weak self] on in self?.setEnabled(on ?? !(self?.isEnabled ?? true)) },
-            modeChanged: { [weak self] mode in self?.input.setMode(mode) },
+            modeChanged: { [weak self] mode in
+                self?.input.setMode(mode)
+                self?.menu?.refresh()
+            },
             mediaKey: { [weak self] key in _ = self?.input.run(.system(key)) },
             changed: { [weak self] in self?.menu?.refresh() }
         ))
@@ -52,7 +55,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         reloadConfig()
 
         let files = ConfigFile.allCases.map { ConfigLoader.url($0, in: configDirectory) }
-        watcher = ConfigWatcher(directory: configDirectory, files: files) { [weak self] in self?.reloadConfig(automatic: true) }
+        watcher = ConfigWatcher(directory: configDirectory, files: files) { [weak self] in self?.reloadConfig() }
         watcher?.start()
 
         let server = IPCServer { [weak self] request in
@@ -99,7 +102,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         let runWM = isEnabled && accessibility.isGranted && settings != nil
         if runWM, let settings {
             wm.start(settings)
-            if let login = settings.startAtLogin, login != LoginItem.isEnabled, LoginItem.isAvailable { LoginItem.toggle() }
         } else {
             wm.stop()
         }
@@ -123,14 +125,8 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Reloads every config file; broken files keep their last good settings.
     @discardableResult
-    /// - Parameter automatic: a save in the editor, as opposed to `reload-config` or the menu.
-    ///   wm.toml's `auto-reload-config = false` keeps its last loaded settings on saves.
-    func reloadConfig(automatic: Bool = false) -> [ConfigError] {
-        var (new, errors) = ConfigLoader.load(from: configDirectory, previous: config)
-        if automatic, !config.wm.isEmpty, !config.wm.autoReloadConfig {
-            new.wm = config.wm
-            errors.removeAll { $0.path.hasSuffix(ConfigFile.wm.fileName) }
-        }
+    func reloadConfig() -> [ConfigError] {
+        let (new, errors) = ConfigLoader.load(from: configDirectory, previous: config)
         configErrors = errors
         for error in errors { log.error("config error: \(error.description)") }
         config = new

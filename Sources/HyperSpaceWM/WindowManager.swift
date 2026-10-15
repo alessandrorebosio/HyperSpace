@@ -63,8 +63,9 @@ public final class WindowManager {
     private var tabs: [WindowID: WindowID] = [:]
     /// Group window -> the tab currently shown, which is what focusing the group raises.
     private var shownTab: [WindowID: WindowID] = [:]
+    private var tabChecks: [pid_t: Task<Void, Never>] = [:]
 
-    /// Apps still reading their windows at startup: `after-startup-command` runs after.
+    /// Apps still reading their windows at startup (for `if.during-aerospace-startup`).
     private var startingApps = 0
     private var isStartingUp = true
     /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
@@ -94,7 +95,7 @@ public final class WindowManager {
         let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
         startingApps = apps.count
         for app in apps { watch(app) }
-        if apps.isEmpty { finishStartup() }
+        if apps.isEmpty { isStartingUp = false }
         log.info("window manager started")
         handlers.changed()
     }
@@ -301,21 +302,19 @@ public final class WindowManager {
         }
     }
 
-    /// Spawns a process with `exec.env-vars` (Homebrew on the PATH by default).
+    /// HyperSpace's environment with Homebrew on the PATH, built once.
+    private static let environment: [String: String] = {
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:" + (environment["PATH"] ?? "/usr/bin:/bin")
+        return environment
+    }()
+
     private func exec(_ argv: [String], extra: [String: String] = [:]) {
         guard let path = argv.first else { return }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = Array(argv.dropFirst())
-        let inherited = settings.execInheritEnvVars ? ProcessInfo.processInfo.environment : [:]
-        let current = ProcessInfo.processInfo.environment
-        var environment = inherited
-        for (key, value) in settings.execEnvVars {
-            // ${VAR} expands from HyperSpace's environment, like AeroSpace.
-            environment[key] = value.replacing(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/) { current[String($0.1)] ?? "" }
-        }
-        environment.merge(extra) { $1 }
-        process.environment = environment
+        process.environment = Self.environment.merging(extra) { $1 }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -505,26 +504,33 @@ public final class WindowManager {
     private func appStarted() {
         guard isStartingUp else { return }
         startingApps -= 1
-        if startingApps <= 0 { finishStartup() }
-    }
-
-    private func finishStartup() {
-        guard isStartingUp else { return }
-        isStartingUp = false
-        if let script = settings.afterStartup { _ = execute(script, window: nil) }
+        if startingApps <= 0 { isStartingUp = false }
     }
 
     private func handle(_ app: AXApp, _ event: AXApp.Event) {
         switch event {
         case let .windowCreated(element):
             nonisolated(unsafe) let element = element
+            // Managed windows of the same app: a new native tab lands exactly on one of them.
+            nonisolated(unsafe) let groups: [(WindowID, AXUIElement, CGRect)] = records.compactMap { id, entry in
+                guard entry.app.pid == app.pid, tabs[id] == nil, model?.windows[id] != nil,
+                      let frame = targets[id] ?? frames[id] else { return nil }
+                return (id, entry.record.element, frame)
+            }
             app.queue.async { [weak self] in
                 guard let record = app.record(element) else { return }
+                let group = AXApp.tabGroup(of: element, among: groups)
+                let diagnosis = group == nil && !groups.isEmpty
+                    ? "now \(String(describing: AX.frame(element))), tab bar \(AXApp.hasTabBar(element)), same-app " + groups.map { "\($0.0) \($0.2) bar \(AXApp.hasTabBar($0.1))" }.joined(separator: "; ")
+                    : ""
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let self, self.records[record.id] == nil else { return }
-                        self.add(record, of: app, managed: true)
+                        let message = "window \(record.id) of \(app.bundleID ?? "?"): frame \(String(describing: record.frame)), tab of \(group.map(String.init) ?? "none") \(diagnosis)"
+                        self.log.info("\(message, privacy: .public)")
+                        self.add(record, of: app, managed: true, tabOf: group)
                         self.apply()
+                        self.scheduleTabCheck(app.pid)
                     }
                 }
             }
@@ -533,6 +539,7 @@ public final class WindowManager {
             apply()
         case .focusChanged:
             syncFocus(app.pid)
+            scheduleTabCheck(app.pid)
         case let .minimized(id, isMinimized):
             setManaged(id, !isMinimized)
             apply()
@@ -548,17 +555,61 @@ public final class WindowManager {
         }
     }
 
-    private func add(_ record: WindowRecord, of app: AXApp, managed: Bool) {
+    private func add(_ record: WindowRecord, of app: AXApp, managed: Bool, tabOf known: WindowID? = nil) {
         records[record.id] = (app, record)
         frames[record.id] = record.frame
         guard managed else { return }
-        if let group = tabGroup(of: record, app) {
+        if let group = known ?? tabGroup(of: record, app) {
             tabs[record.id] = group
             shownTab[group] = record.id // a new tab is the one shown
             return
         }
         manage(record.id)
         windowDetected(record.id)
+    }
+
+    /// Tabs made in quick succession can slip past the check on creation. macOS shows only
+    /// the selected tab of a group: any managed window of the app that is off screen (and
+    /// not parked by us) while another window of the app sits on its frame is a background
+    /// tab, and joins that window's group. One CGWindowList call, no AX.
+    private func scheduleTabCheck(_ pid: pid_t) {
+        tabChecks[pid]?.cancel()
+        tabChecks[pid] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            self?.tabChecks[pid] = nil
+            self?.checkTabs(pid)
+        }
+    }
+
+    private func checkTabs(_ pid: pid_t) {
+        guard let model else { return }
+        let all = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]) ?? []
+        var windows: [WindowID: (bounds: CGRect, onscreen: Bool)] = [:]
+        for info in all where (info[kCGWindowOwnerPID as String] as? pid_t) == pid {
+            guard let id = info[kCGWindowNumber as String] as? WindowID, records[id] != nil,
+                  let dict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: dict) else { continue }
+            windows[id] = (bounds, info[kCGWindowIsOnscreen as String] as? Bool ?? false)
+        }
+        var changed = false
+        for (id, window) in windows where !window.onscreen && model.windows[id] != nil && parked[id] == nil {
+            guard let shown = windows.first(where: { $0.key != id && $0.value.onscreen && $0.value.bounds.isClose(to: window.bounds) })?.key
+            else { continue }
+            let group = tabs[shown] ?? shown
+            guard group != id, model.windows[group] != nil else {
+                shownTab[id] = shown // our group, showing another of its tabs
+                continue
+            }
+            // A background tab that was tiled as a window: fold it (and its tabs) into the group.
+            model.remove(id)
+            for (tab, owner) in tabs where owner == id { tabs[tab] = group }
+            tabs[id] = group
+            shownTab[group] = shown == group ? nil : shown
+            shownTab[id] = nil
+            changed = true
+        }
+        if changed { apply() }
     }
 
     /// A window with a tab bar sitting exactly on a managed window of the same app is a

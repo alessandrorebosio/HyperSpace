@@ -5,7 +5,6 @@ public indirect enum WMCommand: Sendable, Equatable {
     case move(Direction, Boundaries, window: WindowID?)
     case swap(SwapTarget, swapFocus: Bool, wrapAround: Bool, window: WindowID?)
     case joinWith(Direction, window: WindowID?)
-    case split(SplitKind, window: WindowID?)
     case resize(ResizeTarget, ResizeAmount, window: WindowID?)
     case balanceSizes(workspace: String?)
     case flattenWorkspaceTree(workspace: String?)
@@ -57,7 +56,6 @@ public indirect enum WMCommand: Sendable, Equatable {
     }
 
     public enum SwapTarget: Sendable, Equatable { case direction(Direction), dfsNext, dfsPrev }
-    public enum SplitKind: String, Sendable { case horizontal, vertical, opposite }
     public enum ResizeTarget: String, Sendable { case smart, smartOpposite = "smart-opposite", width, height }
     public enum ResizeAmount: Sendable, Equatable { case add(Double), set(Double) }
 
@@ -145,10 +143,6 @@ extension WMCommand {
         case "join-with":
             let window = try p.windowFlag()
             return .joinWith(try p.direction(try p.positional("(left|down|up|right)")), window: window)
-        case "split":
-            let window = try p.windowFlag()
-            guard let kind = SplitKind(rawValue: try p.positional("(horizontal|vertical|opposite)")) else { throw p.fail("(horizontal|vertical|opposite)") }
-            return .split(kind, window: window)
         case "resize":
             let window = try p.windowFlag()
             guard let target = ResizeTarget(rawValue: try p.positional("(smart|smart-opposite|width|height) [+|-]<number>")) else {

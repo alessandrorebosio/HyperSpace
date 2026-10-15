@@ -208,7 +208,7 @@ public final class WMModel {
         if let explicit, windows[explicit] == nil { throw InvalidConfig(message: "no window with id \(explicit)") }
         subject = explicit ?? focused
         defer {
-            for workspace in workspaces.values { normalize(workspace) }
+            for workspace in workspaces.values { workspace.root.normalize() }
             collectEmptyWorkspaces()
         }
         var effect = WMEffect.none
@@ -218,7 +218,6 @@ public final class WMModel {
         case let .move(direction, boundaries, window: id): ok = try move(id, direction, boundaries)
         case let .swap(target, swapFocus, wrapAround, window: id): ok = try swap(id, target, swapFocus: swapFocus, wrapAround: wrapAround)
         case let .joinWith(direction, window: id): ok = join(try tiledNode(id), direction)
-        case let .split(kind, window: id): ok = try split(try tiledNode(id), kind)
         case let .resize(target, amount, window: id): ok = resize(try tiledNode(id), target, amount)
         case let .balanceSizes(name):
             balance(try workspace(named: name).root)
@@ -509,11 +508,7 @@ public final class WMModel {
         workspace.floating.removeAll { $0 == window }
         workspace.root.find(window)?.removeFromParent()
         if workspace.fullscreen == window { workspace.fullscreen = nil }
-        normalize(workspace)
-    }
-
-    private func normalize(_ workspace: WMWorkspace) {
-        workspace.root.normalize(flatten: settings.flattenContainers, opposite: settings.oppositeOrientationForNestedContainers)
+        workspace.root.normalize()
     }
 
     private func insertTiled(_ window: WindowID, into workspace: WMWorkspace) {
@@ -531,7 +526,7 @@ public final class WMModel {
         } else {
             workspace.root.insert(node)
         }
-        normalize(workspace)
+        workspace.root.normalize()
     }
 
     /// A monitor by direction (from `from`, default the focused one), next/prev, or pattern.
@@ -740,28 +735,6 @@ public final class WMModel {
         return true
     }
 
-    /// i3's `split`, only meaningful with flattening off (as in AeroSpace).
-    private func split(_ node: WMNode, _ kind: WMCommand.SplitKind) throws(InvalidConfig) -> Bool {
-        guard !settings.flattenContainers else {
-            throw InvalidConfig(message: "split works only with enable-normalization-flatten-containers = false")
-        }
-        guard let parent = node.parent, let index = node.index else { return false }
-        let orientation: Orientation = switch kind {
-        case .horizontal: .horizontal
-        case .vertical: .vertical
-        case .opposite: parent.orientation.opposite
-        }
-        if parent.children.count == 1 {
-            parent.orientation = orientation
-            return true
-        }
-        let container = WMNode(orientation: orientation)
-        parent.insert(container, at: index)
-        container.weight = node.weight
-        container.insert(node)
-        return true
-    }
-
     /// Resizes along the axis the target names: the nearest tiles container running along
     /// it (smart: the window's own container; smart-opposite: the first one across it).
     private func resize(_ node: WMNode, _ target: WMCommand.ResizeTarget, _ amount: WMCommand.ResizeAmount) -> Bool {
@@ -849,7 +822,7 @@ public final class WMModel {
             }
             // A nested container now running along its parent's axis is merged into it, which
             // is what the new orientation means and keeps containers alternating.
-            if settings.oppositeOrientationForNestedContainers, let grand = container.parent,
+            if let grand = container.parent,
                grand.orientation == container.orientation, let index = container.index {
                 for (offset, child) in container.children.enumerated() { grand.insert(child, at: index + offset) }
             }

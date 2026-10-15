@@ -20,13 +20,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Updates the icon; the menu content is rebuilt in `menuNeedsUpdate`.
     func refresh() {
         let healthy = controller.accessibility.isGranted && controller.configErrors.isEmpty
-        item.button?.image = healthy || !controller.isEnabled
-            ? MenuBarIcon.image
-            : NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
+        if !healthy && controller.isEnabled {
+            item.button?.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "HyperSpace: needs attention")
+        } else if let wm = controller.wm, let workspace = wm.focusedWorkspace {
+            // Like AeroSpace: the focused workspace, with the mode's initial outside main.
+            item.button?.image = MenuBarIcon.label(workspace: workspace, mode: wm.mode == "main" ? nil : wm.mode)
+        } else {
+            item.button?.image = MenuBarIcon.image
+        }
         item.button?.appearsDisabled = !controller.isEnabled // dimmed while off
-        // The focused workspace next to the icon, like AeroSpace's menu bar item.
-        item.button?.title = controller.wm.focusedWorkspace.map { " \($0)" } ?? ""
-        item.button?.imagePosition = .imageLeading
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
