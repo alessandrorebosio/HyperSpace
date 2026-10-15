@@ -23,7 +23,11 @@ The app is signed with a self-signed "HyperSpace Dev" identity that `scripts/sig
 
 ## Config
 
-`~/.config/hyperspace/hyperspace.toml` (or `$XDG_CONFIG_HOME/hyperspace/hyperspace.toml`). "Open Config" in the menu creates a commented starter file. Changes are applied on save; errors show up in the menu and in `hsctl status`.
+Three optional files in `~/.config/hyperspace/` (or `$XDG_CONFIG_HOME/hyperspace/`):
+`keyboard.toml`, `mouse.toml`, `wm.toml`. A missing file means that feature is off.
+"Open Config" in the menu creates commented starter files. Changes are applied on save;
+errors show up in the menu and in `hsctl status`, per file, and a broken file keeps its
+last good settings.
 
 ## hsctl
 

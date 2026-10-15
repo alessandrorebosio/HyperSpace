@@ -199,9 +199,11 @@ Optimizations over AeroSpace:
 
 ---
 
-## 6. Configuration (draft)
+## 6. Configuration
 
-`$XDG_CONFIG_HOME/hyperspace/hyperspace.toml` (default `~/.config/hyperspace/hyperspace.toml`), reloaded automatically on save. Unknown keys are errors, so typos don't fail silently. On an error HyperSpace keeps the last good config and shows the error in the menu and in `hsctl status`.
+Three optional files in `$XDG_CONFIG_HOME/hyperspace/` (default `~/.config/hyperspace/`): `keyboard.toml`, `mouse.toml`, `wm.toml`, reloaded automatically on save. Section names are relative to the file (`[capslock]` in keyboard.toml, `[buttons]` in mouse.toml). Unknown keys are errors, so typos don't fail silently. Errors are reported per file, and a broken file keeps its last good settings while the others still apply.
+
+The draft below predates the split: read `[keyboard.x]` as `[x]` in keyboard.toml, and so on.
 
 ```toml
 # ── Keyboard ─────────────────────────────────────────────

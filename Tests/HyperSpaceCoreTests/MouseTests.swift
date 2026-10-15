@@ -3,22 +3,22 @@ import Testing
 
 struct MouseTests {
     private func plan(_ toml: String) throws -> InputPlan {
-        try InputPlan(ConfigLoader.parse(toml).get())
+        try InputPlan(mouse: MousePlan(ConfigLoader.parse(MouseConfig.self, toml).get()))
     }
 
     private func error(_ toml: String) -> String? {
-        if case let .failure(e) = ConfigLoader.parse(toml) { return e.message }
+        if case let .failure(e) = ConfigLoader.parse(MouseConfig.self, toml) { return e.message }
         return nil
     }
 
     private let config = """
-    [mouse.buttons]
+    [buttons]
     button3 = "navigate.back"
     forward = "navigate.forward"
     middle = "none"
     button5 = { shell = "say hi" }
 
-    [[mouse.app]]
+    [[app]]
     bundle_id = "com.google.Chrome"
     buttons = { back = "passthrough", forward = "passthrough" }
     """
@@ -40,11 +40,11 @@ struct MouseTests {
     }
 
     @Test func invalidInputsAreConfigErrors() {
-        #expect(error("[mouse.buttons]\nbutton0 = \"escape\"")?.contains("left button") == true)
-        #expect(error("[mouse.buttons]\nthumb = \"escape\"")?.contains("unknown mouse input 'thumb'") == true)
-        #expect(error("[mouse.buttons]\nback = \"cmd-nope\"")?.contains("unknown key or combo") == true)
-        #expect(error("[[mouse.device]]\nmatch = { vendor = 1 }")?.hasPrefix("mouse.device: unknown key") == true)
-        #expect(error("[mouse.scroll]\nlines = 0")?.contains("between 1 and 20") == true)
+        #expect(error("[buttons]\nbutton0 = \"escape\"")?.contains("left button") == true)
+        #expect(error("[buttons]\nthumb = \"escape\"")?.contains("unknown mouse input 'thumb'") == true)
+        #expect(error("[buttons]\nback = \"cmd-nope\"")?.contains("unknown key or combo") == true)
+        #expect(error("[[device]]\nmatch = { vendor = 1 }")?.hasPrefix("device: unknown key") == true)
+        #expect(error("[scroll]\nlines = 0")?.contains("between 1 and 20") == true)
     }
 
     @Test func backButtonFiresOnceAndReleaseIsSwallowed() throws {

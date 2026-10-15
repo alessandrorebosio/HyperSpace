@@ -2,118 +2,120 @@
 import Testing
 
 struct ConfigTests {
-    private func parse(_ toml: String) throws -> Config {
-        try ConfigLoader.parse(toml).get()
-    }
-
-    private func error(_ toml: String) -> String? {
-        if case let .failure(e) = ConfigLoader.parse(toml) { return e.message }
+    private func error<T: ConfigSection>(_ type: T.Type, _ toml: String) -> String? {
+        if case let .failure(e) = ConfigLoader.parse(type, toml) { return e.message }
         return nil
     }
 
-    @Test func emptyConfigTurnsEverythingOff() throws {
-        let config = try parse("")
-        #expect(config == Config())
-        #expect(config.keyboard.capslock == nil)
-        #expect(!config.wm.enabled)
+    @Test func emptyFilesTurnEverythingOff() throws {
+        #expect(try ConfigLoader.parse(KeyboardConfig.self, "").get() == KeyboardConfig())
+        #expect(try ConfigLoader.parse(MouseConfig.self, "").get() == MouseConfig())
+        #expect(try ConfigLoader.parse(WMConfig.self, "").get() == WMConfig())
     }
 
-    @Test func fullExampleDecodes() throws {
-        let config = try parse("""
-        [keyboard]
+    @Test func keyboardFileDecodes() throws {
+        let keyboard = try ConfigLoader.parse(KeyboardConfig.self, """
         simple = [{ from = "command.right", to = "option.right", device = { vendor = 0x05ac } }]
 
-        [keyboard.capslock]
+        [capslock]
         alone = "escape"
+        hold = "shift-ctrl-opt"
         tap_timeout_ms = 150
+        led = "held"
 
-        [keyboard.capslock.map]
+        [capslock.map]
         h = "arrow.left"
         t = { shell = "open -a Terminal" }
         "1" = { wm = "workspace 1" }
         q = "none"
 
-        [[keyboard.capslock.app]]
+        [[capslock.app]]
         bundle_id = "com.microsoft.VSCode"
         map = { d = "cmd-shift-k" }
+        """).get()
 
-        [mouse.buttons]
-        button3 = "navigate.back"
-        forward = "cmd-tab"
-
-        [[mouse.app]]
-        bundle_id = "com.google.Chrome"
-        buttons = { button3 = "passthrough" }
-
-        [mouse.scroll]
-        reverse = true
-        linear = true
-        lines = 3
-
-        [wm]
-        enabled = true
-        gaps = { inner = 8, outer = 4 }
-
-        [wm.bindings]
-        "alt-h" = "focus left"
-
-        [[wm.rule]]
-        app = "com.apple.finder"
-        layout = "floating"
-        """)
-
-        #expect(config.keyboard.simple == [SimpleRemap(from: "command.right", to: "option.right", device: DeviceMatch(vendor: 0x05AC))])
-        let caps = try #require(config.keyboard.capslock)
+        #expect(keyboard.simple == [SimpleRemap(from: "command.right", to: "option.right", device: DeviceMatch(vendor: 0x05AC))])
+        let caps = try #require(keyboard.capslock)
         #expect(caps.alone == .keys("escape"))
+        #expect(caps.hold == "shift-ctrl-opt")
         #expect(caps.tapTimeoutMs == 150)
+        #expect(caps.led == "held")
         #expect(caps.map["h"] == .keys("arrow.left"))
         #expect(caps.map["t"] == .shell("open -a Terminal"))
         #expect(caps.map["1"] == .wm("workspace 1"))
         #expect(caps.map["q"] == Action.none)
         #expect(caps.app == [AppKeyMap(bundleID: "com.microsoft.VSCode", map: ["d": .keys("cmd-shift-k")])])
+    }
 
-        #expect(config.mouse.buttons["button3"] == .keys("navigate.back"))
-        #expect(config.mouse.buttons["forward"] == .keys("cmd-tab"))
-        #expect(config.mouse.app.first?.buttons["button3"] == .passthrough)
-        #expect(config.mouse.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))
+    @Test func mouseFileDecodes() throws {
+        let mouse = try ConfigLoader.parse(MouseConfig.self, """
+        [buttons]
+        button3 = "navigate.back"
+        forward = "cmd-tab"
 
-        #expect(config.wm.enabled)
-        #expect(config.wm.gaps == Gaps(inner: 8, outer: 4))
-        #expect(config.wm.bindings["alt-h"] == "focus left")
-        #expect(config.wm.rule == [WMRule(app: "com.apple.finder", layout: "floating", workspace: nil)])
+        [[app]]
+        bundle_id = "com.google.Chrome"
+        buttons = { button3 = "passthrough" }
+
+        [scroll]
+        reverse = true
+        linear = true
+        lines = 3
+        """).get()
+        #expect(mouse.buttons["button3"] == .keys("navigate.back"))
+        #expect(mouse.buttons["forward"] == .keys("cmd-tab"))
+        #expect(mouse.app.first?.buttons["button3"] == .passthrough)
+        #expect(mouse.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))
+    }
+
+    @Test func wmFileDecodes() throws {
+        let wm = try ConfigLoader.parse(WMConfig.self, """
+        enabled = true
+        gaps = { inner = 8, outer = 4 }
+
+        [bindings]
+        "alt-h" = "focus left"
+
+        [[rule]]
+        app = "com.apple.finder"
+        layout = "floating"
+        """).get()
+        #expect(wm.enabled)
+        #expect(wm.gaps == Gaps(inner: 8, outer: 4))
+        #expect(wm.bindings["alt-h"] == "focus left")
+        #expect(wm.rule == [WMRule(app: "com.apple.finder", layout: "floating", workspace: nil)])
     }
 
     @Test func capsLockDefaults() throws {
-        let caps = try #require(try parse("[keyboard.capslock]").keyboard.capslock)
+        let caps = try #require(try ConfigLoader.parse(KeyboardConfig.self, "[capslock]").get().capslock)
         #expect(caps.alone == Action.none)
         #expect(caps.tapTimeoutMs == 200)
+        #expect(caps.led == nil)
         #expect(caps.map.isEmpty)
     }
 
     @Test func unknownKeyIsReportedWithItsPath() {
-        let message = error("""
-        [keyboard.capslok]
-        alone = "escape"
-        """)
-        #expect(message?.hasPrefix("keyboard.capslok: unknown key") == true)
+        #expect(error(KeyboardConfig.self, "[capslok]\nalone = \"escape\"")?.hasPrefix("capslok: unknown key") == true)
     }
 
     @Test func wrongTypeIsReportedWithItsPath() {
         // TOMLDecoder reports the line; our own messages add the key path.
-        #expect(error("[wm]\nenabled = \"yes\"") == "(Line 2) Invalid boolean value for key 'enabled'.")
-        #expect(error("[wm]\ngaps = 3") == "wm.gaps: expected a table")
+        #expect(error(WMConfig.self, "enabled = \"yes\"") == "(Line 1) Invalid boolean value for key 'enabled'.")
+        #expect(error(WMConfig.self, "gaps = 3") == "gaps: expected a table")
     }
 
     @Test func actionTableNeedsExactlyOneKind() {
-        #expect(error("[mouse.buttons]\nbutton3 = { shell = \"a\", wm = \"b\" }")?.contains("exactly one of") == true)
-        #expect(error("[mouse.buttons]\nbutton3 = { run = \"a\" }")?.contains("unknown key") == true)
+        #expect(error(MouseConfig.self, "[buttons]\nbutton3 = { shell = \"a\", wm = \"b\" }")?.contains("exactly one of") == true)
+        #expect(error(MouseConfig.self, "[buttons]\nbutton3 = { run = \"a\" }")?.contains("unknown key") == true)
     }
 
     @Test func syntaxErrorsAreReported() {
-        #expect(error("[keyboard\n") != nil)
+        #expect(error(KeyboardConfig.self, "[capslock\n") != nil)
     }
 
-    @Test func templateIsValidConfig() throws {
-        #expect(try parse(ConfigLoader.template) == Config())
+    @Test func templatesAreValidAndEmpty() throws {
+        #expect(try ConfigLoader.parse(KeyboardConfig.self, ConfigLoader.template(.keyboard)).get() == KeyboardConfig())
+        #expect(try ConfigLoader.parse(MouseConfig.self, ConfigLoader.template(.mouse)).get() == MouseConfig())
+        #expect(try ConfigLoader.parse(WMConfig.self, ConfigLoader.template(.wm)).get() == WMConfig())
     }
 }
