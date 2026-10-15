@@ -65,6 +65,14 @@ struct MouseTests {
         #expect(e.button(1, down: true, tables: tables) == .pass)
     }
 
+    @Test func navigationRules() throws {
+        let rules = try plan("[navigate]\nswipe = [\"com.example.\"]\nbuttons = [\"com.apple.Xcode\"]").mouse.navigation
+        #expect(rules.usesSwipe("com.apple.Safari"))
+        #expect(rules.usesSwipe("com.example.Editor"))
+        #expect(!rules.usesSwipe("com.apple.Xcode"))
+        #expect(!rules.usesSwipe("com.google.Chrome"))
+    }
+
     @Test func droppedButtonDropsBothEdges() throws {
         let tables = try plan(config).tables(forApp: nil)
         var e = MouseEngine()

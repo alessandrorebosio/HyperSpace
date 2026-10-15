@@ -15,7 +15,17 @@ struct ConfigTests {
 
     @Test func keyboardFileDecodes() throws {
         let keyboard = try ConfigLoader.parse(KeyboardConfig.self, """
-        simple = [{ from = "command.right", to = "option.right", device = { vendor = 0x05ac } }]
+        [map]
+        "command.right" = "option.right"
+        f5 = { shell = "open -a Safari" }
+
+        [[app]]
+        bundle_id = "com.apple.Terminal"
+        map = { f5 = "passthrough" }
+
+        [[device]]
+        vendor = 0x05ac
+        map = { "option.left" = "command.left" }
 
         [capslock]
         alone = "escape"
@@ -34,7 +44,9 @@ struct ConfigTests {
         map = { d = "cmd-shift-k" }
         """).get()
 
-        #expect(keyboard.simple == [SimpleRemap(from: "command.right", to: "option.right", device: DeviceMatch(vendor: 0x05AC))])
+        #expect(keyboard.map == ["command.right": .keys("option.right"), "f5": .shell("open -a Safari")])
+        #expect(keyboard.app == [AppMap(bundleID: "com.apple.Terminal", map: ["f5": .passthrough])])
+        #expect(keyboard.device == [DeviceMap(match: DeviceMatch(vendor: 0x05AC), map: ["option.left": "command.left"])])
         let caps = try #require(keyboard.capslock)
         #expect(caps.alone == .keys("escape"))
         #expect(caps.hold == "shift-ctrl-opt")
@@ -44,7 +56,7 @@ struct ConfigTests {
         #expect(caps.map["t"] == .shell("open -a Terminal"))
         #expect(caps.map["1"] == .wm("workspace 1"))
         #expect(caps.map["q"] == Action.none)
-        #expect(caps.app == [AppKeyMap(bundleID: "com.microsoft.VSCode", map: ["d": .keys("cmd-shift-k")])])
+        #expect(caps.app == [AppMap(bundleID: "com.microsoft.VSCode", map: ["d": .keys("cmd-shift-k")])])
     }
 
     @Test func mouseFileDecodes() throws {
@@ -61,10 +73,15 @@ struct ConfigTests {
         reverse = true
         linear = true
         lines = 3
+
+        [navigate]
+        swipe = ["com.example."]
+        buttons = ["com.apple.Xcode"]
         """).get()
         #expect(mouse.buttons["button3"] == .keys("navigate.back"))
         #expect(mouse.buttons["forward"] == .keys("cmd-tab"))
-        #expect(mouse.app.first?.buttons["button3"] == .passthrough)
+        #expect(mouse.app.first?.map["button3"] == .passthrough)
+        #expect(mouse.navigate == NavigateConfig(swipe: ["com.example."], buttons: ["com.apple.Xcode"]))
         #expect(mouse.scroll == ScrollConfig(reverse: true, linear: true, lines: 3))
     }
 
@@ -102,6 +119,11 @@ struct ConfigTests {
         // TOMLDecoder reports the line; our own messages add the key path.
         #expect(error(WMConfig.self, "enabled = \"yes\"") == "(Line 1) Invalid boolean value for key 'enabled'.")
         #expect(error(WMConfig.self, "gaps = 3") == "gaps: expected a table")
+    }
+
+    @Test func perAppTablesUseTheirFileNames() {
+        #expect(error(MouseConfig.self, "[[app]]\nbundle_id = \"a\"\nmap = {}")?.contains("unknown key") == true)
+        #expect(error(KeyboardConfig.self, "[[app]]\nbundle_id = \"a\"\nbuttons = {}")?.contains("unknown key") == true)
     }
 
     @Test func actionTableNeedsExactlyOneKind() {

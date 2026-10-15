@@ -8,6 +8,12 @@ struct AnyKey: CodingKey {
 }
 
 extension Decoder {
+    /// A keyed container for a TOML table whose keys must all be in `Key`.
+    func table<Key: CodingKey & CaseIterable>(_ keys: Key.Type) throws -> KeyedDecodingContainer<Key> {
+        try rejectUnknownKeys(keys)
+        return try container(keyedBy: keys)
+    }
+
     /// Throws on keys the model doesn't know, so a typo like `capslok` isn't silently ignored.
     func rejectUnknownKeys<Key: CodingKey & CaseIterable>(_: Key.Type) throws {
         // TOMLDecoder hands out a keyed container even for scalars and arrays, so check first.

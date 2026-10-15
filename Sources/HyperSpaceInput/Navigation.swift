@@ -12,12 +12,15 @@ import HyperSpaceCore
 ///
 /// Input thread only.
 struct NavigationSender {
-    /// Apps known to handle navigation swipes but not mouse buttons 4/5.
-    private static let swipeApps = ["com.apple.", "org.mozilla.firefox", "com.operasoftware.Opera", "com.binarynights.ForkLift"]
-
     private var swipeByPID: [pid_t: Bool] = [:]
+    private var rules = NavigationRules()
 
-    mutating func send(_ direction: Navigation, targetPID: pid_t, location: CGPoint) {
+    /// `rules` come from mouse.toml's `[navigate]`.
+    mutating func send(_ direction: Navigation, targetPID: pid_t, location: CGPoint, rules: NavigationRules) {
+        if rules != self.rules {
+            self.rules = rules
+            swipeByPID.removeAll()
+        }
         if usesSwipe(targetPID) {
             NavigationSender.postSwipe(direction)
         } else {
@@ -28,7 +31,7 @@ struct NavigationSender {
     private mutating func usesSwipe(_ pid: pid_t) -> Bool {
         if let cached = swipeByPID[pid] { return cached }
         let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
-        let swipe = NavigationSender.swipeApps.contains { bundleID.hasPrefix($0) }
+        let swipe = rules.usesSwipe(bundleID)
         if swipeByPID.count > 64 { swipeByPID.removeAll() } // pids of quit apps
         swipeByPID[pid] = swipe
         return swipe

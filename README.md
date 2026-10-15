@@ -7,7 +7,7 @@ A single lightweight macOS app for:
 
 Goal: one process, no drivers, one permission (Accessibility).
 
-Status: phases 1–2 done: menu bar app, TOML config with hot reload, `hsctl`, keyboard remapping (Caps Lock layer, simple remaps, per-app overrides). Mouse and window management come next. See [docs/DESIGN.md](docs/DESIGN.md) and the spike results in [docs/SPIKE.md](docs/SPIKE.md).
+Status: phases 1–2 done: menu bar app, TOML config with hot reload, `hsctl`, keyboard remapping (Caps Lock layer, key remaps, per-app and per-device overrides), mouse buttons and scrolling. Window management comes next. See [docs/DESIGN.md](docs/DESIGN.md) and the spike results in [docs/SPIKE.md](docs/SPIKE.md).
 
 ## Build
 

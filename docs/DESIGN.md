@@ -48,7 +48,7 @@ Remapping is split into **three levels**; we always pick the lowest level that i
 | **L1 — Event tap** | Active `CGEventTap` (`kCGSessionEventTap`, head insert) | **Accessibility** | Complex remaps: Caps Lock layer, dual-role keys, per-app rules, mouse buttons, scrolling, WM hotkeys. |
 | **L2 — Accessibility API** | `AXUIElement` + `AXObserver` | **Accessibility** (same permission) | Window manager. |
 
-Result: **one permission (Accessibility)**. If only simple remaps are used, **no permissions at all**.
+Result: **one permission (Accessibility)**. If only key -> key remaps are used, **no permissions at all**.
 
 Mouse inputs that the event tap can't see are read through raw HID (§5.2, sources S2/S3). Whether that needs Input Monitoring for pointer devices is verified in the spike; if it does, the permission is requested only when the config actually maps such an input.
 
@@ -203,69 +203,72 @@ Optimizations over AeroSpace:
 
 Three optional files in `$XDG_CONFIG_HOME/hyperspace/` (default `~/.config/hyperspace/`): `keyboard.toml`, `mouse.toml`, `wm.toml`, reloaded automatically on save. Section names are relative to the file (`[capslock]` in keyboard.toml, `[buttons]` in mouse.toml). Unknown keys are errors, so typos don't fail silently. Errors are reported per file, and a broken file keeps its last good settings while the others still apply.
 
-The draft below predates the split: read `[keyboard.x]` as `[x]` in keyboard.toml, and so on.
+The files created on first launch document every option in comments. In short:
 
 ```toml
-# ── Keyboard ─────────────────────────────────────────────
-[keyboard]
-simple = [
-  { from = "command.right", to = "option.right", device = { vendor = 0x05ac } },
-]
+# ── keyboard.toml ────────────────────────────────────────
+# Always active. key -> key is applied at HID level (works in password fields);
+# combos and actions go through the event tap.
+[map]
+"command.right" = "option.right"
+f1 = "cmd-space"
+f5 = { shell = "open -a Safari" }
+
+# [map] overrides while one app is in front. Overridden keys are handled by the tap.
+[[app]]
+bundle_id = "com.apple.Terminal"
+map = { f1 = "passthrough" }
+
+# key -> key for one keyboard only. Comes before [map] for the same key.
+[[device]]
+vendor = 0x05ac
+map = { "option.left" = "command.left" }
 
 # Once configured, Caps Lock no longer toggles caps lock.
-[keyboard.capslock]
-alone = "none"               # action when tapped alone, e.g. "escape"
+[capslock]
+hold = "shift-ctrl-opt"      # modifiers added to unmapped keys while held ("meh", "hyper")
+alone = "escape"             # action when tapped alone
+led = "held"                 # "off" (default) or "held"
 tap_timeout_ms = 200
 
-# Caps + key. Keys not listed here keep their normal behavior.
-[keyboard.capslock.map]
+[capslock.map]               # Caps + key, in every app
 h = "arrow.left"
-j = "arrow.down"
-k = "arrow.up"
-l = "arrow.right"
-u = "cmd-arrow.left"
-o = "cmd-arrow.right"
 t = { shell = "open -a Terminal" }
 "1" = { wm = "workspace 1" }
 
-# Per-app override of the Caps layer
-[[keyboard.capslock.app]]
+[[capslock.app]]             # Caps + key, one app
 bundle_id = "com.microsoft.VSCode"
 map = { d = "cmd-shift-k" }
 
-# ── Mouse ────────────────────────────────────────────────
-# Any input from any mouse. Unmapped inputs pass through untouched.
-[mouse.buttons]
-button3 = "navigate.back"     # side buttons; default: swipe or ⌘[ (chosen after the spike)
-button4 = "navigate.forward"
-button2 = { wm = "fullscreen" }
+# ── mouse.toml ───────────────────────────────────────────
+[buttons]                    # button1...button31, middle, back, forward
+back = "navigate.back"
+forward = "navigate.forward"
 
-[[mouse.app]]
-bundle_id = "com.microsoft.VSCode"
-buttons = { button3 = "ctrl-minus", button4 = "ctrl-shift-minus" }
-
-[[mouse.app]]
+[[app]]
 bundle_id = "com.google.Chrome"
-buttons = { button3 = "passthrough", button4 = "passthrough" }
+buttons = { back = "passthrough", forward = "passthrough" }
 
-[[mouse.device]]
-match = { vendor = 0x046d }   # Logitech
-scroll = { reverse = true, linear = true, lines = 3 }
-# Inputs only visible via raw HID / HID++ are named by `hsctl list-inputs`
-buttons = { "hidpp:0x00c4" = "cmd-tab" }
+[scroll]                     # notched wheels only
+reverse = true
+linear = true
+lines = 3
 
-# ── Window manager ───────────────────────────────────────
-[wm]
+# How navigate.back/.forward reach an app (bundle id prefixes), on top of the built-in
+# list (Apple apps, Firefox, Opera, ForkLift get a swipe; others get buttons 4/5).
+[navigate]
+swipe = ["com.example."]
+buttons = ["com.apple.Xcode"]
+
+# ── wm.toml (not implemented yet) ────────────────────────
 enabled = true
 gaps = { inner = 8, outer = 8 }
 
-[wm.bindings]
+[bindings]
 "alt-h" = "focus left"
-"alt-shift-h" = "move left"
 "alt-1" = "workspace 1"
-"alt-shift-1" = "move-node-to-workspace 1"
 
-[[wm.rule]]
+[[rule]]
 app = "com.apple.finder"
 layout = "floating"
 ```
@@ -292,7 +295,7 @@ layout = "floating"
 |---|---|---|
 | **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
 | **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `hsctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
-| **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, simple remaps, per-app overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
+| **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, `[map]` remaps, per-app and per-device overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
 | **3 — Mouse** (in progress) | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `hsctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
 | **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |

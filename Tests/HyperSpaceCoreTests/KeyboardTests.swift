@@ -27,17 +27,39 @@ struct KeyboardPlanTests {
         #expect(KeyNames.key("f18") == Key(code: 79, usage: 0x6D, hasFnFlag: true))
     }
 
-    @Test func simpleKeyRemapsGoToHIDLevel() throws {
+    @Test func keyToKeyRemapsGoToHIDLevel() throws {
         let p = try plan("""
-        simple = [
-          { from = "command.right", to = "option.right", device = { vendor = 0x05ac } },
-          { from = "f1", to = "cmd-space" },
-        ]
+        [map]
+        "command.right" = "option.right"
+        f1 = "cmd-space"
+        f2 = "navigate.back"
+        [[device]]
+        vendor = 0x05ac
+        map = { "command.right" = "control.right" }
         """)
-        #expect(p.hid == [HIDMapping(from: 0xE7, to: 0xE6, device: DeviceMatch(vendor: 0x05AC))])
-        #expect(p.simple[122] == .key(Combo(parsing: "cmd-space")!))
+        #expect(p.hid == [
+            HIDMapping(from: 0xE7, to: 0xE4, device: DeviceMatch(vendor: 0x05AC)),
+            HIDMapping(from: 0xE7, to: 0xE6, device: nil),
+        ])
+        #expect(p.map[122] == .key(Combo(parsing: "cmd-space")!))
+        #expect(p.map[120] == .navigate(.back))
         #expect(p.layer == nil)
         #expect(p.needsEventTap)
+    }
+
+    @Test func appOverridesMoveKeysToTheTap() throws {
+        let p = try plan("""
+        [map]
+        f3 = "f4"
+        [[app]]
+        bundle_id = "com.apple.Terminal"
+        map = { f3 = "passthrough", f6 = "none" }
+        """)
+        #expect(p.hid.isEmpty, "an overridden key -> key remap can't be done at HID level")
+        let plan = InputPlan(keyboard: p)
+        #expect(plan.tables(forApp: nil).keys[99] == .key(Combo(parsing: "f4")!))
+        #expect(plan.tables(forApp: "com.apple.Terminal").keys[99] == nil)
+        #expect(plan.tables(forApp: "com.apple.Terminal").keys[97] == .drop)
     }
 
     @Test func capsLockBecomesLayerTrigger() throws {
@@ -66,8 +88,9 @@ struct KeyboardPlanTests {
     @Test func invalidKeysAreConfigErrors() {
         #expect(error("[capslock.map]\nhh = \"arrow.left\"") == "capslock.map.hh: unknown key 'hh'")
         #expect(error("[capslock.map]\nh = \"cmd-lefty\"") == "capslock.map.h: unknown key or combo 'cmd-lefty'")
-        #expect(error("simple = [{ from = \"shift.left\", to = \"cmd-a\" }]")?.contains("modifier to a combo") == true)
-        #expect(error("simple = [{ from = \"capslock\", to = \"escape\" }]\n[capslock]")?.contains("already configured") == true)
+        #expect(error("[map]\n\"shift.left\" = \"cmd-a\"")?.contains("modifier key can only become another key") == true)
+        #expect(error("[map]\ncapslock = \"escape\"\n[capslock]")?.contains("already configured") == true)
+        #expect(error("[[device]]\nmap = { a = \"cmd-b\" }")?.contains("unknown key 'cmd-b'") == true)
         #expect(error("[capslock]\nhold = \"shift-k\"")?.contains("isn't a modifier list") == true)
         #expect(error("[capslock]\nled = \"blink\"")?.contains("use \"off\" or \"held\"") == true)
         #expect(error("[capslock.map]\nh = \"left_arrow\"")?.contains("use dots, e.g. arrow.left") == true)
@@ -81,7 +104,8 @@ struct KeyEngineTests {
 
     var tables: ActiveTables {
         try! InputPlan(keyboard: KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, """
-        simple = [{ from = "f1", to = "cmd-space" }]
+        [map]
+        f1 = "cmd-space"
         [capslock]
         alone = "escape"
         tap_timeout_ms = 200

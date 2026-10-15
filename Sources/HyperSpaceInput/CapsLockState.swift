@@ -12,8 +12,7 @@ final class CapsLockState: @unchecked Sendable {
 
     func set(_ on: Bool) {
         queue.async { [self] in
-            let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient]) ?? []
-            for service in services where IOHIDServiceClientConformsTo(service, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Keyboard)) != 0 {
+            for service in HIDKeyboards.all(client) {
                 IOHIDServiceClientSetProperty(service, kIOHIDServiceCapsLockStateKey as CFString, on as CFBoolean)
             }
         }

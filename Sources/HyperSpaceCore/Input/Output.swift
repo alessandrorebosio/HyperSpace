@@ -14,6 +14,27 @@ public enum Navigation: Sendable, Equatable {
     case back, forward
 }
 
+/// Which apps get back/forward as a trackpad swipe rather than mouse buttons 4/5.
+public struct NavigationRules: Sendable, Equatable {
+    /// Apps known to handle navigation swipes but not mouse buttons 4/5.
+    static let defaultSwipe = ["com.apple.", "org.mozilla.firefox", "com.operasoftware.Opera", "com.binarynights.ForkLift"]
+
+    public var swipe = defaultSwipe
+    public var buttons: [String] = []
+
+    public init() {}
+
+    init(_ config: NavigateConfig) {
+        swipe = NavigationRules.defaultSwipe + config.swipe
+        buttons = config.buttons
+    }
+
+    /// Bundle id prefixes: `"com.apple."` matches every Apple app.
+    public func usesSwipe(_ bundleID: String) -> Bool {
+        !buttons.contains { bundleID.hasPrefix($0) } && swipe.contains { bundleID.hasPrefix($0) }
+    }
+}
+
 /// Lookup table indexed by key code or button number. `nil` = not remapped: normal behavior.
 public struct OutputTable: Sendable, Equatable {
     private var outputs: [Output?]
@@ -54,6 +75,17 @@ enum Compile {
             throw InvalidConfig(message: "\(path): unknown key or combo '\(text)'\(text.contains("_") ? dotsHint : "")")
         }
         return combo
+    }
+
+    /// Compiles a name -> action map over `base`; `index` turns a name into a table index.
+    static func table(_ map: [String: Action], path: String, over base: OutputTable,
+                      index: (String, String) throws(InvalidConfig) -> Int) throws(InvalidConfig) -> OutputTable {
+        var table = base
+        for (name, action) in map {
+            let path = "\(path).\(name)"
+            table[try index(name, path)] = try output(action, path: path)
+        }
+        return table
     }
 
     /// `nil` means passthrough.

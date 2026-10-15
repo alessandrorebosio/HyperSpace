@@ -16,7 +16,7 @@ public final class InputTap: @unchecked Sendable {
         init(_ tables: ActiveTables) { self.tables = tables }
     }
 
-    private let snapshot = Mutex(Snapshot(ActiveTables()))
+    private let snapshot = Mutex(Snapshot(InputPlan().tables(forApp: nil)))
     private let perform: @Sendable (Output) -> Void
     private let capsLock: CapsLockState
 
@@ -92,6 +92,10 @@ public final class InputTap: @unchecked Sendable {
     }
 
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Events HyperSpace posted itself (keys, navigation buttons) go through untouched.
+        if event.getIntegerValueField(.eventSourceUserData) == InputTap.marker {
+            return Unmanaged.passUnretained(event)
+        }
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
@@ -114,10 +118,6 @@ public final class InputTap: @unchecked Sendable {
         default:
             return Unmanaged.passUnretained(event)
         }
-        if event.getIntegerValueField(.eventSourceUserData) == InputTap.marker {
-            return Unmanaged.passUnretained(event)
-        }
-
         let tables = current.tables
         let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -145,9 +145,6 @@ public final class InputTap: @unchecked Sendable {
     }
 
     private func handleButton(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
-        if event.getIntegerValueField(.eventSourceUserData) == InputTap.marker {
-            return Unmanaged.passUnretained(event) // NavigationSender's button
-        }
         let decision = mouse.button(
             Int(event.getIntegerValueField(.mouseEventButtonNumber)),
             down: type == .rightMouseDown || type == .otherMouseDown,
@@ -170,7 +167,7 @@ public final class InputTap: @unchecked Sendable {
             InputTap.post(combo)
         case let .navigate(direction):
             let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
-            navigation.send(direction, targetPID: pid, location: event.location)
+            navigation.send(direction, targetPID: pid, location: event.location, rules: current.tables.navigation)
         case .shell, .wm:
             perform(output)
         case .drop:

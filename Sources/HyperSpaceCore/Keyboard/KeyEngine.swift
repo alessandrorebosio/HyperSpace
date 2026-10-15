@@ -48,7 +48,7 @@ public struct KeyEngine: Sendable {
                 output = .key(Combo(key: key, modifiers: layer.hold)) // e.g. Caps + t = ⇧⌃⌥t
             }
         }
-        inFlight[index] = output ?? tables.simple[index]
+        inFlight[index] = output ?? tables.keys[index]
         switch inFlight[index] {
         case nil: return .pass
         case let .key(combo): return .rewrite(combo)

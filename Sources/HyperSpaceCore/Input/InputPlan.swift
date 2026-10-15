@@ -17,31 +17,27 @@ public struct InputPlan: Sendable, Equatable {
 
     /// The tables the event tap uses while `bundleID` is the frontmost app.
     public func tables(forApp bundleID: String?) -> ActiveTables {
-        ActiveTables(
-            simple: keyboard.simple,
+        func pick(_ apps: [String: OutputTable], _ base: OutputTable) -> OutputTable {
+            bundleID.flatMap { apps[$0] } ?? base
+        }
+        return ActiveTables(
+            keys: pick(keyboard.apps, keyboard.map),
             layer: keyboard.layer,
-            layerMap: keyboard.layer.map { layer in bundleID.flatMap { layer.apps[$0] } ?? layer.base } ?? .keys,
-            buttons: bundleID.flatMap { mouse.apps[$0] } ?? mouse.buttons,
-            scroll: mouse.scroll
+            layerMap: keyboard.layer.map { pick($0.apps, $0.base) } ?? .keys,
+            buttons: pick(mouse.apps, mouse.buttons),
+            scroll: mouse.scroll,
+            navigation: mouse.navigation
         )
     }
 }
 
-/// Lookup tables resolved for the frontmost app. Immutable: the tap swaps whole snapshots.
+/// Lookup tables resolved for the frontmost app, made by `InputPlan.tables(forApp:)`.
+/// Immutable: the tap swaps whole snapshots.
 public struct ActiveTables: Sendable, Equatable {
-    public var simple = OutputTable.keys
+    public var keys = OutputTable.keys
     public var layer: Layer?
     public var layerMap = OutputTable.keys
     public var buttons = OutputTable.buttons
     public var scroll: ScrollConfig?
-
-    public init() {}
-
-    init(simple: OutputTable, layer: Layer?, layerMap: OutputTable, buttons: OutputTable, scroll: ScrollConfig?) {
-        self.simple = simple
-        self.layer = layer
-        self.layerMap = layerMap
-        self.buttons = buttons
-        self.scroll = scroll
-    }
+    public var navigation = NavigationRules()
 }
