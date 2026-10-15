@@ -159,16 +159,8 @@ public final class WMModel {
             visible[id] = nil
         }
         for monitor in self.monitors where visible[monitor.id] == nil {
-            let assigned = settings.workspaceToMonitor.keys.sorted(by: WMModel.order).filter { assignedMonitor($0) == monitor.id }
             let remembered = lastShown.removeValue(forKey: monitor.name).flatMap { workspaces[$0] != nil ? [$0] : nil } ?? []
-            let previous = workspaceNames.filter { workspaces[$0]?.monitor == monitor.id }
-            // Forced ones only on their monitor; the others not if they live on another one.
-            let name = (assigned + remembered + previous + workspaceNames).first { name in
-                guard !isVisible(name) else { return false }
-                if settings.workspaceToMonitor[name] != nil { return assignedMonitor(name) == monitor.id }
-                return workspaces[name]?.monitor.map { $0 == monitor.id || !ids.contains($0) } ?? true
-            }
-                ?? (1...).lazy.map(String.init).first { !isVisible($0) && workspaces[$0] == nil }!
+            let name = fallbackWorkspace(for: monitor.id, preferring: remembered)
             visible[monitor.id] = name
             workspace(name).monitor = monitor.id
         }
@@ -316,9 +308,14 @@ public final class WMModel {
                   let monitor = monitor(target, wrapAround: wrapAround, from: from), monitor != from else { return (false, .none) }
             let other = visible[monitor]!
             visible[monitor] = workspace.name
-            visible[from] = other
+            visible[from] = nil
             workspace.monitor = monitor
-            self.workspace(other).monitor = from
+            // The workspace it covers comes over in exchange, unless it's assigned to its
+            // monitor: then that one waits there, and the monitor left shows one of its own.
+            let replacement = settings.workspaceToMonitor[other] == nil ? other : fallbackWorkspace(for: from)
+            visible[from] = replacement
+            self.workspace(replacement).monitor = from
+            collectEmptyWorkspaces()
             if from == focusedMonitor { focusedMonitor = monitor }
             ok = true
         case .focusBackAndForth:
@@ -503,6 +500,21 @@ public final class WMModel {
         workspace(name).monitor = monitor
         focusedMonitor = monitor
         collectEmptyWorkspaces()
+    }
+
+    /// A workspace for a monitor left without one: one assigned to it, then `preferred`,
+    /// then one that lived there, then any other; a new one at worst. Forced ones only on
+    /// their monitor; the others not if they live on another one.
+    private func fallbackWorkspace(for monitor: UInt32, preferring preferred: [String] = []) -> String {
+        let ids = Set(monitors.map(\.id))
+        let assigned = settings.workspaceToMonitor.keys.sorted(by: WMModel.order).filter { assignedMonitor($0) == monitor }
+        let previous = workspaceNames.filter { workspaces[$0]?.monitor == monitor }
+        return (assigned + preferred + previous + workspaceNames).first { name in
+            guard !isVisible(name) else { return false }
+            if settings.workspaceToMonitor[name] != nil { return assignedMonitor(name) == monitor }
+            return workspaces[name]?.monitor.map { $0 == monitor || !ids.contains($0) } ?? true
+        }
+            ?? (1...).lazy.map(String.init).first { !isVisible($0) && workspaces[$0] == nil }!
     }
 
     /// Hidden empty workspaces are dropped, unless persistent; they come back when named.
