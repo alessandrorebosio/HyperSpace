@@ -23,6 +23,30 @@ struct IPCTests {
         #expect(try failed.get() == .error("unknown", exitCode: 7))
     }
 
+    @Test func subscribersGetTheirEvents() async throws {
+        let path = socketPath()
+        let server = IPCServer(path: path) { _ in IPC.Response(stdout: "initial", events: ["a"]) }
+        try server.start()
+        defer { server.stop() }
+
+        let lines = await withCheckedContinuation { (done: CheckedContinuation<[String], Never>) in
+            Thread.detachNewThread {
+                var lines: [String] = []
+                _ = IPCClient.send(IPC.Request(args: ["subscribe"]), path: path) { line in
+                    lines.append(line)
+                    if lines.count == 2 { server.stop() } // closes the stream
+                }
+                done.resume(returning: lines)
+            }
+            Thread.detachNewThread {
+                usleep(200_000)
+                server.publish("b", "not subscribed")
+                server.publish("a", "event")
+            }
+        }
+        #expect(lines == ["initial", "event"])
+    }
+
     @Test func socketIsPrivate() throws {
         let path = socketPath()
         let server = IPCServer(path: path) { _ in .ok() }

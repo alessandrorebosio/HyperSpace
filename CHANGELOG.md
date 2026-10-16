@@ -9,6 +9,7 @@ section here, so a version's section is written before the version is released.
 
 - **`monitor-brightness`, `monitor-volume` and `monitor-input`** change an external display's brightness, speaker volume (or `mute-toggle`) and input source over DDC: `monitor-brightness +10`, `monitor-input hdmi1 --monitor dell`. A key that switches the display to another computer, with `detect-monitor-input`, leaves the Mac with its workspaces.
 - **`display_keys = true`** in keyboard.toml: the brightness keys change the external display under the pointer, and the volume keys the display's speakers when the sound plays there, which macOS can't do.
+- **`subscribe`**, as AeroSpace's: `hsctl subscribe --all` prints one JSON line per event (`focus-changed`, `focused-monitor-changed`, `focused-workspace-changed`, `mode-changed`, `window-detected`) as it happens, the current state first unless `--no-send-initial`. For status bars such as SketchyBar, without polling.
 - **Displays in the menu**: with more than one display, each one can be unchecked to leave it out of the window manager (`ignore-monitor`).
 - **`list-monitors --all`** lists the displays left out too, and `%{monitor-is-ignored}` and `%{monitor-input}` (the input read over DDC) go in `--format`.
 

@@ -25,6 +25,7 @@ HyperSpace's own:
   monitor-brightness [+|-]<percent> [--monitor <p>]     an external display's brightness (DDC)
   monitor-volume (mute-toggle|[+|-]<percent>) [--monitor <p>]
   monitor-input (dp1|dp2|hdmi1|hdmi2|usb-c|<code>) [--monitor <p>]
+  subscribe [--no-send-initial] (--all|<event>...)    one JSON line per event, as AeroSpace's
 """
 
 if args.isEmpty || args == ["-h"] || args == ["--help"] {
@@ -38,9 +39,11 @@ if args == ["completion", "zsh"] {
     exit(0)
 }
 
-switch IPCClient.send(IPC.Request(args: args)) {
+// `subscribe` prints events as they come, until HyperSpace quits.
+setvbuf(stdout, nil, _IOLBF, 0)
+switch IPCClient.send(IPC.Request(args: args), events: { print($0) }) {
 case let .success(response):
-    if !response.stdout.isEmpty { print(response.stdout) }
+    if !response.stdout.isEmpty, response.events == nil { print(response.stdout) }
     if !response.stderr.isEmpty { FileHandle.standardError.write(Data((response.stderr + "\n").utf8)) }
     exit(response.exitCode)
 case .failure(.notRunning):

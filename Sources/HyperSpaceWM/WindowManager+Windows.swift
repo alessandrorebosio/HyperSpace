@@ -161,6 +161,7 @@ extension WindowManager {
                                                         window: record.id, failIfNoop: false))
             }
             if windowDetected(record.id), let name = model.workspace(of: record.id)?.name { placed[record.id] = name }
+            publishWindowDetected(record.id)
         }
         adoptScratchpad(new, of: app, placed: placed)
     }

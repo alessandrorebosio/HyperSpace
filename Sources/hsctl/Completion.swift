@@ -60,6 +60,7 @@ _hsctl() {
     'list-monitors:list monitors'
     'list-apps:list apps'
     'list-modes:list binding modes'
+    'subscribe:print window manager events as they happen'
   )
   if (( CURRENT == 2 )); then
     _describe -t commands 'hsctl command' commands
@@ -91,6 +92,7 @@ _hsctl() {
     monitor-brightness|monitor-volume|monitor-input) flags=(--monitor) ;;
     list-monitors) flags=(--all --focused --format --count --json) ;;
     list-apps|list-modes) flags=(--format --count --json) ;;
+    subscribe) flags=(--all --no-send-initial) ;;
   esac
   if [[ $PREFIX == -* ]]; then
     compadd -a flags
@@ -120,6 +122,7 @@ _hsctl() {
     move-mouse) compadd monitor-lazy-center monitor-force-center window-lazy-center window-force-center ;;
     volume) compadd up down mute-toggle mute-on mute-off set ;;
     completion) compadd zsh ;;
+    subscribe) compadd focus-changed focused-monitor-changed focused-workspace-changed mode-changed window-detected ;;
   esac
 }
 

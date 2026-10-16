@@ -66,6 +66,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         do {
             try server.start()
             self.server = server
+            wm.onEvent = { [weak server] event, line in server?.publish(event, line) }
         } catch {
             log.error("IPC server failed to start: \(error)")
         }
@@ -173,6 +174,13 @@ final class AppController: NSObject, NSApplicationDelegate {
             do {
                 let output = try Output(parsing: args[1])
                 return input.run(output) ? .ok("") : .error("hyperspace: the event tap isn't running (disabled or no Accessibility)")
+            } catch {
+                return .error("hyperspace: \(error.message)")
+            }
+        case let args where args.first == "subscribe":
+            do {
+                let (events, initial) = try wm.subscribe(Array(args.dropFirst()))
+                return IPC.Response(stdout: initial, events: events)
             } catch {
                 return .error("hyperspace: \(error.message)")
             }

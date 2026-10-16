@@ -325,7 +325,7 @@ buttons = ["com.apple.Xcode"]
 # workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected, and
 # HyperSpace's scratchpad-fallback-workspace and detect-monitor-input
 # (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except split,
-# subscribe, config and debug-windows; shell syntax ; && || ( ) without pipes.
+# config and debug-windows (subscribe without binding-triggered); shell syntax ; && || ( ) without pipes.
 # The menu bar shows the focused workspace, preceded by the mode's initial outside main.
 persistent-workspaces = ['1', '2', 'Develop']
 gaps.inner.horizontal = 5

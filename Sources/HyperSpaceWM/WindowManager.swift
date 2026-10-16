@@ -92,6 +92,8 @@ public final class WindowManager {
     var leftByCommand: (window: WindowID, at: ContinuousClock.Instant)?
     /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
     var inCallback = false
+    /// `subscribe`: an event and its JSON line, for the clients subscribed to it.
+    public var onEvent: ((_ event: String, _ line: String) -> Void)?
     /// The last layout applied: what `focus-follows-mouse` looks windows up in.
     var lastLayout = WMLayout()
     /// Displays left out by `ignore-monitor`, by key, as if disconnected.

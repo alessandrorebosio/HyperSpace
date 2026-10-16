@@ -176,6 +176,23 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["ignore-monitor", "on", "lg"]).error?.contains("no monitor matches") == true)
     }
 
+    @Test func subscribersGetFocusAndModeEvents() throws {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        defer { wm.stop() }
+        var events: [String] = []
+        wm.onEvent = { _, line in events.append(line) }
+        let subscription = try wm.subscribe(["focused-workspace-changed", "mode-changed"])
+        #expect(subscription.initial.contains(#""_event":"focused-workspace-changed""#))
+        #expect(wm.run(words: ["workspace", "2"]).ok)
+        #expect(events.contains(#"{"_event":"focused-workspace-changed","prevWorkspace":"1","workspace":"2"}"#))
+        app.create(2, frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        #expect(events.contains { $0.contains(#""_event":"window-detected""#) && $0.contains(#""windowId":2"#) })
+        #expect(try wm.subscribe(["--all", "--no-send-initial"]).initial.isEmpty)
+        #expect(throws: InvalidConfig.self) { try wm.subscribe(["binding-triggered"]) }
+        #expect(throws: InvalidConfig.self) { try wm.subscribe([]) }
+    }
+
     @Test func displaySettingsGoToTheFocusedOrNamedDisplay() {
         let system = FakeSystem(screens: [Self.main, Self.dell])
         let wm = started(system)

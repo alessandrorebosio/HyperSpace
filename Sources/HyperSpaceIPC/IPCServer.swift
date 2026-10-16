@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Accepts `hsctl` connections. Socket IO runs on a background queue; requests are handled
 /// on the main actor, where the app state lives.
@@ -10,6 +11,9 @@ public final class IPCServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "hyperspace.ipc", attributes: .concurrent)
     private var listenFD: Int32 = -1
     private var source: (any DispatchSourceRead)?
+    /// `subscribe`d clients and their events; written to in order, off the main thread.
+    private let subscribers = Mutex<[(fd: Int32, events: Set<String>)]>([])
+    private let events = DispatchQueue(label: "hyperspace.ipc.events")
 
     public init(path: String = IPC.defaultSocketPath, handler: @escaping Handler) {
         self.path = path
@@ -48,6 +52,7 @@ public final class IPCServer: @unchecked Sendable {
     public func stop() {
         source?.cancel()
         source = nil
+        for subscriber in subscribers.withLock({ list in defer { list = [] }; return list }) { close(subscriber.fd) }
         unlink(path)
     }
 
@@ -69,7 +74,23 @@ public final class IPCServer: @unchecked Sendable {
     }
 
     private func reply(_ response: IPC.Response, to client: Int32) {
-        if let data = try? IPC.encode(response) { _ = IPC.writeAll(data, to: client) }
-        close(client)
+        let sent = (try? IPC.encode(response)).map { IPC.writeAll($0, to: client) } ?? false
+        if sent, let events = response.events {
+            subscribers.withLock { $0.append((client, Set(events))) }
+        } else {
+            close(client)
+        }
+    }
+
+    /// Sends one event line to the clients subscribed to it; gone ones are dropped.
+    public func publish(_ event: String, _ line: String) {
+        events.async { [self] in
+            let data = Data((line + "\n").utf8)
+            let targets = subscribers.withLock { $0.filter { $0.events.contains(event) }.map(\.fd) }
+            let gone = Set(targets.filter { !IPC.writeAll(data, to: $0) })
+            guard !gone.isEmpty else { return }
+            subscribers.withLock { $0.removeAll { gone.contains($0.fd) } }
+            for fd in gone { close(fd) }
+        }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 
 /// `hsctl` <-> HyperSpace.app protocol: one JSON line each way over a Unix domain socket.
+/// A response with `events` (`subscribe`) keeps the connection: one JSON line per event follows.
 public enum IPC {
     public struct Request: Codable, Sendable, Equatable {
         public var args: [String]
@@ -11,11 +12,14 @@ public enum IPC {
         public var exitCode: Int32
         public var stdout: String
         public var stderr: String
+        /// The events the client now gets, as they happen.
+        public var events: [String]?
 
-        public init(exitCode: Int32 = 0, stdout: String = "", stderr: String = "") {
+        public init(exitCode: Int32 = 0, stdout: String = "", stderr: String = "", events: [String]? = nil) {
             self.exitCode = exitCode
             self.stdout = stdout
             self.stderr = stderr
+            self.events = events
         }
 
         public static func ok(_ text: String = "") -> Response { Response(stdout: text) }
@@ -61,7 +65,32 @@ public enum IPC {
         }
     }
 
+    /// A line-by-line reader: messages can arrive several in one read.
+    struct Lines {
+        let fd: Int32
+        private var buffer = Data()
+
+        init(_ fd: Int32) { self.fd = fd }
+
+        /// The next line, without its newline; nil at EOF, on error or timeout.
+        mutating func next() -> Data? {
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            while true {
+                if let end = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                    defer { buffer.removeSubrange(...end) }
+                    return buffer[..<end]
+                }
+                guard buffer.count < maxMessageSize else { return nil }
+                let n = read(fd, &chunk, chunk.count)
+                guard n > 0 else { return nil }
+                buffer.append(contentsOf: chunk[0..<n])
+            }
+        }
+    }
+
     static func setTimeout(_ fd: Int32, seconds: Int) {
+        var on: Int32 = 1 // a client gone mid-write is an error, not a SIGPIPE
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         var tv = timeval(tv_sec: seconds, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))

@@ -151,6 +151,7 @@ extension WindowManager {
         guard let model, !inCallback else { return }
         inCallback = true
         defer { inCallback = false }
+        publishFocus(since: before)
         let workspace = model.focusedWorkspace.name
         if model.focused != before.window || workspace != before.workspace, let script = settings.onFocusChanged {
             _ = execute(script, window: model.focused)
@@ -167,6 +168,7 @@ extension WindowManager {
         guard name != mode else { return }
         mode = name
         handlers.modeChanged(name)
+        publish("mode-changed", ["mode": name])
         if !inCallback, let script = settings.onModeChanged {
             inCallback = true
             _ = execute(script, window: nil)
