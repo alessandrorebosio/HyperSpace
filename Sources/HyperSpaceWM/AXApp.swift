@@ -268,6 +268,11 @@ final class AXApp: WindowApp, @unchecked Sendable {
         return nil
     }
 
+    func flush(_ group: DispatchGroup) {
+        group.enter()
+        queue.async { group.leave() }
+    }
+
     func terminate() {
         NSRunningApplication(processIdentifier: pid)?.terminate()
     }

@@ -110,6 +110,27 @@ struct WindowManagerTests {
                 "the slow app's window is put back too")
     }
 
+    @Test func windowsWaitForTheSavedLayoutWithoutPassingTiles() {
+        let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let b = FakeApp(pid: 11, bundleID: "b", windows: [window(3)])
+        let system = FakeSystem(screens: [Self.main], apps: [a, b])
+        let first = started(system)
+        #expect(first.run("move-node-to-workspace 7 --window-id 3") == nil)
+        first.stop()
+        let back = b.frames[3]!
+        #expect(back.origin != Self.corner, "given back on screen")
+
+        b.slowStart = true
+        let wm = started(system)
+        defer { wm.stop() }
+        a.frames[1] = CGRect(x: 1, y: 1, width: 10, height: 10) // moved meanwhile: shows a set frame
+        #expect(wm.isStartingUp)
+        #expect(a.frames[1] == CGRect(x: 1, y: 1, width: 10, height: 10) && b.frames[3] == back, "nothing set yet")
+        b.finishStart()
+        #expect(Set([a.frames[1], a.frames[2]]) == [Self.left, Self.right])
+        #expect(b.frames[3] == CGRect(origin: Self.corner, size: back.size), "back on its hidden workspace, at its size")
+    }
+
     @Test func anAppQuittingDuringStartupDoesNotHoldItUp() {
         let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1)])
         let b = FakeApp(pid: 11, bundleID: "b", windows: [window(2)])

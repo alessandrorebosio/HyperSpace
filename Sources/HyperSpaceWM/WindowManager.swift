@@ -150,6 +150,12 @@ public final class WindowManager {
         guard let current = model else { return }
         if !isStartingUp { saveLayout(current) }
         for (id, frame) in parked { records[id]?.app.setFrames([(id, frame, frames[id])]) }
+        // Frames are set on the apps' queues: on quit, the process would end before they
+        // are, leaving windows off screen (and the next start would take them for windows
+        // of another display). A frozen app doesn't hold the quit up for long.
+        let group = DispatchGroup()
+        for app in apps.values { app.flush(group) }
+        if group.wait(timeout: .now() + .seconds(2)) == .timedOut { log.error("stopping: apps slow to take their windows back") }
         system.stopObserving()
         for app in apps.values { app.stop() }
         apps = [:]
@@ -183,7 +189,9 @@ public final class WindowManager {
     /// Puts every window where the model says, touching only what changed (everything when
     /// `force`d: our idea of where windows are may be stale).
     func apply(force: Bool = false) {
-        guard let model else { return }
+        // Windows wait where they are for the saved layout: tiled meanwhile wherever they
+        // were found, some apps would keep the size of that passing tile.
+        guard let model, !(isStartingUp && savedLayout != nil) else { return }
         let layout = model.layout()
         lastLayout = layout
         var batches: [pid_t: (WindowApp, [(window: WindowID, frame: CGRect, old: CGRect?)])] = [:]

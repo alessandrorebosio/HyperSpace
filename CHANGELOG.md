@@ -17,6 +17,10 @@ section here, so a version's section is written before the version is released.
 - **The scratchpad always shows centered at 80% of the display**, even after being moved or resized.
 - **A scratchpad can become an ordinary window.** Tiling it (`layout tiling`) or moving it to another workspace or display leaves it there as an ordinary window; the next `scratchpad` of its app takes another of its windows when there is one.
 
+### Fixed
+
+- **Windows come back intact after quitting or restarting HyperSpace.** Quitting could leave some windows of hidden workspaces off screen, and at the next start they could keep the size of a tile on another display (a window too short, a gap below). Quitting now waits for every app to take its windows back, and at start windows stay put until the saved layout is restored.
+
 ## [0.3.0] - 2026-10-16
 
 ### New

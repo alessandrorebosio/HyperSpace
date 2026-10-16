@@ -47,6 +47,8 @@ protocol WindowApp: AnyObject, Sendable {
     /// Presses the app's menu item with the ⌘N shortcut (New Window, New Document...):
     /// false if it has no such item enabled.
     func pressNewWindow(_ completion: @escaping @MainActor (Bool) -> Void)
+    /// Leaves `group` once what was asked of the app so far is done.
+    func flush(_ group: DispatchGroup)
     func terminate()
 }
 

@@ -94,6 +94,7 @@ final class FakeApp: WindowApp, @unchecked Sendable {
             create(id, frame: CGRect(x: 10, y: 10, width: 300, height: 200))
         }
     }
+    func flush(_ group: DispatchGroup) {}
     func terminate() {}
 
     @MainActor func send(_ event: WindowEvent) { events?(event) }
