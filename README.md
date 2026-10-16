@@ -61,6 +61,12 @@ hsctl apps          # running apps and their bundle ids, for per-app rules
 hsctl version
 ```
 
+Tab completion in zsh (commands, flags, workspace names): add this to `~/.zshrc`, after `compinit`:
+
+```sh
+eval "$(hsctl completion zsh)"
+```
+
 ## License
 
 MIT, see [LICENSE](LICENSE). Third-party code and ideas: [THIRD_PARTY.md](THIRD_PARTY.md).

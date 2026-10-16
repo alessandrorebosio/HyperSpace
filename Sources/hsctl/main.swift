@@ -14,6 +14,7 @@ usage: hsctl <command>
   config-path   print the config directory (keyboard.toml, mouse.toml, wm.toml)
   apps          list running apps with their bundle id (for per-app rules)
   version       print HyperSpace's version
+  completion zsh  print the zsh completion: eval "$(hsctl completion zsh)" in ~/.zshrc
 
 window manager: every AeroSpace command, as with the `aerospace` CLI, e.g.
   workspace 2 | move-node-to-workspace Develop | focus left | layout tiles accordion
@@ -24,6 +25,12 @@ window manager: every AeroSpace command, as with the `aerospace` CLI, e.g.
 if args.isEmpty || args == ["-h"] || args == ["--help"] {
     print(usage)
     exit(args.isEmpty ? 1 : 0)
+}
+
+// Answered here: it works without HyperSpace running.
+if args == ["completion", "zsh"] {
+    print(zshCompletion)
+    exit(0)
 }
 
 switch IPCClient.send(IPC.Request(args: args)) {
