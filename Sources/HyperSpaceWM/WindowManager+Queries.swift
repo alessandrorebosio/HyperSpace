@@ -21,8 +21,7 @@ extension WindowManager {
             values["window-id"] = String(window)
             values["window-title"] = record.title
             values["window-is-fullscreen"] = String(workspace.fullscreen == window)
-            values["window-layout"] = model.sticky.contains(window) ? "sticky"
-                : model.windows[window]?.floating == true ? "floating" : "tiling"
+            values["window-layout"] = model.windows[window]?.floating == true ? "floating" : "tiling"
             values["app-name"] = app.name
             values["app-bundle-id"] = app.bundleID ?? ""
             values["app-pid"] = String(app.pid)

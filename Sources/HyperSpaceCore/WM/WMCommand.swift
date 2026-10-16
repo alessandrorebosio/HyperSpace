@@ -62,7 +62,7 @@ public indirect enum WMCommand: Sendable, Equatable {
     public enum ResizeAmount: Sendable, Equatable { case add(Double), set(Double) }
 
     public enum LayoutChoice: String, Sendable, CaseIterable {
-        case tiles, accordion, horizontal, vertical, tiling, floating, sticky
+        case tiles, accordion, horizontal, vertical, tiling, floating
         case hTiles = "h_tiles", vTiles = "v_tiles", hAccordion = "h_accordion", vAccordion = "v_accordion"
     }
 
