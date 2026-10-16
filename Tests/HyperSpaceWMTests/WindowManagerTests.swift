@@ -279,6 +279,51 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
     }
 
+    @Test func stickyWindowsAreOnEveryWorkspace() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        defer { wm.stop() }
+        #expect(wm.run("layout sticky --window-id 2") == nil)
+        let frame = app.frames[2]
+        #expect(app.frames[1] == Self.full, "out of the tiles")
+        #expect(wm.run(words: ["list-windows", "--all", "--format", "%{window-id} %{window-layout}"]).output == "1 tiling\n2 sticky")
+
+        // Another workspace: the tiled window hides, the sticky one stays where it is.
+        #expect(wm.run("workspace 2") == nil)
+        #expect(app.frames[1]?.origin == Self.corner)
+        #expect(app.frames[2] == frame)
+        #expect(wm.run(words: ["list-windows", "--workspace", "2", "--format", "%{window-id}"]).output == "2")
+        #expect(wm.run("workspace 1") == nil)
+        #expect(app.frames[2] == frame)
+
+        // Sent to a hidden workspace, it's back at once: it's on every one.
+        #expect(wm.run("move-node-to-workspace 3 --window-id 2") == nil)
+        #expect(app.frames[2] == frame)
+
+        // `layout sticky tiling` toggles: tiled again, it stays on its workspace.
+        #expect(wm.run("layout sticky tiling --window-id 2") == nil)
+        #expect(Set([app.frames[1], app.frames[2]]) == [Self.left, Self.right])
+        #expect(wm.run("workspace 2") == nil)
+        #expect(app.frames[2]?.origin == Self.corner)
+    }
+
+    @Test func stickyWindowsStayOnTheirDisplay() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2, CGRect(x: 1100, y: 100, width: 300, height: 200))])
+        let wm = started(FakeSystem(screens: [Self.main, Self.dell], apps: [app]))
+        defer { wm.stop() }
+        #expect(wm.run("layout sticky --window-id 2") == nil)
+        #expect(wm.run("layout floating --window-id 2") == nil, "floating, no longer sticky")
+        #expect(wm.run(words: ["list-windows", "--all", "--format", "%{window-layout}"]).output == "tiling\nfloating")
+        #expect(wm.run("layout sticky --window-id 2") == nil)
+        let frame = app.frames[2]
+
+        // A workspace switch on the main display doesn't take it from the DELL.
+        #expect(wm.run("focus --window-id 1") == nil)
+        #expect(wm.run("workspace 7") == nil)
+        #expect(app.frames[2] == frame)
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--count"]).output == "0")
+    }
+
     /// Workspace 1 has windows 1 (app 10) and 3 (app 12, focused); workspace O has window 2
     /// (app 11), whose app macOS activates when window 3 closes.
     private func closingSetup() -> (FakeSystem, WindowManager, FakeApp, FakeApp, FakeApp) {

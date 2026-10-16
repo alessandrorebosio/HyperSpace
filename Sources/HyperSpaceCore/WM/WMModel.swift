@@ -102,6 +102,9 @@ public final class WMModel {
     public private(set) var scratchpads: Set<WindowID> = []
     /// Scratchpads put away: on no workspace, waiting in a corner to be summoned.
     public private(set) var stashed: Set<WindowID> = []
+    /// Floating windows on every workspace (`layout sticky`): each belongs to the workspace
+    /// shown on its display, and moves along when another one is shown there.
+    public private(set) var sticky: Set<WindowID> = []
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -171,6 +174,7 @@ public final class WMModel {
         if !ids.contains(focusedMonitor) { focusedMonitor = mainMonitor?.id ?? 0 }
         // The focused window left with its display: focus what the focused monitor shows.
         if focused.flatMap({ workspace(of: $0) }).map({ !isVisible($0.name) }) ?? false { focusRecent(in: focusedWorkspace) }
+        followSticky()
         collectEmptyWorkspaces()
     }
 
@@ -190,6 +194,7 @@ public final class WMModel {
     public func remove(_ window: WindowID) {
         guard windows.removeValue(forKey: window) != nil else { return }
         scratchpads.remove(window)
+        sticky.remove(window)
         history.removeAll { $0 == window }
         if stashed.remove(window) != nil {
             if focused == window { focused = nil }
@@ -210,6 +215,7 @@ public final class WMModel {
         windows[new] = WMWindowInfo(id: new, floating: info.floating)
         if scratchpads.remove(old) != nil { scratchpads.insert(new) }
         if stashed.remove(old) != nil { stashed.insert(new) }
+        if sticky.remove(old) != nil { sticky.insert(new) }
         location[new] = location.removeValue(forKey: old)
         if let workspace {
             if let index = workspace.floating.firstIndex(of: old) { workspace.floating[index] = new }
@@ -230,6 +236,7 @@ public final class WMModel {
         guard let workspace = workspace(of: window) else { return false }
         let before = visible
         show(workspace.name)
+        followSticky()
         focus(window)
         return before != visible
     }
@@ -248,6 +255,7 @@ public final class WMModel {
             return false
         }
         stashed.remove(window)
+        sticky.remove(window)
         if let from = workspace(of: window) { detach(window, from: from) }
         attachFloating(window, to: target)
         windows[window]?.floating = true
@@ -274,6 +282,7 @@ public final class WMModel {
         if let explicit, windows[explicit] == nil { throw InvalidConfig(message: "no window with id \(explicit)") }
         subject = explicit ?? focused
         defer {
+            followSticky()
             for workspace in workspaces.values { workspace.root.normalize() }
             collectEmptyWorkspaces()
         }
@@ -564,6 +573,16 @@ public final class WMModel {
             return workspaces[name]?.monitor.map { $0 == monitor || !ids.contains($0) } ?? true
         }
             ?? (1...).lazy.map(String.init).first { !isVisible($0) && workspaces[$0] == nil }!
+    }
+
+    /// A sticky window whose workspace was just hidden goes to the one shown in its place.
+    private func followSticky() {
+        for window in sticky {
+            guard let from = workspace(of: window), !isVisible(from.name),
+                  let monitor = assignedMonitor(from.name), let name = visible[monitor] else { continue }
+            detach(window, from: from)
+            attachFloating(window, to: workspace(name))
+        }
     }
 
     /// Hidden empty workspaces are dropped, unless persistent; they come back when named.
@@ -873,7 +892,8 @@ public final class WMModel {
         let container = root || name != nil ? workspace.root : node?.parent
         func isCurrent(_ choice: WMCommand.LayoutChoice) -> Bool {
             switch choice {
-            case .floating: return window != nil && node == nil
+            case .floating: return window.map { node == nil && !sticky.contains($0) } ?? false
+            case .sticky: return window.map(sticky.contains) ?? false
             case .tiling: return node != nil
             case .tiles: return container?.layout == .tiles
             case .accordion: return container?.layout == .accordion
@@ -887,13 +907,16 @@ public final class WMModel {
         }
         guard let choice = choices.first(where: { !isCurrent($0) }) else { return false }
         switch choice {
-        case .floating:
-            guard let window, node != nil else { return false }
+        case .floating, .sticky:
+            guard let window else { return false }
+            if choice == .sticky { sticky.insert(window) } else { sticky.remove(window) }
+            guard node != nil else { return true } // floating already
             detach(window, from: workspace)
             attachFloating(window, to: workspace)
             windows[window]?.floating = true
         case .tiling:
             guard let window, node == nil else { return false }
+            sticky.remove(window)
             workspace.floating.removeAll { $0 == window }
             windows[window]?.floating = false
             insertTiled(window, into: workspace)
