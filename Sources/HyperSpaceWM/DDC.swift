@@ -22,14 +22,15 @@ final class DDC: @unchecked Sendable {
     /// The AV service of each display, found again only when the displays change.
     private var services: (displays: [CGDirectDisplayID], byDisplay: [CGDirectDisplayID: CFTypeRef]) = ([], [:])
 
-    /// The input of each display that answers, by display id; the built-in one never does.
+    /// The input of each display that answers, by display id. The built-in one has none, and
+    /// asleep ones aren't asked (they wouldn't answer).
     func inputs(of displays: [CGDirectDisplayID], _ completion: @escaping @MainActor ([CGDirectDisplayID: UInt8]) -> Void) {
         queue.async { [self] in
             var inputs: [CGDirectDisplayID: UInt8] = [:]
             if create != nil, readI2C != nil, writeI2C != nil {
                 let external = displays.filter { CGDisplayIsBuiltin($0) == 0 }.sorted()
                 if services.displays != external { services = (external, findServices(external)) }
-                for (display, service) in services.byDisplay {
+                for (display, service) in services.byDisplay where CGDisplayIsAsleep(display) == 0 {
                     if let input = readInput(service) { inputs[display] = input }
                 }
             }
@@ -49,21 +50,16 @@ final class DDC: @unchecked Sendable {
         var lastEDID: EDID?
         while case let entry = IOIteratorNext(iterator), entry != 0 {
             defer { IOObjectRelease(entry) }
-            var name = [CChar](repeating: 0, count: 128)
-            IOObjectGetClass(entry, &name)
-            switch String(cString: name) {
-            case "AppleCLCD2", "IOMobileFramebufferShim":
-                let attributes = property(entry, "DisplayAttributes") as? [String: Any]
-                let product = attributes?["ProductAttributes"] as? [String: Any]
-                func number(_ key: String) -> UInt32? { (product?[key] as? NSNumber).map { UInt32(truncatingIfNeeded: $0.uint64Value) } }
-                lastEDID = number("LegacyManufacturerID").map { ($0, number("ProductID") ?? 0, number("SerialNumber") ?? 0) }
-            case "DCPAVServiceProxy":
+            if IOObjectConformsTo(entry, "DCPAVServiceProxy") != 0 {
                 guard property(entry, "Location") as? String == "External",
                       let service = create?(kCFAllocatorDefault, entry)?.takeRetainedValue() else { continue }
                 found.append((lastEDID, service))
                 lastEDID = nil
-            default:
-                break
+            } else if IOObjectConformsTo(entry, "AppleCLCD2") != 0 || IOObjectConformsTo(entry, "IOMobileFramebufferShim") != 0 {
+                let attributes = property(entry, "DisplayAttributes") as? [String: Any]
+                let product = attributes?["ProductAttributes"] as? [String: Any]
+                func number(_ key: String) -> UInt32? { (product?[key] as? NSNumber).map { UInt32(truncatingIfNeeded: $0.uint64Value) } }
+                lastEDID = number("LegacyManufacturerID").map { ($0, number("ProductID") ?? 0, number("SerialNumber") ?? 0) }
             }
         }
         var byDisplay: [CGDirectDisplayID: CFTypeRef] = [:]

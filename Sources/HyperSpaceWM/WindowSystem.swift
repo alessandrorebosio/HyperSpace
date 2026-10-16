@@ -116,8 +116,16 @@ final class MacSystem: WindowSystem {
         }
     }
 
+    /// A read still going (a slow display) isn't queued behind by another.
+    private var readingInputs = false
+
     func monitorInputs(_ ids: [UInt32], _ completion: @escaping @MainActor ([UInt32: UInt8]) -> Void) {
-        ddc.inputs(of: ids, completion)
+        guard !readingInputs else { return }
+        readingInputs = true
+        ddc.inputs(of: ids) { [weak self] inputs in
+            self?.readingInputs = false
+            completion(inputs)
+        }
     }
 
     func windowServer(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)] {

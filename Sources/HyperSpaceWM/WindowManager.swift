@@ -177,7 +177,6 @@ public final class WindowManager {
         if group.wait(timeout: .now() + .seconds(2)) == .timedOut { log.error("stopping: apps slow to take their windows back") }
         system.stopObserving()
         pollMonitorInputs(false)
-        monitorInputs = [:]
         for app in apps.values { app.stop() }
         apps = [:]
         snapChecks.values.forEach { $0.cancel() }

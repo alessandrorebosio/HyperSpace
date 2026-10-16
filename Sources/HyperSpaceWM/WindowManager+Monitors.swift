@@ -7,8 +7,8 @@ import HyperSpaceCore
 /// is as if disconnected: its workspaces wait on the others, and come back with it.
 extension WindowManager {
     /// The displays the model gets: every display, but never none.
-    func shownMonitors() -> [WMMonitor] {
-        let all = system.monitors()
+    func shownMonitors(_ all: [WMMonitor]? = nil) -> [WMMonitor] {
+        let all = all ?? system.monitors()
         let shown = all.filter { !isIgnored($0.name) }
         return shown.isEmpty ? all : shown
     }
@@ -60,7 +60,10 @@ extension WindowManager {
     }
 
     func readMonitorInputs() {
-        system.monitorInputs(system.monitors().map(\.id)) { [weak self] inputs in
+        let monitors = system.monitors()
+        // A lone display is never left out: nothing to read.
+        guard monitors.count > 1 else { return }
+        system.monitorInputs(monitors.map(\.id)) { [weak self] inputs in
             guard let self, self.inputPolling != nil else { return }
             self.inputsRead(inputs)
         }
@@ -80,7 +83,7 @@ extension WindowManager {
                 saveMacInputs()
             }
         }
-        let shown = shownMonitors()
+        let shown = shownMonitors(monitors)
         guard Set(shown.map(\.id)) != Set(model.monitors.map(\.id)) else { return }
         let left = monitors.filter { isIgnored($0.name) }.map(\.name)
         log.info("displays shown: \(shown.map(\.name)), on another input: \(left)")
