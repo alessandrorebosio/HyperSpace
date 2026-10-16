@@ -341,11 +341,18 @@ struct WindowManagerTests {
         defer { wm.stop() }
         #expect(wm.run("move-node-to-workspace Shell --window-id 2") == nil)
         #expect(wm.run("focus --window-id 1") == nil)
+        term.onPress = {
+            term.focused = 2
+            system.frontmost = 11
+            system.send(.activated(11))
+            term.send(.focusChanged)
+        }
 
         // Its ⌘N menu item opens window 3: the scratchpad, shown.
         #expect(wm.run("scratchpad --new term") == nil)
         #expect(term.newWindowPresses == 1)
         #expect(term.frames[3] == Self.scratchpadFrame && other.frames[1] == Self.full)
+        #expect(wm.focusedWorkspace == "1", "the app coming forward doesn't show Shell")
         #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-id}"]).output == "3")
 
         // Another one takes its place; the first goes away, to the fallback workspace.

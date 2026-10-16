@@ -83,11 +83,14 @@ final class FakeApp: WindowApp, @unchecked Sendable {
     /// The window the app's ⌘N menu item opens (nil: it has none), and how often it was pressed.
     var newWindow: WindowID?
     var newWindowPresses = 0
+    var onPress: (@MainActor () -> Void)?
     func pressNewWindow(_ completion: @escaping @MainActor (Bool) -> Void) {
         MainActor.assumeIsolated {
             guard let id = newWindow else { return completion(false) }
             newWindowPresses += 1
             completion(true)
+            // The app comes forward first, its old window focused, as Terminal does.
+            onPress?()
             create(id, frame: CGRect(x: 10, y: 10, width: 300, height: 200))
         }
     }

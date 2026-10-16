@@ -256,6 +256,9 @@ extension WindowManager {
     /// macOS focus moved: follow it (and show its workspace if it was hidden).
     func syncFocus(_ pid: pid_t?) {
         guard let pid, let app = apps[pid] else { return }
+        // Its window for `scratchpad` is on the way: the app comes forward for it, and an
+        // older window of its mustn't take us to its workspace meanwhile.
+        if let pending = pendingScratchpad, pending.bundleID == app.bundleID, ContinuousClock.now < pending.until { return }
         app.focusedWindow { [weak self] id in
             guard let self, let model = self.model, let before = self.focusState else { return }
             // A tab: its group is what the model knows; remember which tab is shown.
