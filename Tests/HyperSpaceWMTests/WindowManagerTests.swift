@@ -253,6 +253,7 @@ struct WindowManagerTests {
         #expect(other.frames[1] == Self.full, "the tiles don't move")
         #expect(term.raised.last == 2)
         #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-layout}"]).output == "floating")
+        #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-is-scratchpad} %{window-scratchpad-home}"]).output == "true Shell")
         #expect(wm.run(words: ["list-workspaces", "--empty", "no"]).output == "1")
 
         // Put away: back on Shell (hidden, so in the corner), focus back on the window before.

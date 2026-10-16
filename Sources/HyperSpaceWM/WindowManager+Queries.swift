@@ -44,6 +44,10 @@ extension WindowManager {
             values["window-title"] = record.title
             values["window-is-fullscreen"] = String(workspace.fullscreen == window)
             values["window-layout"] = model.windows[window]?.floating == true ? "floating" : "tiling"
+            // HyperSpace's own: a shown scratchpad, and the workspace it goes back to.
+            let home = model.scratchpadHomes[window]
+            values["window-is-scratchpad"] = String(home != nil)
+            values["window-scratchpad-home"] = home?.workspace ?? ""
             values["app-name"] = app.name
             values["app-bundle-id"] = app.bundleID ?? ""
             values["app-pid"] = String(app.pid)
