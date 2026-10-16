@@ -93,10 +93,14 @@ extension WindowManager {
             if let bundle = filters["--app-bundle-id"]?.first { ids = ids.filter { records[$0]?.app.bundleID == bundle } }
             return format(ids.map { variables(window: $0) }, query, default: "%{window-id} | %{app-name} | %{window-title}")
         case .monitors:
-            var monitors = model.monitors
+            // `--all`: the displays left out too (no monitor id: the model doesn't have them).
+            var monitors = filters["--all"] != nil ? system.monitors() : model.monitors
             if filters["--focused"] != nil { monitors = monitors.filter { $0.id == model.focusedMonitor } }
             let rows = monitors.map { monitor in
-                ["monitor-id": String((model.monitors.firstIndex { $0.id == monitor.id } ?? 0) + 1), "monitor-name": monitor.name]
+                ["monitor-id": model.monitors.firstIndex { $0.id == monitor.id }.map { String($0 + 1) } ?? "",
+                 "monitor-name": monitor.name,
+                 "monitor-is-ignored": String(isIgnored(monitor.key)),
+                 "monitor-input": monitorInputs[monitor.key].map { String(format: "0x%02x", $0) } ?? ""]
             }
             return format(rows, query, default: "%{monitor-id} | %{monitor-name}")
         case .apps:

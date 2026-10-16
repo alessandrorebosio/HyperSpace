@@ -85,7 +85,7 @@ _hsctl() {
     trigger-binding) flags=(--mode) ;;
     list-windows) flags=(--all --focused --workspace --monitor --pid --app-bundle-id --format --count --json) ;;
     list-workspaces) flags=(--all --focused --monitor --visible --empty --format --count --json) ;;
-    list-monitors) flags=(--focused --format --count --json) ;;
+    list-monitors) flags=(--all --focused --format --count --json) ;;
     list-apps|list-modes) flags=(--format --count --json) ;;
   esac
   if [[ $PREFIX == -* ]]; then

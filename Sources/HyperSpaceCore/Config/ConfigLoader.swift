@@ -336,7 +336,8 @@ public enum ConfigLoader {
     # scratchpad-fallback-workspace = 'Scratch'
     # A display still connected but showing another input (another computer) is left out,
     # as if disconnected: its workspaces wait on the others. Read over DDC, every 2 s; the
-    # input it shows when first seen is taken as the Mac's (`ignore-monitor off` corrects it).
+    # Mac's input is learned when the display is plugged in or a window on it gets the focus
+    # (`ignore-monitor off` sets it by hand).
     # detect-monitor-input = false
 
     # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned

@@ -19,6 +19,7 @@ extension WindowManager {
         case let .hidden(pid, false):
             setHidden(pid, false)
         case .displaysChanged:
+            displaysConnected()
             monitorsChanged()
             // A display just connected: its input matters now, not in 2 s.
             if inputPolling != nil { readMonitorInputs() }
@@ -279,6 +280,7 @@ extension WindowManager {
                 self.log.info("following macOS focus to workspace \(model.focusedWorkspace.name) (\(app.name))")
                 self.apply()
             }
+            self.focusedByUser()
             self.focusChanged(since: before)
             self.announce()
         }

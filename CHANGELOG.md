@@ -5,6 +5,16 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+### New
+
+- **Displays in the menu**: with more than one display, each one can be unchecked to leave it out of the window manager (`ignore-monitor`).
+- **`list-monitors --all`** lists the displays left out too, and `%{monitor-is-ignored}` and `%{monitor-input}` (the input read over DDC) go in `--format`.
+
+### Changed
+
+- **The Mac's input on a display is learned only when the display surely shows the Mac**: when it's plugged in, or when you focus a window on it, no longer on the first read at launch (the display may then be showing another computer). `ignore-monitor off` still sets it by hand.
+- **Displays are told apart by their EDID UUID**, not their name: two identical displays no longer share a workspace or an input.
+
 ## [0.5.0] - 2026-10-16
 
 ### New

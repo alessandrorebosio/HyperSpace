@@ -5,6 +5,9 @@ import Foundation
 public struct WMMonitor: Sendable, Equatable {
     public let id: UInt32
     public var name: String
+    /// Which display this is, whatever its id: its EDID UUID, else its name. Two identical
+    /// displays have different keys (their serial numbers differ), the same name.
+    public var key: String
     /// The "main" display (System Settings > Displays > Use as).
     public var isMain: Bool
     /// The whole display.
@@ -12,9 +15,10 @@ public struct WMMonitor: Sendable, Equatable {
     /// Without the menu bar and the Dock: where windows go.
     public var visible: CGRect
 
-    public init(id: UInt32, name: String = "", isMain: Bool = false, frame: CGRect, visible: CGRect) {
+    public init(id: UInt32, name: String = "", key: String? = nil, isMain: Bool = false, frame: CGRect, visible: CGRect) {
         self.id = id
         self.name = name
+        self.key = key ?? name
         self.isMain = isMain
         self.frame = frame
         self.visible = visible
@@ -107,7 +111,7 @@ public final class WMModel {
     /// Window -> name of its workspace, kept by every attach and detach so lookups don't
     /// search every workspace's tree.
     var location: [WindowID: String] = [:]
-    /// Display name -> workspace it showed when it was disconnected, to show it again when
+    /// Display key -> workspace it showed when it was disconnected, to show it again when
     /// the display comes back.
     private var lastShown: [String: String] = [:]
     /// Shown scratchpad windows (`scratchpad`), floating over the focused workspace -> the
@@ -164,20 +168,20 @@ public final class WMModel {
         let ids = Set(monitors.map(\.id))
         // Display ids can change across sleep: a display back under a new id is the same one.
         for monitor in self.monitors where !old.contains(where: { $0.id == monitor.id }) {
-            guard let previous = old.first(where: { $0.name == monitor.name && !ids.contains($0.id) }) else { continue }
+            guard let previous = old.first(where: { $0.key == monitor.key && !ids.contains($0.id) }) else { continue }
             if let name = visible.removeValue(forKey: previous.id) { visible[monitor.id] = name }
             for workspace in workspaces.values where workspace.monitor == previous.id { workspace.monitor = monitor.id }
             if focusedMonitor == previous.id { focusedMonitor = monitor.id }
         }
         for (id, name) in visible where !ids.contains(id) {
-            if let monitor = old.first(where: { $0.id == id }) { lastShown[monitor.name] = name }
+            if let monitor = old.first(where: { $0.id == id }) { lastShown[monitor.key] = name }
             visible[id] = nil
         }
         for (id, name) in visible where settings.workspaceToMonitor[name] != nil && assignedMonitor(name) != id {
             visible[id] = nil
         }
         for monitor in self.monitors where visible[monitor.id] == nil {
-            let remembered = lastShown.removeValue(forKey: monitor.name).flatMap { workspaces[$0] != nil ? [$0] : nil } ?? []
+            let remembered = lastShown.removeValue(forKey: monitor.key).flatMap { workspaces[$0] != nil ? [$0] : nil } ?? []
             let name = fallbackWorkspace(for: monitor.id, preferring: remembered)
             visible[monitor.id] = name
             workspace(name).monitor = monitor.id

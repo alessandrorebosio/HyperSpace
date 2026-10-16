@@ -94,13 +94,15 @@ public final class WindowManager {
     var inCallback = false
     /// The last layout applied: what `focus-follows-mouse` looks windows up in.
     var lastLayout = WMLayout()
-    /// Displays left out by `ignore-monitor`, by name, as if disconnected.
+    /// Displays left out by `ignore-monitor`, by key, as if disconnected.
     var ignoredMonitors: Set<String> = []
-    /// `detect-monitor-input`: the input each display was last read showing, and the one
-    /// that is the Mac's (the first one read, unless `ignore-monitor off` said otherwise;
-    /// kept across restarts), by name.
+    /// `detect-monitor-input`, by display key: the input each display was last read showing,
+    /// and the one that is the Mac's (kept across restarts).
     var monitorInputs: [String: UInt8] = [:]
     var macInputs: [String: UInt8] = [:]
+    /// Displays connected now, and the ones whose next input read is the Mac's.
+    var connectedMonitors: Set<String> = []
+    var learnable: Set<String> = []
     var inputPolling: Task<Void, Never>?
 
     public convenience init(handlers: Handlers) {
@@ -151,8 +153,9 @@ public final class WindowManager {
             return
         }
         macInputs = loadMacInputs()
-        model = WMModel(monitors: shownMonitors(), settings: settings)
         isStartingUp = true
+        displaysConnected()
+        model = WMModel(monitors: shownMonitors(), settings: settings)
         savedLayout = loadLayout()
         appWorkspaces = loadAppWorkspaces()
         pollMonitorInputs(settings.detectMonitorInput)
@@ -177,6 +180,7 @@ public final class WindowManager {
         if group.wait(timeout: .now() + .seconds(2)) == .timedOut { log.error("stopping: apps slow to take their windows back") }
         system.stopObserving()
         pollMonitorInputs(false)
+        learnable = []
         for app in apps.values { app.stop() }
         apps = [:]
         snapChecks.values.forEach { $0.cancel() }

@@ -167,6 +167,8 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["ignore-monitor", "on", "dell"]).ok)
         #expect(app.frames[2]?.origin == Self.corner, "its workspace waits on the main display")
         #expect(wm.run(words: ["list-monitors", "--count"]).output == "1")
+        #expect(wm.run(words: ["list-monitors", "--all", "--format", "%{monitor-name} %{monitor-is-ignored}"]).output == "Built-in false\nDELL true")
+        #expect(wm.displays.map(\.ignored) == [false, true])
         #expect(wm.run(words: ["ignore-monitor", "toggle", "dell"]).ok)
         #expect(app.frames[2] == Self.dell.visible, "back on its display")
         #expect(wm.run(words: ["ignore-monitor", "on", "dell", "main"]).error?.contains("every monitor") == true)
@@ -184,7 +186,17 @@ struct WindowManagerTests {
         wm.start(settings)
         defer { wm.stop() }
         wm.readMonitorInputs()
-        #expect(wm.macInputs["DELL"] == 0x1b, "the input first read is the Mac's")
+        #expect(wm.macInputs["DELL"] == nil, "at launch it may be showing another computer")
+        system.inputs = [2: 0x0f]
+        wm.readMonitorInputs()
+        #expect(app.frames[2] == Self.dell.visible, "shown until the Mac's input is known")
+        // Plugged in: it shows the Mac.
+        system.screens = [Self.main]
+        system.send(.displaysChanged)
+        system.screens = [Self.main, Self.dell]
+        system.inputs = [2: 0x1b]
+        system.send(.displaysChanged)
+        #expect(wm.macInputs["DELL"] == 0x1b, "learned when plugged in")
         #expect(app.frames[2] == Self.dell.visible)
         system.inputs = [2: 0x0f]
         wm.readMonitorInputs()

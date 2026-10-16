@@ -36,6 +36,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         addWorkspaces()
+        addDisplays()
 
         menu.addItem(disabled("HyperSpace \(HyperSpace.version)"))
         let enabled = action("Enabled", #selector(toggleEnabled), key: "e")
@@ -133,6 +134,24 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
     }
 
+    /// With more than one display: each one, checked while the window manager uses it;
+    /// unchecking it is `ignore-monitor on` (a display switched to another computer).
+    private func addDisplays() {
+        guard controller.isEnabled, controller.wm.focusedWorkspace != nil, case let displays = controller.wm.displays, displays.count > 1 else { return }
+        let item = NSMenuItem(title: "Displays", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for display in displays {
+            let entry = action(display.name, #selector(toggleDisplay(_:)))
+            entry.state = display.ignored ? .off : .on
+            entry.representedObject = display.key
+            submenu.addItem(entry)
+        }
+        item.submenu = submenu
+        menu.addItem(item)
+        menu.addItem(.separator())
+    }
+
     private func disabled(_ title: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -159,6 +178,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         for id in sender.representedObject as? [WindowID] ?? [] {
             if let error = controller.wm.run(words: ["close", "--window-id", String(id)]).error { HyperSpace.logger("app").error("menu: \(error)") }
         }
+    }
+
+    @objc private func toggleDisplay(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        do throws(InvalidConfig) { try controller.wm.setIgnored([key], nil) } catch { HyperSpace.logger("app").error("menu: \(error.message)") }
     }
 
     @objc private func toggleEnabled() { controller.setEnabled(!controller.isEnabled) }

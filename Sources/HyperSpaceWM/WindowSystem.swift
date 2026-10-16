@@ -111,7 +111,8 @@ final class MacSystem: WindowSystem {
         }
         return NSScreen.screens.map { screen in
             let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            return WMMonitor(id: id, name: screen.localizedName, isMain: screen == main,
+            let uuid = CGDisplayCreateUUIDFromDisplayID(id).flatMap { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String? }
+            return WMMonitor(id: id, name: screen.localizedName, key: uuid, isMain: screen == main,
                              frame: ax(screen.frame), visible: ax(screen.visibleFrame))
         }
     }
