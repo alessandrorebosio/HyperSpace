@@ -4,17 +4,25 @@ import HyperSpaceCore
 extension WindowManager {
     // MARK: - Queries
 
-    /// Every workspace with windows, plus the shown ones, in display order, with the apps of
-    /// its windows (each once, in window order): what the menu lists.
-    public var workspaceApps: [(name: String, focused: Bool, apps: [(pid: pid_t, name: String)])] {
+    public struct MenuWindow: Sendable {
+        public let id: WindowID
+        public let pid: pid_t
+        public let app: String
+        public let title: String
+    }
+
+    /// Every workspace with windows, plus the shown ones, in display order, with its windows
+    /// in tree order then floating: what the menu lists.
+    public var workspaceWindows: [(name: String, focused: Bool, windows: [MenuWindow])] {
         guard let model else { return [] }
         let focused = model.focusedWorkspace.name
         return model.workspaceNames.compactMap { name in
-            let windows = model.workspaces[name]?.windows ?? []
-            guard !windows.isEmpty || model.isVisible(name) else { return nil }
-            var seen = Set<pid_t>()
-            let apps = windows.compactMap { records[$0]?.app }.filter { seen.insert($0.pid).inserted }.map { ($0.pid, $0.name) }
-            return (name, name == focused, apps)
+            let ids = model.workspaces[name]?.windows ?? []
+            guard !ids.isEmpty || model.isVisible(name) else { return nil }
+            let windows = ids.compactMap { id in
+                records[id].map { MenuWindow(id: id, pid: $0.app.pid, app: $0.app.name, title: $0.record.title) }
+            }
+            return (name, name == focused, windows)
         }
     }
 

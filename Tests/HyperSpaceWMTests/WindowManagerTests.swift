@@ -333,9 +333,9 @@ struct WindowManagerTests {
         defer { wm.stop() }
         #expect(wm.run("move-node-to-workspace Music --window-id 3") == nil)
         #expect(wm.run("move-node-to-workspace Cad --window-id 2") == nil)
-        let rows = wm.workspaceApps.map { "\($0.focused ? "*" : "")\($0.name): \($0.apps.map(\.name).joined(separator: " "))" }
-        // Numbers first; the DELL's empty shown workspace too; each app once.
-        #expect(rows == ["*1: a", "2: ", "Cad: a", "Music: b"])
+        let rows = wm.workspaceWindows.map { "\($0.focused ? "*" : "")\($0.name): \($0.windows.map { "\($0.app)/\($0.title)" }.joined(separator: " "))" }
+        // Numbers first; the DELL's empty shown workspace too.
+        #expect(rows == ["*1: a/window 1", "2: ", "Cad: a/window 2", "Music: b/window 3"])
     }
 
     @Test func draggedTiledWindowsGoBack() async throws {

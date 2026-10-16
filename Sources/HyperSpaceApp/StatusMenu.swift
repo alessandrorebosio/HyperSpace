@@ -71,32 +71,55 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// Size of the app icons in the workspace rows.
     private static let iconSize: CGFloat = 16
+    /// Window titles longer than this are cut in the submenus.
+    private static let titleLength = 60
 
     /// Every workspace with windows, the focused one checked, with its apps' icons lined up
-    /// in a column after the names. A click shows the workspace.
+    /// in a column after the names. Each opens a submenu: show the workspace, or one of its
+    /// windows.
     private func addWorkspaces() {
-        guard controller.isEnabled, case let rows = controller.wm.workspaceApps, !rows.isEmpty else { return }
-        let font = NSFont.menuFont(ofSize: 0), size = Self.iconSize
+        guard controller.isEnabled, case let rows = controller.wm.workspaceWindows, !rows.isEmpty else { return }
+        let font = NSFont.menuFont(ofSize: 0)
         let names = rows.map { ceil(($0.name as NSString).size(withAttributes: [.font: font]).width) }
         let paragraph = NSMutableParagraphStyle()
-        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: (names.max() ?? 0) + size)]
+        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: (names.max() ?? 0) + Self.iconSize)]
         var icons: [pid_t: NSImage] = [:]
+        func icon(_ pid: pid_t) -> NSImage? {
+            if let icon = icons[pid] { return icon }
+            guard let icon = NSRunningApplication(processIdentifier: pid)?.icon?.copy() as? NSImage else { return nil }
+            icon.size = NSSize(width: Self.iconSize, height: Self.iconSize)
+            icons[pid] = icon
+            return icon
+        }
         for row in rows {
             let title = NSMutableAttributedString(string: row.name + "\t", attributes: [.font: font, .paragraphStyle: paragraph])
-            for app in row.apps {
-                guard let icon = icons[app.pid] ?? NSRunningApplication(processIdentifier: app.pid)?.icon else { continue }
-                icons[app.pid] = icon
+            var seen = Set<pid_t>()
+            for window in row.windows where seen.insert(window.pid).inserted {
+                guard let image = icon(window.pid) else { continue }
                 let attachment = NSTextAttachment()
-                attachment.image = icon
-                attachment.bounds = CGRect(x: 0, y: (font.capHeight - size) / 2, width: size, height: size)
+                attachment.image = image
+                attachment.bounds = CGRect(x: 0, y: (font.capHeight - Self.iconSize) / 2, width: Self.iconSize, height: Self.iconSize)
                 title.append(NSAttributedString(attachment: attachment))
                 title.append(NSAttributedString(string: " ", attributes: [.font: font]))
             }
-            let item = action(row.name, #selector(showWorkspace(_:)))
+            let item = NSMenuItem(title: row.name, action: nil, keyEquivalent: "")
             item.attributedTitle = title
-            item.representedObject = row.name
             item.state = row.focused ? .on : .off
-            item.toolTip = row.apps.map(\.name).joined(separator: ", ")
+            let submenu = NSMenu()
+            submenu.autoenablesItems = false
+            let show = action("Show Workspace", #selector(showWorkspace(_:)))
+            show.representedObject = row.name
+            submenu.addItem(show)
+            if !row.windows.isEmpty { submenu.addItem(.separator()) }
+            for window in row.windows {
+                let name = window.title.isEmpty ? window.app : window.title
+                let entry = action(name.count > Self.titleLength ? name.prefix(Self.titleLength - 1) + "…" : name, #selector(focusWindow(_:)))
+                entry.image = icon(window.pid)
+                entry.representedObject = window.id
+                entry.toolTip = window.title.isEmpty ? window.app : "\(window.app): \(window.title)"
+                submenu.addItem(entry)
+            }
+            item.submenu = submenu
             menu.addItem(item)
         }
         menu.addItem(.separator())
@@ -117,6 +140,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func showWorkspace(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         if let error = controller.wm.run(words: ["workspace", name]).error { HyperSpace.logger("app").error("menu: \(error)") }
+    }
+
+    @objc private func focusWindow(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? WindowID else { return }
+        if let error = controller.wm.run(words: ["focus", "--window-id", String(id)]).error { HyperSpace.logger("app").error("menu: \(error)") }
     }
 
     @objc private func toggleEnabled() { controller.setEnabled(!controller.isEnabled) }
