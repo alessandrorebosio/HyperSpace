@@ -44,6 +44,9 @@ protocol WindowApp: AnyObject, Sendable {
     func close(_ window: WindowID)
     func minimize(_ window: WindowID)
     func setFullscreen(_ window: WindowID, _ on: Bool?)
+    /// Presses the app's menu item with the ⌘N shortcut (New Window, New Document...):
+    /// false if it has no such item enabled.
+    func pressNewWindow(_ completion: @escaping @MainActor (Bool) -> Void)
     func terminate()
 }
 

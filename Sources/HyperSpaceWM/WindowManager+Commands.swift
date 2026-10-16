@@ -84,8 +84,8 @@ extension WindowManager {
             case .muteOff: exec(["/usr/bin/osascript", "-e", "set volume output muted false"])
             case let .set(level): exec(["/usr/bin/osascript", "-e", "set volume output volume \(level)"])
             }
-        case let .scratchpad(bundleID):
-            try scratchpad(bundleID)
+        case let .scratchpad(bundleID, new):
+            try scratchpad(bundleID, new: new)
         case let .moveMouse(position, failIfNoop):
             return (moveMouse(position) || !failIfNoop, nil)
         case let .list(query):

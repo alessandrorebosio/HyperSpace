@@ -68,6 +68,7 @@ _hsctl() {
     summon-workspace) flags=(--fail-if-noop) ;;
     move-node-to-workspace) flags=(--focus-follows-window --wrap-around --fail-if-noop --window-id) ;;
     move-workspace-to-monitor) flags=(--wrap-around --no-swap --workspace) ;;
+    scratchpad) flags=(--new) ;;
     move-node-to-monitor) flags=(--focus-follows-window --wrap-around --window-id) ;;
     focus-monitor) flags=(--wrap-around) ;;
     focus) flags=(--window-id --dfs-index --boundaries --boundaries-action --ignore-floating --wrap-around) ;;

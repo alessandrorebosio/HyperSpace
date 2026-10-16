@@ -1,16 +1,29 @@
 import Foundation
 import HyperSpaceCore
 
-/// `scratchpad <app-bundle-id>`: one window of the app, taken from its workspace and
+/// `scratchpad [--new] <app-bundle-id>`: one window of the app, taken from its workspace and
 /// summoned floating onto the focused one (always centered, at the same size), then put
-/// back by the same key: an ordinary window of its workspace again.
+/// back by the same key: an ordinary window of its workspace again. `--new` opens a new
+/// window of the app for it.
 extension WindowManager {
     /// Share of the display the scratchpad gets, centered.
     private static let scratchpadSize = 0.8
 
-    func scratchpad(_ bundleID: String) throws(InvalidConfig) {
+    func scratchpad(_ bundleID: String, new: Bool = false) throws(InvalidConfig) {
         guard let model else { return }
         let windows = records.compactMap { $0.value.app.bundleID == bundleID && model.windows[$0.key] != nil ? $0.key : nil }
+        // `--new`: the window its ⌘N menu item opens, if it has one; else as without.
+        if new, !windows.isEmpty, let app = records[windows[0]]?.app {
+            pendingScratchpad = (bundleID, .now + .seconds(5))
+            app.pressNewWindow { [weak self] pressed in
+                guard let self, !pressed else { return }
+                self.pendingScratchpad = nil
+                try? self.scratchpad(bundleID)
+                self.apply()
+                self.focusNative()
+            }
+            return
+        }
         // Its shown scratchpad, else its most recent window, one not just made ordinary if it can.
         let candidates = windows.filter { !model.releasedScratchpads.contains($0) }
         guard let window = model.mostRecent(of: windows.filter(model.scratchpads.contains))

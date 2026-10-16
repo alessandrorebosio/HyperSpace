@@ -244,6 +244,30 @@ final class AXApp: WindowApp, @unchecked Sendable {
         }
     }
 
+    func pressNewWindow(_ completion: @escaping @MainActor (Bool) -> Void) {
+        queue.async { [self] in
+            let bar: AXUIElement? = AX.value(element, kAXMenuBarAttribute)
+            let item = bar.flatMap { AXApp.menuItem(in: $0, key: "N", depth: 0) }
+            let pressed = item.map { AXUIElementPerformAction($0, kAXPressAction as CFString) == .success } ?? false
+            onMain { completion(pressed) }
+        }
+    }
+
+    /// The enabled menu item under `element` whose shortcut is ⌘ and `key` alone, menus
+    /// first, then their submenus (Terminal's ⌘N is in Shell > New Window). App queue only.
+    private static func menuItem(in element: AXUIElement, key: String, depth: Int) -> AXUIElement? {
+        let children: [AXUIElement] = AX.value(element, kAXChildrenAttribute) ?? []
+        for child in children where AX.string(child, kAXMenuItemCmdCharAttribute) == key {
+            // No modifier flags means ⌘ alone.
+            if (AX.value(child, kAXMenuItemCmdModifiersAttribute) as Int?) == 0, AX.bool(child, kAXEnabledAttribute) == true { return child }
+        }
+        guard depth < 4 else { return nil } // bar, bar item, menu, item, submenu
+        for child in children {
+            if let found = menuItem(in: child, key: key, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
     func terminate() {
         NSRunningApplication(processIdentifier: pid)?.terminate()
     }
