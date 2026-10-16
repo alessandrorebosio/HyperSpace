@@ -5,6 +5,8 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-17
+
 ### New
 
 - **`monitor-brightness`, `monitor-volume` and `monitor-input`** change an external display's brightness, speaker volume (or `mute-toggle`) and input source over DDC: `monitor-brightness +10`, `monitor-input hdmi1 --monitor dell`. A key that switches the display to another computer, with `detect-monitor-input`, leaves the Mac with its workspaces.
@@ -13,7 +15,6 @@ section here, so a version's section is written before the version is released.
 - **`show-mode-bindings = true`** in wm.toml: a binding mode other than main (`mode service`) shows its keys and their commands at the bottom of the display while it's on.
 - **Displays in the menu**: with more than one display, each one can be unchecked to leave it out of the window manager (`ignore-monitor`).
 - **`list-monitors --all`** lists the displays left out too, and `%{monitor-is-ignored}` and `%{monitor-input}` (the input read over DDC) go in `--format`.
-
 - **Check for Updates installs the update**: it downloads the release, checks that its app is signed with the same key, puts it in place of the running one and restarts HyperSpace. No quarantine, so macOS doesn't block it.
 
 ### Changed
@@ -89,7 +90,8 @@ First release: keyboard remapping (Caps Lock layer), mouse remapping (Logitech i
 - **Window manager**: AeroSpace's config (wm.toml) and commands (hsctl), layout kept across restarts, native tabs, floating dialogs, multiple displays with each display's workspace in the menu bar.
 - **hsctl**: status, enable/disable, reload, and every window manager command.
 
-[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.5.0...develop
+[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.6.0...develop
+[0.6.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.2.0...v0.3.0
