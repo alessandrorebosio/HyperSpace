@@ -399,9 +399,17 @@ struct WindowManagerTests {
         #expect(wm.run("scratchpad --new term") == nil)
         #expect(term.frames[4] == Self.scratchpadFrame && ids(wm, "Scratch") == "3")
 
+        // A dialog its ⌘N opens first (a template chooser) isn't taken: the window after it is.
+        term.newWindow = 6
+        term.onPress = { term.create(5, frame: CGRect(x: 10, y: 10, width: 300, height: 200), floating: true) }
+        #expect(wm.run("scratchpad --new term") == nil)
+        #expect(term.frames[6] == Self.scratchpadFrame && term.frames[5] == CGRect(x: 10, y: 10, width: 300, height: 200))
+        #expect(Set(ids(wm, "Scratch").split(separator: "\n")) == ["3", "4"])
+        term.destroy(5)
+
         // The same key without --new puts it away.
         #expect(wm.run("scratchpad term") == nil)
-        #expect(Set(ids(wm, "Scratch").split(separator: "\n")) == ["3", "4"] && ids(wm, "Shell") == "2")
+        #expect(Set(ids(wm, "Scratch").split(separator: "\n")) == ["3", "4", "6"] && ids(wm, "Shell") == "2")
         #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-id}"]).output == "1")
     }
 

@@ -14,7 +14,7 @@ extension WindowManager {
         let windows = records.compactMap { $0.value.app.bundleID == bundleID && model.windows[$0.key] != nil ? $0.key : nil }
         // `--new`: the window its ⌘N menu item opens, if it has one; else as without.
         if new, !windows.isEmpty, let app = records[windows[0]]?.app {
-            pendingScratchpad = (bundleID, .now + .seconds(5))
+            pendingScratchpad = (bundleID, .now + .seconds(5), pressed: true)
             app.pressNewWindow { [weak self] pressed in
                 guard let self, !pressed else { return }
                 self.pendingScratchpad = nil
@@ -30,7 +30,7 @@ extension WindowManager {
             ?? model.mostRecent(of: candidates.isEmpty ? windows : candidates) else {
             // No window yet: the app is launched (or woken up, it opens one) and that one is it.
             guard system.open(bundleID: bundleID) else { throw InvalidConfig(message: "no app with bundle id '\(bundleID)'") }
-            pendingScratchpad = (bundleID, .now + .seconds(15))
+            pendingScratchpad = (bundleID, .now + .seconds(15), pressed: false)
             return
         }
         summon(window)
@@ -63,7 +63,7 @@ extension WindowManager {
             pendingScratchpad = nil
             return
         }
-        guard let window = new.first(where: { model.windows[$0.id] != nil })?.id else { return }
+        guard let window = new.first(where: { model.windows[$0.id] != nil && !(pending.pressed && $0.floating) })?.id else { return }
         pendingScratchpad = nil
         for (id, entry) in records where entry.app === app && id != window && model.scratchpads.contains(id) { model.putAway(id) }
         summon(window, home: placed[window] ?? app.bundleID.flatMap { appWorkspaces[$0] } ?? settings.scratchpadFallbackWorkspace)

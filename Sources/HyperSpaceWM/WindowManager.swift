@@ -82,8 +82,10 @@ public final class WindowManager {
     /// Bundle id -> the workspace its windows were on when the last one closed: an app
     /// opened again goes back there. Kept across restarts.
     var appWorkspaces: [String: String] = [:]
-    /// `scratchpad` opened an app that had no window: the one it opens shortly is the scratchpad.
-    var pendingScratchpad: (bundleID: String, until: ContinuousClock.Instant)?
+    /// `scratchpad` opened an app that had no window, or `--new` pressed its ⌘N menu item:
+    /// the window it opens shortly is the scratchpad. After ⌘N, one that floats is a dialog
+    /// or panel (a template chooser) and doesn't count.
+    var pendingScratchpad: (bundleID: String, until: ContinuousClock.Instant, pressed: Bool)?
     /// When the focused window last closed, and the window a command last moved the focus
     /// away from (see `isStaleFocus`).
     var focusedClosedAt: ContinuousClock.Instant?

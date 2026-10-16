@@ -28,6 +28,9 @@ final class AXApp: WindowApp, @unchecked Sendable {
     /// to a busy app on every layout change.
     private var enhancedUI: (on: Bool, at: DispatchTime)?
     private var stopped = false
+    /// The ⌘N menu item last pressed, checked before it's pressed again: no walk through
+    /// every menu on each `scratchpad --new`.
+    private var newWindowItem: AXUIElement?
     /// The app's own notifications are on, and its windows were first read.
     private var subscribed = false
     private var started = false
@@ -246,26 +249,33 @@ final class AXApp: WindowApp, @unchecked Sendable {
 
     func pressNewWindow(_ completion: @escaping @MainActor (Bool) -> Void) {
         queue.async { [self] in
-            let bar: AXUIElement? = AX.value(element, kAXMenuBarAttribute)
-            let item = bar.flatMap { AXApp.menuItem(in: $0, key: "N", depth: 0) }
-            let pressed = item.map { AXUIElementPerformAction($0, kAXPressAction as CFString) == .success } ?? false
+            if let item = newWindowItem, !AXApp.isNewWindowItem(item) { newWindowItem = nil } // menus rebuilt
+            if newWindowItem == nil {
+                let bar: AXUIElement? = AX.value(element, kAXMenuBarAttribute)
+                newWindowItem = bar.flatMap { AXApp.menuItem(in: $0, depth: 0) }
+            }
+            let pressed = newWindowItem.map { AXUIElementPerformAction($0, kAXPressAction as CFString) == .success } ?? false
             onMain { completion(pressed) }
         }
     }
 
-    /// The enabled menu item under `element` whose shortcut is ⌘ and `key` alone, menus
-    /// first, then their submenus (Terminal's ⌘N is in Shell > New Window). App queue only.
-    private static func menuItem(in element: AXUIElement, key: String, depth: Int) -> AXUIElement? {
+    /// The enabled ⌘N menu item under `element`, menus first, then their submenus
+    /// (Terminal's is in Shell > New Window). Only menus are walked into: items without a
+    /// submenu cost one call. App queue only.
+    private static func menuItem(in element: AXUIElement, depth: Int) -> AXUIElement? {
         let children: [AXUIElement] = AX.value(element, kAXChildrenAttribute) ?? []
-        for child in children where AX.string(child, kAXMenuItemCmdCharAttribute) == key {
-            // No modifier flags means ⌘ alone.
-            if (AX.value(child, kAXMenuItemCmdModifiersAttribute) as Int?) == 0, AX.bool(child, kAXEnabledAttribute) == true { return child }
-        }
+        if let found = children.first(where: isNewWindowItem) { return found }
         guard depth < 4 else { return nil } // bar, bar item, menu, item, submenu
         for child in children {
-            if let found = menuItem(in: child, key: key, depth: depth + 1) { return found }
+            if let found = menuItem(in: child, depth: depth + 1) { return found }
         }
         return nil
+    }
+
+    /// An enabled menu item with ⌘N as its shortcut (no modifier flags means ⌘ alone).
+    private static func isNewWindowItem(_ item: AXUIElement) -> Bool {
+        AX.string(item, kAXMenuItemCmdCharAttribute) == "N" && (AX.value(item, kAXMenuItemCmdModifiersAttribute) as Int?) == 0
+            && AX.bool(item, kAXEnabledAttribute) == true
     }
 
     func flush(_ group: DispatchGroup) {
