@@ -193,6 +193,10 @@ Same concepts and command names as AeroSpace, so moving an existing config over 
   `detect-monitor-input`, when their input (DDC VCP 0x60, read every 2 s off the main
   thread through `IOAVService`) isn't the one first read on them: a display switched to
   another computer often stays connected to macOS
+- HyperSpace's own: an external display's brightness, volume and input over DDC
+  (`monitor-*` commands), and the brightness/volume keys for them (`display_keys`): the tap
+  then sees media keys (`systemDefined`), takes the ones for an external display and
+  hands them to the DDC queue, where key repeats add up into one write
 
 Implementation: `WMModel` (HyperSpaceCore) is the pure state and every command over ids and
 rectangles, unit tested; `WindowManager` (HyperSpaceWM) feeds it AX events and applies its

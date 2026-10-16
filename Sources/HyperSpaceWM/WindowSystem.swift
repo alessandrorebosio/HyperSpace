@@ -72,6 +72,8 @@ protocol WindowSystem: AnyObject {
     /// The input source each of these displays shows (DDC), read off the main thread; the
     /// ones that don't answer are left out.
     func monitorInputs(_ ids: [UInt32], _ completion: @escaping @MainActor ([UInt32: UInt8]) -> Void)
+    /// Changes a display's setting over DDC, off the main thread.
+    func setMonitor(_ id: UInt32, _ setting: WMCommand.MonitorSetting)
     /// Bounds and visibility of windows, from the window server (no IPC to their apps).
     func windowServer(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)]
     /// Regular apps running now.
@@ -91,7 +93,7 @@ protocol WindowSystem: AnyObject {
 @MainActor
 final class MacSystem: WindowSystem {
     private var observers: [(NotificationCenter, any NSObjectProtocol)] = []
-    private let ddc = DDC()
+    private let ddc = DDC.shared
 
     init() {
         // One timeout for every AX call: a frozen app answers nothing for 6 s by default.
@@ -126,6 +128,12 @@ final class MacSystem: WindowSystem {
         ddc.inputs(of: ids) { [weak self] inputs in
             self?.readingInputs = false
             completion(inputs)
+        }
+    }
+
+    func setMonitor(_ id: UInt32, _ setting: WMCommand.MonitorSetting) {
+        ddc.set(setting, on: id) { ok in
+            if !ok { HyperSpace.logger("wm").error("display \(id) didn't take \(String(describing: setting)) (no DDC?)") }
         }
     }
 

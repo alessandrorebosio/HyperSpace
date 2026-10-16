@@ -20,7 +20,11 @@ window manager: every AeroSpace command, as with the `aerospace` CLI, e.g.
   workspace 2 | move-node-to-workspace Develop | focus left | layout tiles accordion
   list-windows --all --format '%{window-id} | %{app-name} | %{workspace}'
   list-workspaces --all | list-monitors | list-modes | list-apps
-  ignore-monitor (on|off|toggle) <monitor-pattern>...  (HyperSpace's own: as if disconnected)
+HyperSpace's own:
+  ignore-monitor (on|off|toggle) <monitor-pattern>...   leave displays out, as if disconnected
+  monitor-brightness [+|-]<percent> [--monitor <p>]     an external display's brightness (DDC)
+  monitor-volume (mute-toggle|[+|-]<percent>) [--monitor <p>]
+  monitor-input (dp1|dp2|hdmi1|hdmi2|usb-c|<code>) [--monitor <p>]
 """
 
 if args.isEmpty || args == ["-h"] || args == ["--help"] {

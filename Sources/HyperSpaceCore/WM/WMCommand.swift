@@ -29,6 +29,10 @@ public indirect enum WMCommand: Sendable, Equatable {
     /// HyperSpace's own: the window manager leaves out (`true`), or takes back (`false`), the
     /// displays matching the patterns, as if they were disconnected. nil toggles.
     case ignoreMonitor(Bool?, patterns: [String])
+    /// HyperSpace's own: changes a display's setting over DDC (`monitor-brightness`,
+    /// `monitor-volume`, `monitor-input`), on the displays matching the patterns, else the
+    /// focused one.
+    case monitorSetting(MonitorSetting, monitor: [String]?)
     case focusBackAndForth
     case close(quitIfLastWindow: Bool, window: WindowID?)
     case closeAllWindowsButCurrent(quitIfLastWindow: Bool)
@@ -79,6 +83,22 @@ public indirect enum WMCommand: Sendable, Equatable {
         case direction(Direction), next, prev
         /// `main`, `secondary`, a 1-based number from the left, or a name regex.
         case patterns([String])
+    }
+
+    /// Levels are in percent of the display's maximum.
+    public enum MonitorSetting: Sendable, Equatable {
+        case brightness(ResizeAmount)
+        case volume(ResizeAmount)
+        case muteToggle
+        /// An MCCS input source code.
+        case input(UInt8)
+
+        /// MCCS input source codes by name. USB-C has no standard code: 0x1b is Dell's and
+        /// LG's; a number works for any other.
+        public static let inputs: [String: UInt8] = [
+            "vga1": 0x01, "vga2": 0x02, "dvi1": 0x03, "dvi2": 0x04, "dp1": 0x0f, "dp2": 0x10,
+            "hdmi1": 0x11, "hdmi2": 0x12, "usb-c": 0x1b,
+        ]
     }
 
     public enum MousePosition: String, Sendable {
@@ -222,6 +242,22 @@ extension WMCommand {
             let patterns = try p.rest()
             guard !patterns.isEmpty else { throw p.fail(usage) }
             return .ignoreMonitor(state, patterns: patterns)
+        case "monitor-brightness", "monitor-volume":
+            let monitor = try p.value("--monitor").map { [$0] }
+            let usage = name == "monitor-volume" ? "(mute-toggle|[+|-]<percent>) [--monitor <monitor-pattern>]" : "[+|-]<percent> [--monitor <monitor-pattern>]"
+            let amount = try p.positional(usage)
+            if name == "monitor-volume", amount == "mute-toggle" { return .monitorSetting(.muteToggle, monitor: monitor) }
+            guard let number = Double(amount), (-100...100).contains(number) else { throw p.fail(usage) }
+            let level: ResizeAmount = amount.hasPrefix("+") || amount.hasPrefix("-") ? .add(number) : .set(number)
+            return .monitorSetting(name == "monitor-volume" ? .volume(level) : .brightness(level), monitor: monitor)
+        case "monitor-input":
+            let monitor = try p.value("--monitor").map { [$0] }
+            let usage = "(\(MonitorSetting.inputs.keys.sorted().joined(separator: "|"))|<code>) [--monitor <monitor-pattern>]"
+            let word = try p.positional(usage).lowercased()
+            let code = MonitorSetting.inputs[word]
+                ?? (word.hasPrefix("0x") ? UInt8(word.dropFirst(2), radix: 16) : UInt8(word))
+            guard let code else { throw p.fail(usage) }
+            return .monitorSetting(.input(code), monitor: monitor)
         case "focus-back-and-forth":
             return .focusBackAndForth
         case "close":

@@ -39,7 +39,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             exit(0)
         }
 
-        input = InputService { [weak self] command in
+        input = InputService(displayKeys: DisplayKeys.handle) { [weak self] command in
             if let error = self?.wm.run(command) { self?.log.error("wm: \(error)") }
         }
         wm = WindowManager(handlers: .init(

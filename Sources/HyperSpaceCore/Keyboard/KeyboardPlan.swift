@@ -47,11 +47,13 @@ public struct KeyboardPlan: Sendable, Equatable {
     /// Key code -> action on a double tap.
     public var double = OutputTable.keys
     public var doubleTapNs: UInt64 = 300_000_000
+    /// `display_keys`: the tap also sees media keys, for external displays.
+    public var displayKeys = false
 
     public var capsLock: Layer? { layers.first { $0.trigger == Layer.capsLockTrigger } }
 
     public var needsEventTap: Bool {
-        !layers.isEmpty || !map.isEmpty || !apps.isEmpty || !double.isEmpty
+        !layers.isEmpty || !map.isEmpty || !apps.isEmpty || !double.isEmpty || displayKeys
     }
 
     public init() {}
@@ -128,6 +130,7 @@ public struct KeyboardPlan: Sendable, Equatable {
             throw InvalidConfig(message: "double_tap_ms: must be between 100 and 1000")
         }
         doubleTapNs = UInt64(config.doubleTapMs) * 1_000_000
+        displayKeys = config.displayKeys
     }
 
     private static func layer(_ config: LayerConfig, trigger: UInt16, permissive: Bool, path: String) throws(InvalidConfig) -> Layer {

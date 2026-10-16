@@ -92,6 +92,11 @@ struct ConfigTests {
         #expect(error(WMConfig.self, "scratchpad-fallback-workspace = ' '")?.contains("needs a workspace name") == true)
     }
 
+    @Test func displayKeys() throws {
+        #expect(try KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, "display_keys = true").get()).needsEventTap)
+        #expect(try !KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, "double_tap_ms = 300").get()).displayKeys)
+    }
+
     @Test func detectMonitorInput() throws {
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).detectMonitorInput == false)
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "detect-monitor-input = true").get()).detectMonitorInput)

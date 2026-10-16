@@ -176,6 +176,17 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["ignore-monitor", "on", "lg"]).error?.contains("no monitor matches") == true)
     }
 
+    @Test func displaySettingsGoToTheFocusedOrNamedDisplay() {
+        let system = FakeSystem(screens: [Self.main, Self.dell])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run(words: ["monitor-brightness", "+10"]).ok)
+        #expect(wm.run(words: ["monitor-input", "hdmi1", "--monitor", "dell"]).ok)
+        #expect(system.settings.map(\.id) == [1, 2])
+        #expect(system.settings.map(\.setting) == [.brightness(.add(10)), .input(0x11)])
+        #expect(wm.run(words: ["monitor-volume", "50", "--monitor", "lg"]).error?.contains("no monitor matches") == true)
+    }
+
     @Test func aDisplayShowingAnotherInputIsLeftOut() {
         let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2, CGRect(x: 1100, y: 100, width: 300, height: 200))])
         let system = FakeSystem(screens: [Self.main, Self.dell], apps: [app])

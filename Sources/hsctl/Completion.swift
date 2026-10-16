@@ -31,6 +31,9 @@ _hsctl() {
     'move-node-to-monitor:move the window to another monitor'
     'focus-monitor:focus another monitor'
     'ignore-monitor:leave a monitor out, as if disconnected'
+    'monitor-brightness:change an external display brightness'
+    'monitor-volume:change an external display volume'
+    'monitor-input:switch an external display input'
     'focus:focus a window'
     'focus-back-and-forth:focus the previous window'
     'move:move the window'
@@ -85,6 +88,7 @@ _hsctl() {
     trigger-binding) flags=(--mode) ;;
     list-windows) flags=(--all --focused --workspace --monitor --pid --app-bundle-id --format --count --json) ;;
     list-workspaces) flags=(--all --focused --monitor --visible --empty --format --count --json) ;;
+    monitor-brightness|monitor-volume|monitor-input) flags=(--monitor) ;;
     list-monitors) flags=(--all --focused --format --count --json) ;;
     list-apps|list-modes) flags=(--format --count --json) ;;
   esac
@@ -108,6 +112,8 @@ _hsctl() {
     resize) compadd smart smart-opposite width height ;;
     layout) compadd tiles accordion horizontal vertical tiling floating h_tiles v_tiles h_accordion v_accordion ;;
     fullscreen|macos-native-fullscreen) compadd on off toggle ;;
+    monitor-input) compadd dp1 dp2 hdmi1 hdmi2 usb-c vga1 dvi1 ;;
+    monitor-volume) compadd mute-toggle ;;
     ignore-monitor) (( CURRENT == 3 )) && compadd on off toggle || compadd main secondary ;;
     scratchpad) compadd ${(f)"$(hsctl list-apps --format '%{app-bundle-id}' 2>/dev/null)"} ;;
     mode) compadd ${(f)"$(hsctl list-modes 2>/dev/null)"} ;;

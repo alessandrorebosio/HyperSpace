@@ -283,6 +283,15 @@ struct WMTests {
             == .list(.init(kind: .windows, filters: ["--workspace": ["focused"]], format: "%{app-name} %{window-title}")))
         #expect(try WMCommand(parsing: "ignore-monitor on dell 2") == .ignoreMonitor(true, patterns: ["dell", "2"]))
         #expect(try WMCommand(parsing: "ignore-monitor toggle secondary") == .ignoreMonitor(nil, patterns: ["secondary"]))
+        #expect(try WMCommand(parsing: "monitor-brightness +10") == .monitorSetting(.brightness(.add(10)), monitor: nil))
+        #expect(try WMCommand(parsing: "monitor-brightness 40 --monitor dell") == .monitorSetting(.brightness(.set(40)), monitor: ["dell"]))
+        #expect(try WMCommand(parsing: "monitor-volume mute-toggle") == .monitorSetting(.muteToggle, monitor: nil))
+        #expect(try WMCommand(parsing: "monitor-volume -5") == .monitorSetting(.volume(.add(-5)), monitor: nil))
+        #expect(try WMCommand(parsing: "monitor-input hdmi1 --monitor mouse") == .monitorSetting(.input(0x11), monitor: ["mouse"]))
+        #expect(try WMCommand(parsing: "monitor-input 0x1b") == .monitorSetting(.input(0x1b), monitor: nil))
+        #expect(try WMCommand(parsing: "monitor-input 15") == .monitorSetting(.input(0x0f), monitor: nil))
+        #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "monitor-input scart") }
+        #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "monitor-brightness 150") }
         #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "ignore-monitor off") }
         #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "ignore-monitor dell") }
         #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "focus sideways") }

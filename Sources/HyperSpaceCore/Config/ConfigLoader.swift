@@ -199,6 +199,10 @@ public enum ConfigLoader {
     # Maximum time between the two taps of [double] (100-1000 ms; must come before any [section]).
     # double_tap_ms = 300
 
+    # Brightness keys change the external display under the pointer, and volume keys the
+    # display's speakers when the sound plays there, over DDC (Apple silicon; macOS can't).
+    # display_keys = false
+
     # Remaps, always active. key -> key works everywhere, even in password fields;
     # anything else (combos, actions...) needs HyperSpace running.
     # [map]

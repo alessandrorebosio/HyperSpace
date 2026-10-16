@@ -88,6 +88,8 @@ extension WindowManager {
             try scratchpad(bundleID, new: new)
         case let .ignoreMonitor(on, patterns):
             try ignoreMonitors(patterns, on)
+        case let .monitorSetting(setting, patterns):
+            for id in try settingMonitors(patterns) { system.setMonitor(id, setting) }
         case let .moveMouse(position, failIfNoop):
             return (moveMouse(position) || !failIfNoop, nil)
         case let .list(query):

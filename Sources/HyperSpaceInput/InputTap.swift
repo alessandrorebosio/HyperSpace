@@ -31,6 +31,9 @@ public final class InputTap: @unchecked Sendable {
     /// Also tap plain mouse moves (gestures on Logitech controls, focus-follows-mouse).
     /// Off otherwise: moves are the most frequent event and the tap shouldn't see them for nothing.
     private let moveEvents: Bool
+    /// `display_keys`: a media key (NX key code, down, pointer) for external displays; true
+    /// when it took the key. The tap sees media keys only with it.
+    private let displayKeys: (@Sendable (Int32, Bool, CGPoint) -> Bool)?
     /// Pointer position for focus-follows-mouse, at most every 30 ms.
     private let mouseMoved: (@Sendable (CGPoint) -> Void)?
     private var lastMouseReport: UInt64 = 0
@@ -47,9 +50,10 @@ public final class InputTap: @unchecked Sendable {
     /// - Parameter perform: runs `.shell`, `.wm` and `.app` outputs; called on the input
     ///   thread, must not block.
     init(capsLock: CapsLockState, moveEvents: Bool, mouseMoved: (@Sendable (CGPoint) -> Void)? = nil,
-         perform: @escaping @Sendable (Output) -> Void) {
+         displayKeys: (@Sendable (Int32, Bool, CGPoint) -> Bool)? = nil, perform: @escaping @Sendable (Output) -> Void) {
         self.capsLock = capsLock
         self.moveEvents = moveEvents
+        self.displayKeys = displayKeys
         self.mouseMoved = mouseMoved
         self.perform = perform
     }
@@ -102,7 +106,8 @@ public final class InputTap: @unchecked Sendable {
             .scrollWheel,
         ]
         if moveEvents { types.append(.mouseMoved) }
-        let mask = types.reduce(0) { $0 | (1 << $1.rawValue) }
+        var mask = types.reduce(0) { $0 | (1 << $1.rawValue) }
+        if displayKeys != nil { mask |= 1 << NSEvent.EventType.systemDefined.rawValue }
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: CGEventMask(mask), callback: tapCallback,
@@ -160,6 +165,8 @@ public final class InputTap: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         case .scrollWheel:
             return handleScroll(event)
+        case CGEventType(rawValue: UInt32(NSEvent.EventType.systemDefined.rawValue)):
+            return handleMediaKey(event)
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             log.warning("event tap was disabled by the system, re-enabled")
@@ -167,6 +174,14 @@ public final class InputTap: @unchecked Sendable {
         default:
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    /// A media key (subtype 8): data1 holds the NX key code and whether it's going down.
+    private func handleMediaKey(_ event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard let displayKeys, let media = NSEvent(cgEvent: event), media.subtype.rawValue == 8 else { return Unmanaged.passUnretained(event) }
+        let key = Int32((media.data1 & 0xFFFF_0000) >> 16)
+        let down = (media.data1 & 0xFF00) >> 8 == 0x0A
+        return displayKeys(key, down, event.location) ? nil : Unmanaged.passUnretained(event)
     }
 
     private func handleKey(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -356,6 +371,8 @@ public final class InputTap: @unchecked Sendable {
             navigation.send(output == .system(.navigateBack) ? .back : .forward, targetPID: pid,
                             location: location, rules: current.tables.navigation)
         case let .system(action):
+            // A remapped brightness or volume key reaches external displays too.
+            if let key = action.mediaKey, let displayKeys, displayKeys(key, true, location) { return }
             SystemActions.perform(action, at: location)
         case let .scroll(step):
             Post.scroll(step)

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import HyperSpaceCore
 
@@ -51,6 +52,26 @@ extension WindowManager {
             throw InvalidConfig(message: "ignore-monitor: every monitor would be left out")
         }
         monitorsChanged()
+    }
+
+    /// The displays a `monitor-*` command changes: `--monitor` (a pattern, `focused` or
+    /// `mouse`), else the focused one. Left out displays count: their setting still changes.
+    func settingMonitors(_ patterns: [String]?) throws(InvalidConfig) -> [UInt32] {
+        guard let model else { return [] }
+        guard let patterns else { return [model.focusedMonitor] }
+        let all = system.monitors()
+        let mouse = CGEvent(source: nil)?.location ?? .zero
+        let ids = all.filter { monitor in
+            patterns.contains { pattern in
+                switch pattern {
+                case "focused": monitor.id == model.focusedMonitor
+                case "mouse": monitor.frame.contains(mouse)
+                default: WMMonitor.matches(pattern, monitor, in: all)
+                }
+            }
+        }.map(\.id)
+        guard !ids.isEmpty else { throw InvalidConfig(message: "no monitor matches '\(patterns.joined(separator: " "))'") }
+        return ids
     }
 
     // MARK: - detect-monitor-input

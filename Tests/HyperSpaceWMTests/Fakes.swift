@@ -137,6 +137,10 @@ final class FakeSystem: WindowSystem {
         completion(inputs.filter { ids.contains($0.key) })
     }
 
+    /// Settings asked of displays over DDC, in order.
+    var settings: [(id: UInt32, setting: WMCommand.MonitorSetting)] = []
+    func setMonitor(_ id: UInt32, _ setting: WMCommand.MonitorSetting) { settings.append((id, setting)) }
+
     func windowServer(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)] {
         var result: [WindowID: (bounds: CGRect, onscreen: Bool)] = [:]
         for app in apps.values {

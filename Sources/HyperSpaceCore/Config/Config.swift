@@ -25,6 +25,9 @@ public struct KeyboardConfig: Sendable, Equatable {
     public var double: [String: Action] = [:]
     /// Maximum time between the two taps of a double tap.
     public var doubleTapMs = 300
+    /// Brightness keys change the external display under the pointer, volume keys the
+    /// display's speakers when the sound plays there (over DDC).
+    public var displayKeys = false
 
     public init() {}
 }
@@ -226,7 +229,7 @@ public struct WindowDetectedRule: Sendable, Equatable {
 
 extension KeyboardConfig: Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case map, app, device, capslock, layer, double, doubleTapMs = "double_tap_ms"
+        case map, app, device, capslock, layer, double, doubleTapMs = "double_tap_ms", displayKeys = "display_keys"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -238,6 +241,7 @@ extension KeyboardConfig: Decodable {
         layer = try c.decode(.layer, default: [:])
         double = try c.decode(.double, default: [:])
         doubleTapMs = try c.decode(.doubleTapMs, default: 300)
+        displayKeys = try c.decode(.displayKeys, default: false)
     }
 }
 

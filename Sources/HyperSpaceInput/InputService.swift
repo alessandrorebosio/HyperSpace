@@ -31,7 +31,11 @@ public final class InputService {
     public private(set) var tapState = TapState.off
     public var mappedKeyboards: Int { mapper.mappedKeyboards }
 
-    public init(onWMCommand: @escaping @MainActor @Sendable (String) -> Void) {
+    /// `display_keys`: media keys for external displays (see `InputTap`).
+    private let displayKeys: @Sendable (Int32, Bool, CGPoint) -> Bool
+
+    public init(displayKeys: @escaping @Sendable (Int32, Bool, CGPoint) -> Bool, onWMCommand: @escaping @MainActor @Sendable (String) -> Void) {
+        self.displayKeys = displayKeys
         self.onWMCommand = onWMCommand
         appObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -48,6 +52,7 @@ public final class InputService {
     public func apply(_ plan: InputPlan, accessibilityGranted: Bool,
                       trackMouse: (@MainActor @Sendable (CGPoint) -> Void)? = nil) {
         let restartTap = needsMoves(plan, trackMouse) != needsMoves(self.plan, self.trackMouse)
+            || plan.keyboard.displayKeys != self.plan.keyboard.displayKeys
         self.plan = plan
         self.trackMouse = trackMouse
         if restartTap { stopTap() } // the event mask changes
@@ -120,7 +125,8 @@ public final class InputService {
         if let track = trackMouse {
             mouseMoved = { point in Task { @MainActor in track(point) } }
         }
-        let tap = InputTap(capsLock: capsLock, moveEvents: needsMoves(plan, trackMouse), mouseMoved: mouseMoved) { [weak self] output in
+        let tap = InputTap(capsLock: capsLock, moveEvents: needsMoves(plan, trackMouse), mouseMoved: mouseMoved,
+                           displayKeys: plan.keyboard.displayKeys ? displayKeys : nil) { [weak self] output in
             Task { @MainActor in self?.perform(output) }
         }
         if tap.start() {
