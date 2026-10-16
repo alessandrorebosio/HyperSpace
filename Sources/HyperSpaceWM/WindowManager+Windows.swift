@@ -169,7 +169,9 @@ extension WindowManager {
             if let closing, id != closing { return } // another window stays open
             if window != model.focused, id == model.focused || id < window ?? .max { window = id }
         }
-        guard let name = window.flatMap({ model.workspace(of: $0)?.name }), appWorkspaces[bundleID] != name else { return }
+        // A shown scratchpad belongs to the workspace it goes back to.
+        guard let name = window.flatMap({ model.scratchpadHomes[$0]?.workspace ?? model.workspace(of: $0)?.name }),
+              appWorkspaces[bundleID] != name else { return }
         appWorkspaces[bundleID] = name
         saveAppWorkspaces()
     }

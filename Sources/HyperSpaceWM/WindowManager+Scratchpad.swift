@@ -1,9 +1,9 @@
 import Foundation
 import HyperSpaceCore
 
-/// `scratchpad <app-bundle-id>`: one window of the app, floating, summoned onto the focused
-/// workspace (always centered, at the same size) and put away by the same key. Put away,
-/// it waits in a corner like the windows of hidden workspaces, so it comes back at once.
+/// `scratchpad <app-bundle-id>`: one window of the app, taken from its workspace and
+/// summoned floating onto the focused one (always centered, at the same size), then put
+/// back by the same key: an ordinary window of its workspace again.
 extension WindowManager {
     /// Share of the display the scratchpad gets, centered.
     private static let scratchpadSize = 0.8
@@ -27,8 +27,15 @@ extension WindowManager {
     /// display at the scratchpad's size, wherever it was moved or resized before: apply()
     /// gives a parked window back this frame as it shows it.
     private func summon(_ window: WindowID) {
-        guard let model, model.toggleScratchpad(window),
-              let v = model.monitors.first(where: { $0.id == model.focusedMonitor })?.visible else { return }
+        guard let model, model.toggleScratchpad(window) else { return }
+        center(window)
+    }
+
+    /// Gives the shown scratchpad its centered frame on its workspace's display, the next
+    /// time apply() runs.
+    func center(_ window: WindowID) {
+        guard let model, let monitor = model.workspace(of: window)?.monitor ?? Optional(model.focusedMonitor),
+              let v = model.monitors.first(where: { $0.id == monitor })?.visible else { return }
         let size = CGSize(width: v.width * Self.scratchpadSize, height: v.height * Self.scratchpadSize)
         parked[window] = CGRect(x: v.midX - size.width / 2, y: v.midY - size.height / 2, width: size.width, height: size.height).integral
     }

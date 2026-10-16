@@ -216,7 +216,7 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-layout}"]).output == "floating")
         #expect(wm.run(words: ["list-workspaces", "--empty", "no"]).output == "1")
 
-        // Put away: in the corner, focus back on the window before.
+        // Put away: back on Shell (hidden, so in the corner), focus back on the window before.
         #expect(wm.run("scratchpad term") == nil)
         #expect(term.frames[2]?.origin == Self.corner)
         #expect(other.raised.last == 1)
@@ -307,38 +307,42 @@ struct WindowManagerTests {
         let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])
         let system = FakeSystem(screens: [Self.main], apps: [other, term])
         let first = started(system)
-        #expect(first.run("scratchpad term") == nil)
+        #expect(first.run("move-node-to-workspace Shell --window-id 2") == nil)
+        #expect(first.run("focus --window-id 1") == nil)
         #expect(first.run("scratchpad term") == nil)
         first.stop()
-        #expect(term.frames[2] == Self.scratchpadFrame, "given back on screen while HyperSpace is off")
+        #expect(term.frames[2] == Self.scratchpadFrame)
 
-        // Started again: put away again, and the key still knows it.
+        // Started again: still shown, and the key still knows where it goes back to.
         let wm = started(system)
         defer { wm.stop() }
-        #expect(term.frames[2]?.origin == Self.corner)
-        #expect(other.frames[1] == Self.full)
+        #expect(term.frames[2] == Self.scratchpadFrame && other.frames[1] == Self.full)
+        #expect(wm.run("focus --window-id 2") == nil)
         #expect(wm.run("scratchpad term") == nil)
-        #expect(term.frames[2] == Self.scratchpadFrame)
+        #expect(term.frames[2]?.origin == Self.corner)
+        #expect(wm.run(words: ["list-windows", "--workspace", "Shell", "--format", "%{window-id} %{window-layout}"]).output == "2 tiling")
     }
 
-    @Test func aStashedScratchpadComesBackWhenMacOSFocusesIt() {
+    @Test func aScratchpadPutAwayIsAnOrdinaryWindowOfItsWorkspace() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])
         let system = FakeSystem(screens: [Self.main], apps: [other, term])
         let wm = started(system)
         defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace Shell --window-id 2") == nil)
+        #expect(wm.run("focus --window-id 1") == nil)
         #expect(wm.run("scratchpad term") == nil)
         #expect(wm.run("scratchpad term") == nil)
-        #expect(other.frames[1] == Self.full)
+        #expect(other.frames[1] == Self.full && term.frames[2]?.origin == Self.corner)
 
-        // ⌘-Tab to the app: its window was stashed, so it's summoned.
+        // ⌘-Tab to the app: its workspace shows, the window tiled there as before.
         term.focused = 2
         system.frontmost = 11
         system.send(.activated(11))
-        #expect(term.frames[2] == Self.scratchpadFrame)
+        #expect(wm.focusedWorkspace == "Shell")
+        #expect(term.frames[2] == Self.full)
 
-        // Closed while stashed: nothing is left of it.
-        #expect(wm.run("scratchpad term") == nil)
+        // Closed: nothing is left of it.
         term.destroy(2)
         #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
     }

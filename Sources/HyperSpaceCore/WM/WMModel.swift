@@ -21,6 +21,18 @@ public struct WMMonitor: Sendable, Equatable {
     }
 }
 
+/// Where a shown scratchpad came from and goes back to when put away.
+public struct WMScratchpadHome: Codable, Sendable, Equatable {
+    public var workspace: String
+    /// Floating there (a dialog-like window), else tiled.
+    public var floating: Bool
+
+    public init(workspace: String, floating: Bool) {
+        self.workspace = workspace
+        self.floating = floating
+    }
+}
+
 public struct WMWindowInfo: Sendable, Equatable {
     public let id: WindowID
     /// Floating windows keep their own frame; the others are tiled.
@@ -98,10 +110,11 @@ public final class WMModel {
     /// Display name -> workspace it showed when it was disconnected, to show it again when
     /// the display comes back.
     private var lastShown: [String: String] = [:]
-    /// Scratchpad windows (`scratchpad`): floating on a workspace while shown, else stashed.
+    /// Scratchpad windows (`scratchpad`): an ordinary window of their home workspace while
+    /// put away, floating over the focused one while shown.
     public internal(set) var scratchpads: Set<WindowID> = []
-    /// Scratchpads put away: on no workspace, waiting in a corner to be summoned.
-    public internal(set) var stashed: Set<WindowID> = []
+    /// Shown scratchpads -> the workspace they were taken from.
+    public internal(set) var scratchpadHomes: [WindowID: WMScratchpadHome] = [:]
     /// Former scratchpads, made ordinary windows by tiling or moving them: the next
     /// `scratchpad` of their app takes another window if it can.
     public private(set) var releasedScratchpads: Set<WindowID> = []
@@ -193,12 +206,9 @@ public final class WMModel {
     public func remove(_ window: WindowID) {
         guard windows.removeValue(forKey: window) != nil else { return }
         scratchpads.remove(window)
+        scratchpadHomes[window] = nil
         releasedScratchpads.remove(window)
         history.removeAll { $0 == window }
-        if stashed.remove(window) != nil {
-            if focused == window { focused = nil }
-            return
-        }
         guard let workspace = workspace(of: window) else { return }
         detach(window, from: workspace)
         if focused == window { focused = recent(in: workspace) }
@@ -209,11 +219,11 @@ public final class WMModel {
     /// when the shown tab of a native tab group closes and another tab stands in for it.
     public func replace(_ old: WindowID, with new: WindowID) {
         let workspace = workspace(of: old)
-        guard let info = windows[old], workspace != nil || stashed.contains(old) else { return }
+        guard let info = windows[old], workspace != nil else { return }
         windows[old] = nil
         windows[new] = WMWindowInfo(id: new, floating: info.floating)
         if scratchpads.remove(old) != nil { scratchpads.insert(new) }
-        if stashed.remove(old) != nil { stashed.insert(new) }
+        if let home = scratchpadHomes.removeValue(forKey: old) { scratchpadHomes[new] = home }
         if releasedScratchpads.remove(old) != nil { releasedScratchpads.insert(new) }
         location[new] = location.removeValue(forKey: old)
         if let workspace {
@@ -226,39 +236,56 @@ public final class WMModel {
     }
 
     /// macOS focused a window (click, ⌘-Tab, an app opening one). If it sits on a hidden
-    /// workspace, that workspace is shown, as in AeroSpace; a stashed scratchpad comes back.
-    /// Returns whether what's shown changed.
+    /// workspace, that workspace is shown, as in AeroSpace. Returns whether visibility changed.
     @discardableResult
     public func nativeFocus(_ window: WindowID?) -> Bool {
-        guard let window else { return false }
-        if stashed.contains(window) { return toggleScratchpad(window) }
-        guard let workspace = workspace(of: window) else { return false }
+        guard let window, let workspace = workspace(of: window) else { return false }
         let before = visible
         show(workspace.name)
         focus(window)
         return before != visible
     }
 
-    /// `scratchpad`: the window comes floating onto the focused workspace, focused; if it's
-    /// there and focused already, it's put away. Returns whether it's shown now.
+    /// `scratchpad`: the window is taken from its workspace, its home, and comes floating
+    /// onto the focused one, focused. Shown and focused there already, it's put away: back
+    /// home, tiled again (or floating, if it was), next to the window used last there.
+    /// Returns whether it's shown now.
     @discardableResult
     public func toggleScratchpad(_ window: WindowID) -> Bool {
-        guard windows[window] != nil else { return false }
+        guard windows[window] != nil, let from = workspace(of: window) else { return false }
         let target = focusedWorkspace
         defer { collectEmptyWorkspaces() }
         releasedScratchpads.remove(window)
-        if !scratchpads.insert(window).inserted, focused == window, location[window] == target.name {
+        scratchpads.insert(window)
+        if let home = scratchpadHomes[window] {
+            guard focused == window, from === target else {
+                // Shown elsewhere, or not focused: it comes here and gets the focus.
+                moveFloating(window, from: from, to: target)
+                focus(window)
+                return true
+            }
+            scratchpadHomes[window] = nil
             detach(window, from: target)
-            stashed.insert(window)
+            let workspace = workspace(home.workspace)
+            windows[window]?.floating = home.floating
+            if home.floating {
+                attachFloating(window, to: workspace)
+            } else {
+                insertTiled(window, into: workspace, nextTo: recent(in: workspace))
+            }
             focused = recent(in: target)
             return false
         }
-        stashed.remove(window)
-        if let from = workspace(of: window) { detach(window, from: from) }
-        attachFloating(window, to: target)
+        scratchpadHomes[window] = WMScratchpadHome(workspace: from.name, floating: windows[window]?.floating ?? false)
         windows[window]?.floating = true
+        moveFloating(window, from: from, to: target)
         focus(window)
         return true
+    }
+
+    private func moveFloating(_ window: WindowID, from: WMWorkspace, to target: WMWorkspace) {
+        detach(window, from: from)
+        attachFloating(window, to: target)
     }
 
     /// The most recently focused of `candidates`, else the lowest id.
@@ -410,9 +437,6 @@ public final class WMModel {
             let monitor = assignedMonitor(name) ?? monitors.first?.id ?? 0
             for window in workspace.windows { result.hidden[window] = monitor }
         }
-        // The main monitor's corner: it doesn't move when focus goes to another display.
-        let corner = mainMonitor?.id ?? 0
-        for window in stashed { result.hidden[window] = corner }
         return result
     }
 
@@ -604,8 +628,9 @@ public final class WMModel {
         }
     }
 
-    /// A scratchpad tiled or moved by a command becomes an ordinary window.
+    /// A scratchpad tiled or moved by a command becomes an ordinary window, where it is.
     private func releaseScratchpad(_ window: WindowID) {
+        scratchpadHomes[window] = nil
         if scratchpads.remove(window) != nil { releasedScratchpads.insert(window) }
     }
 
@@ -622,7 +647,8 @@ public final class WMModel {
         workspace.root.normalize()
     }
 
-    private func insertTiled(_ window: WindowID, into workspace: WMWorkspace) {
+    /// Tiles the window in `workspace`, after `anchor` (default: the focused window) if it's there.
+    private func insertTiled(_ window: WindowID, into workspace: WMWorkspace, nextTo anchor: WindowID? = nil) {
         let node = WMNode(window: window)
         location[window] = workspace.name
         if workspace.root.children.isEmpty {
@@ -631,7 +657,7 @@ public final class WMModel {
             workspace.root.orientation = settings.rootOrientation
                 ?? ((monitor?.visible.width ?? 1) >= (monitor?.visible.height ?? 0) ? .horizontal : .vertical)
         }
-        if let anchorID = focused, anchorID != window, let anchor = workspace.root.find(anchorID),
+        if let anchorID = anchor ?? focused, anchorID != window, let anchor = workspace.root.find(anchorID),
            let parent = anchor.parent, let index = anchor.index {
             parent.insert(node, at: index + 1)
         } else {

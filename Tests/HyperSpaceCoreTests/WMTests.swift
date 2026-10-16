@@ -38,6 +38,25 @@ struct WMTests {
         ])
     }
 
+    @Test func aScratchpadGoesBackWhereItCameFrom() throws {
+        let m = model(3)
+        try run(m, "move-node-to-workspace Shell --window-id 2")
+        try run(m, "move-node-to-workspace Shell --window-id 3")
+        try run(m, "focus --window-id 1")
+        // Shown: floating over workspace 1, taken out of Shell's tree.
+        #expect(m.toggleScratchpad(2))
+        #expect(m.focusedWorkspace.floating == [2] && tree(m.workspace("Shell").root) == "h[3]")
+        // Put away: tiled in Shell again, next to the window used last there.
+        #expect(!m.toggleScratchpad(2))
+        #expect(tree(m.workspace("Shell").root) == "h[3 2]" && m.focused == 1)
+        #expect(m.windows[2]?.floating == false && m.scratchpadHomes.isEmpty)
+        // A floating window goes back floating.
+        try run(m, "layout floating --window-id 3")
+        #expect(m.toggleScratchpad(3))
+        #expect(!m.toggleScratchpad(3))
+        #expect(m.workspace("Shell").floating == [3] && m.windows[3]?.floating == true)
+    }
+
     @Test func gapsAndWeights() throws {
         var settings = WMSettings()
         settings.gaps.innerHorizontal = GapValue(10)

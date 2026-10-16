@@ -14,6 +14,8 @@ extension WindowManager {
         guard let model, let saved = savedLayout else { return }
         savedLayout = nil
         model.restore(saved, map: saved.match(records.mapValues { identity($0.app, $0.record) }))
+        // Tiled for a moment while apps were read: shown scratchpads are centered again.
+        for window in model.scratchpadHomes.keys { center(window) }
         apply()
         announce()
     }
