@@ -97,6 +97,20 @@ struct ConfigTests {
         #expect(try !KeyboardPlan(ConfigLoader.parse(KeyboardConfig.self, "double_tap_ms = 300").get()).displayKeys)
     }
 
+    @Test func modeBindingsKeepTheirText() throws {
+        let settings = try WMSettings(ConfigLoader.parse(WMConfig.self, """
+        show-mode-bindings = true
+        [mode.main.binding]
+        alt-s = 'mode service'
+        [mode.service.binding]
+        r = ['flatten-workspace-tree', 'mode main']
+        esc = 'mode main'
+        """).get())
+        #expect(settings.showModeBindings)
+        #expect(settings.bindingTexts["service"] == [.init(key: "esc", commands: "mode main"),
+                                                      .init(key: "r", commands: "flatten-workspace-tree; mode main")])
+    }
+
     @Test func detectMonitorInput() throws {
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).detectMonitorInput == false)
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "detect-monitor-input = true").get()).detectMonitorInput)

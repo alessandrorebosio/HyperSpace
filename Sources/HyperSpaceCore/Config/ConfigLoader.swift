@@ -343,6 +343,8 @@ public enum ConfigLoader {
     # Mac's input is learned when the display is plugged in or a window on it gets the focus
     # (`ignore-monitor off` sets it by hand).
     # detect-monitor-input = false
+    # A binding mode other than main (`mode service`) shows its keys while it's on.
+    # show-mode-bindings = false
 
     # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned
     # to a monitor, which is usually what you want.

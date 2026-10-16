@@ -187,6 +187,8 @@ public struct WMConfig: Sendable, Equatable {
     public var scratchpadFallbackWorkspace = "Scratch"
     /// HyperSpace's own: displays showing another input (another computer) are left out.
     public var detectMonitorInput = false
+    /// HyperSpace's own: a mode other than main shows its bindings while it's on.
+    public var showModeBindings = false
 
     public init() {}
 }
@@ -414,6 +416,7 @@ extension WMConfig: Decodable {
         case onWindowDetected = "on-window-detected"
         case scratchpadFallback = "scratchpad-fallback-workspace"
         case detectMonitorInput = "detect-monitor-input"
+        case showModeBindings = "show-mode-bindings"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -435,6 +438,7 @@ extension WMConfig: Decodable {
         onWindowDetected = try c.decode(.onWindowDetected, default: [])
         scratchpadFallbackWorkspace = try c.decode(.scratchpadFallback, default: "Scratch")
         detectMonitorInput = try c.decode(.detectMonitorInput, default: false)
+        showModeBindings = try c.decode(.showModeBindings, default: false)
     }
 }
 

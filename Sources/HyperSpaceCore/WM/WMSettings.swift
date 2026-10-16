@@ -22,10 +22,19 @@ public struct WMSettings: Sendable, Equatable {
     public var scratchpadFallbackWorkspace = "Scratch"
     /// Displays whose input (read over DDC) isn't the Mac's are left out, as if disconnected.
     public var detectMonitorInput = false
+    /// Shows the bindings of a mode other than main while it's on.
+    public var showModeBindings = false
+    /// Mode -> its bindings as written (notation, commands), sorted, for that list.
+    public var bindingTexts: [String: [BindingText]] = [:]
     /// Mode -> binding notation -> script, for `trigger-binding` and `list-modes`.
     public var modes: [String: [String: WMScript]] = ["main": [:]]
     /// Mode -> hotkey table for the event tap.
     public var hotkeys: [String: OutputTable] = [:]
+
+    public struct BindingText: Sendable, Equatable {
+        public var key: String
+        public var commands: String
+    }
 
     public struct Rule: Sendable, Equatable {
         public var condition: Condition
@@ -68,6 +77,7 @@ public struct WMSettings: Sendable, Equatable {
         automaticallyUnhideMacosHiddenApps = config.automaticallyUnhideMacosHiddenApps
         scratchpadFallbackWorkspace = config.scratchpadFallbackWorkspace
         detectMonitorInput = config.detectMonitorInput
+        showModeBindings = config.showModeBindings
         guard !scratchpadFallbackWorkspace.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw InvalidConfig(message: "scratchpad-fallback-workspace: needs a workspace name")
         }
@@ -113,6 +123,7 @@ public struct WMSettings: Sendable, Equatable {
             }
             modes[mode] = scripts
             hotkeys[mode] = table
+            bindingTexts[mode] = bindings.sorted { $0.key < $1.key }.map { BindingText(key: $0.key, commands: $0.value.joined(separator: "; ")) }
         }
         if modes["main"] == nil { modes["main"] = [:] }
         // Without persistent-workspaces, the workspaces named in bindings and the ones assigned

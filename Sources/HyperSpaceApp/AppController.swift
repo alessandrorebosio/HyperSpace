@@ -28,6 +28,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private var watcher: ConfigWatcher?
     private var server: IPCServer?
+    private let overlay = ModeOverlay()
     private var menu: StatusMenu?
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -48,6 +49,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             modeChanged: { [weak self] mode in
                 self?.input.setMode(mode)
                 self?.menu?.refresh()
+                self?.overlay.show(mode, self?.wm.shownBindings)
             },
             mediaKey: { [weak self] key in _ = self?.input.run(.system(key)) },
             changed: { [weak self] in self?.menu?.refresh() }

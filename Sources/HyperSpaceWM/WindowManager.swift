@@ -118,6 +118,13 @@ public final class WindowManager {
 
     public var focusedWorkspace: String? { model?.focusedWorkspace.name }
 
+    /// The keys of the current mode, while one other than main is on and `show-mode-bindings`
+    /// asks for them; nil otherwise.
+    public var shownBindings: [WMSettings.BindingText]? {
+        guard settings.showModeBindings, model != nil, mode != "main" else { return nil }
+        return settings.bindingTexts[mode] ?? []
+    }
+
     /// Where scratchpads with no workspace of their own go when put away (for the menu).
     public var scratchpadFallbackWorkspace: String { settings.scratchpadFallbackWorkspace }
 

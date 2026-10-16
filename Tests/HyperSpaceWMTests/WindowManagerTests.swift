@@ -193,6 +193,20 @@ struct WindowManagerTests {
         #expect(throws: InvalidConfig.self) { try wm.subscribe([]) }
     }
 
+    @Test func aModeShowsItsBindingsWhenAsked() throws {
+        let wm = WindowManager.fake(FakeSystem(screens: [Self.main]))
+        var settings = try WMSettings(ConfigLoader.parse(WMConfig.self, "[mode.main.binding]\nalt-s = 'mode service'\n[mode.service.binding]\nesc = 'mode main'").get())
+        wm.start(settings)
+        defer { wm.stop() }
+        #expect(wm.run(words: ["mode", "service"]).ok)
+        #expect(wm.shownBindings == nil, "off by default")
+        settings.showModeBindings = true
+        wm.start(settings)
+        #expect(wm.shownBindings?.map(\.key) == ["esc"])
+        #expect(wm.run(words: ["mode", "main"]).ok)
+        #expect(wm.shownBindings == nil)
+    }
+
     @Test func displaySettingsGoToTheFocusedOrNamedDisplay() {
         let system = FakeSystem(screens: [Self.main, Self.dell])
         let wm = started(system)
