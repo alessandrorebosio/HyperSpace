@@ -346,7 +346,7 @@ public final class WMModel {
             guard let monitor = monitor(target, wrapAround: wrapAround), let name = visible[monitor] else { return (false, .none) }
             moveWindow(window, to: name, follow: follows)
             ok = true
-        case let .moveWorkspaceToMonitor(target, wrapAround, workspace: name):
+        case let .moveWorkspaceToMonitor(target, wrapAround, workspace: name, swap):
             let workspace = try workspace(named: name)
             // Workspaces with a forced assignment stay where they're assigned.
             guard settings.workspaceToMonitor[workspace.name] == nil,
@@ -357,8 +357,10 @@ public final class WMModel {
             visible[from] = nil
             workspace.monitor = monitor
             // The workspace it covers comes over in exchange, unless it's assigned to its
-            // monitor: then that one waits there, and the monitor left shows one of its own.
-            let replacement = settings.workspaceToMonitor[other] == nil ? other : fallbackWorkspace(for: from)
+            // monitor (or no swap is wanted): then that one waits there, and the monitor
+            // left shows one of its own, the one used last there first.
+            let replacement = swap && settings.workspaceToMonitor[other] == nil ? other
+                : lastUsed(on: from) ?? fallbackWorkspace(for: from)
             visible[from] = replacement
             self.workspace(replacement).monitor = from
             collectEmptyWorkspaces()
@@ -564,6 +566,14 @@ public final class WMModel {
             return workspaces[name]?.monitor.map { $0 == monitor || !ids.contains($0) } ?? true
         }
             ?? (1...).lazy.map(String.init).first { !isVisible($0) && workspaces[$0] == nil }!
+    }
+
+    /// The hidden workspace of `monitor` whose window was focused last, if any.
+    private func lastUsed(on monitor: UInt32) -> String? {
+        history.reversed().lazy.compactMap { self.location[$0] }.first { name in
+            !self.isVisible(name) && self.workspaces[name]?.monitor == monitor
+                && (self.settings.workspaceToMonitor[name] == nil || self.assignedMonitor(name) == monitor)
+        }
     }
 
     /// Hidden empty workspaces are dropped, unless persistent; they come back when named.

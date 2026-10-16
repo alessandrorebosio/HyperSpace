@@ -19,7 +19,10 @@ public indirect enum WMCommand: Sendable, Equatable {
     case moveNodeToWorkspace(WorkspaceTarget, focusFollows: Bool, wrapAround: Bool, window: WindowID?, failIfNoop: Bool)
     case focusMonitor(MonitorTarget, wrapAround: Bool)
     case moveNodeToMonitor(MonitorTarget, focusFollows: Bool, wrapAround: Bool, window: WindowID?)
-    case moveWorkspaceToMonitor(MonitorTarget, wrapAround: Bool, workspace: String?)
+    /// `swap` (AeroSpace's way): the workspace it covers comes over in exchange. Without
+    /// (`--no-swap`, HyperSpace's own) that one just hides, and the monitor left shows the
+    /// one used last there.
+    case moveWorkspaceToMonitor(MonitorTarget, wrapAround: Bool, workspace: String?, swap: Bool)
     /// HyperSpace's own: summons or puts away an app's scratchpad window, by bundle id.
     case scratchpad(String)
     case focusBackAndForth
@@ -198,8 +201,8 @@ extension WMCommand {
             _ = p.flag("--fail-if-noop")
             return .moveNodeToMonitor(try p.monitorTarget(), focusFollows: follows, wrapAround: wrap, window: window)
         case "move-workspace-to-monitor":
-            let workspace = try p.value("--workspace"), wrap = p.flag("--wrap-around")
-            return .moveWorkspaceToMonitor(try p.monitorTarget(), wrapAround: wrap, workspace: workspace)
+            let workspace = try p.value("--workspace"), wrap = p.flag("--wrap-around"), noSwap = p.flag("--no-swap")
+            return .moveWorkspaceToMonitor(try p.monitorTarget(), wrapAround: wrap, workspace: workspace, swap: !noSwap)
         case "scratchpad":
             return .scratchpad(try p.positional("<app-bundle-id>"))
         case "focus-back-and-forth":

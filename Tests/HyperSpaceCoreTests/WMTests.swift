@@ -243,7 +243,8 @@ struct WMTests {
         #expect(try WMCommand(parsing: "move-node-to-workspace 3 --focus-follows-window")
             == .moveNodeToWorkspace(.named("3"), focusFollows: true, wrapAround: false, window: nil, failIfNoop: false))
         #expect(try WMCommand(parsing: "resize width -50") == .resize(.width, .add(-50), window: nil))
-        #expect(try WMCommand(parsing: "move-workspace-to-monitor --wrap-around next") == .moveWorkspaceToMonitor(.next, wrapAround: true, workspace: nil))
+        #expect(try WMCommand(parsing: "move-workspace-to-monitor --wrap-around next") == .moveWorkspaceToMonitor(.next, wrapAround: true, workspace: nil, swap: true))
+        #expect(try WMCommand(parsing: "move-workspace-to-monitor --no-swap next") == .moveWorkspaceToMonitor(.next, wrapAround: false, workspace: nil, swap: false))
         #expect(try WMCommand(parsing: "focus-monitor main dell") == .focusMonitor(.patterns(["main", "dell"]), wrapAround: false))
         #expect(try WMCommand(parsing: "test %{app-bundle-id} = com.apple.Terminal") == .test("%{app-bundle-id}", .equals, "com.apple.Terminal", negate: false))
         #expect(try WMCommand(parsing: "list-windows --workspace focused --format '%{app-name} %{window-title}'")
@@ -319,6 +320,34 @@ struct WMTests {
         #expect(try m.run(WMCommand(parsing: "move-workspace-to-monitor --wrap-around next")).0 == false)
         try run(m, "workspace 2")
         #expect(m.visible == [1: "1", 2: "2"], "each on its own monitor, whichever is focused")
+    }
+
+    @Test func workspacesMoveWithoutSwapping() throws {
+        let right = WMMonitor(id: 2, name: "HP Z24u G3", frame: CGRect(x: 1000, y: 0, width: 800, height: 600),
+                              visible: CGRect(x: 1000, y: 0, width: 800, height: 600))
+        let main = WMMonitor(id: 1, name: "Built-in Retina Display", isMain: true, frame: WMTests.screen.frame, visible: WMTests.screen.visible)
+        var config = WMConfig()
+        config.persistentWorkspaces = ["1", "2", "Cad", "Music"]
+        config.workspaceToMonitorForceAssignment = ["1": ["^built-in retina display$"], "2": ["secondary"]]
+        let m = WMModel(monitors: [main, right], settings: try WMSettings(config))
+        try run(m, "workspace Cad")
+        m.add(WMWindowInfo(id: 10, floating: false))
+        m.nativeFocus(10)
+        try run(m, "workspace Music")
+        m.add(WMWindowInfo(id: 11, floating: false))
+        m.nativeFocus(11)
+        #expect(m.visible == [1: "Music", 2: "2"])
+
+        // Music goes over: 2 just hides there, and the main monitor shows Cad, used last on it.
+        try run(m, "move-workspace-to-monitor --wrap-around --no-swap next")
+        #expect(m.visible == [1: "Cad", 2: "Music"])
+        #expect(m.focusedWorkspace.name == "Music", "the moved workspace keeps the focus")
+        // And back: nothing was used on the other monitor, so it shows its own, 2.
+        try run(m, "move-workspace-to-monitor --wrap-around --no-swap next")
+        #expect(m.visible == [1: "Music", 2: "2"])
+        // Assigned ones still don't move.
+        try run(m, "workspace 2")
+        #expect(try m.run(WMCommand(parsing: "move-workspace-to-monitor --wrap-around --no-swap next")).0 == false)
     }
 
     @Test func boundAndAssignedWorkspacesPersistByDefault() throws {
