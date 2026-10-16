@@ -65,6 +65,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         login.isEnabled = LoginItem.isAvailable
         menu.addItem(login)
+        menu.addItem(action("Check for Updates…", #selector(checkForUpdates)))
         menu.addItem(.separator())
         menu.addItem(action("Quit HyperSpace", #selector(quit), key: "q"))
     }
@@ -152,5 +153,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func reloadConfig() { controller.reloadConfig() }
     @objc private func openConfig() { controller.openConfig() }
     @objc private func toggleLoginItem() { LoginItem.toggle() }
+    @objc private func checkForUpdates() { Updates.check() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

@@ -16,6 +16,15 @@ struct FeatureTests {
 
     // MARK: Layers
 
+    @Test func releaseVersionsCompareByNumber() {
+        #expect(HyperSpace.isNewer("v0.2.1", than: "0.2.0"))
+        #expect(HyperSpace.isNewer("v0.10.0", than: "0.9.1"), "numbers, not text")
+        #expect(HyperSpace.isNewer("1.0", than: "0.9.9"))
+        #expect(!HyperSpace.isNewer("v0.2.0", than: "0.2.0"))
+        #expect(!HyperSpace.isNewer("v0.2", than: "0.2.0"), "a missing part is 0")
+        #expect(!HyperSpace.isNewer("v0.1.1", than: "0.2.0"))
+    }
+
     @Test func spaceLayerHoldsWhenTheNextKeyIsReleasedFirst() throws {
         let t = try keyboard("[layer.space]\nalone = \"space\"\nmap = { j = \"arrow.down\" }")
         var e = KeyEngine()
