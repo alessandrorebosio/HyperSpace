@@ -110,8 +110,8 @@ public final class WMModel {
     /// Display name -> workspace it showed when it was disconnected, to show it again when
     /// the display comes back.
     private var lastShown: [String: String] = [:]
-    /// Scratchpad windows (`scratchpad`): an ordinary window of their home workspace while
-    /// put away, floating over the focused one while shown.
+    /// Shown scratchpad windows (`scratchpad`), floating over the focused workspace. Put
+    /// away, they're ordinary windows of their home workspace again.
     public internal(set) var scratchpads: Set<WindowID> = []
     /// Shown scratchpads -> the workspace they were taken from.
     public internal(set) var scratchpadHomes: [WindowID: WMScratchpadHome] = [:]
@@ -246,41 +246,48 @@ public final class WMModel {
         return before != visible
     }
 
-    /// `scratchpad`: the window is taken from its workspace, its home, and comes floating
-    /// onto the focused one, focused. Shown and focused there already, it's put away: back
-    /// home, tiled again (or floating, if it was), next to the window used last there.
-    /// Returns whether it's shown now.
+    /// `scratchpad`: the window is taken from its workspace, its home (or `home`, for a
+    /// window just opened for it), and comes floating onto the focused one, focused. Shown
+    /// and focused there already, it's put away. Returns whether it's shown now.
     @discardableResult
-    public func toggleScratchpad(_ window: WindowID) -> Bool {
+    public func toggleScratchpad(_ window: WindowID, home: String? = nil) -> Bool {
         guard windows[window] != nil, let from = workspace(of: window) else { return false }
         let target = focusedWorkspace
         defer { collectEmptyWorkspaces() }
         releasedScratchpads.remove(window)
-        scratchpads.insert(window)
-        if let home = scratchpadHomes[window] {
+        if scratchpadHomes[window] != nil {
             guard focused == window, from === target else {
                 // Shown elsewhere, or not focused: it comes here and gets the focus.
                 moveFloating(window, from: from, to: target)
                 focus(window)
                 return true
             }
-            scratchpadHomes[window] = nil
-            detach(window, from: target)
-            let workspace = workspace(home.workspace)
-            windows[window]?.floating = home.floating
-            if home.floating {
-                attachFloating(window, to: workspace)
-            } else {
-                insertTiled(window, into: workspace, nextTo: recent(in: workspace))
-            }
-            focused = recent(in: target)
+            putAway(window)
             return false
         }
-        scratchpadHomes[window] = WMScratchpadHome(workspace: from.name, floating: windows[window]?.floating ?? false)
+        scratchpads.insert(window)
+        scratchpadHomes[window] = WMScratchpadHome(workspace: home ?? from.name, floating: home == nil && windows[window]?.floating == true)
         windows[window]?.floating = true
         moveFloating(window, from: from, to: target)
         focus(window)
         return true
+    }
+
+    /// A shown scratchpad goes back home, an ordinary window again: tiled (or floating, if
+    /// it was) next to the window used last there.
+    public func putAway(_ window: WindowID) {
+        guard let home = scratchpadHomes.removeValue(forKey: window), let from = workspace(of: window) else { return }
+        defer { collectEmptyWorkspaces() }
+        scratchpads.remove(window)
+        detach(window, from: from)
+        let workspace = workspace(home.workspace)
+        windows[window]?.floating = home.floating
+        if home.floating {
+            attachFloating(window, to: workspace)
+        } else {
+            insertTiled(window, into: workspace, nextTo: recent(in: workspace))
+        }
+        if focused == window { focused = recent(in: from) }
     }
 
     private func moveFloating(_ window: WindowID, from: WMWorkspace, to target: WMWorkspace) {

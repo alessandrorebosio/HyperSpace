@@ -11,9 +11,9 @@ extension WindowManager {
     func scratchpad(_ bundleID: String) throws(InvalidConfig) {
         guard let model else { return }
         let windows = records.compactMap { $0.value.app.bundleID == bundleID && model.windows[$0.key] != nil ? $0.key : nil }
-        // Its scratchpad, else its most recent window, one not just made ordinary if it can.
+        // Its shown scratchpad, else its most recent window, one not just made ordinary if it can.
         let candidates = windows.filter { !model.releasedScratchpads.contains($0) }
-        guard let window = windows.first(where: model.scratchpads.contains)
+        guard let window = model.mostRecent(of: windows.filter(model.scratchpads.contains))
             ?? model.mostRecent(of: candidates.isEmpty ? windows : candidates) else {
             // No window yet: the app is launched (or woken up, it opens one) and that one is it.
             guard system.open(bundleID: bundleID) else { throw InvalidConfig(message: "no app with bundle id '\(bundleID)'") }
@@ -26,8 +26,8 @@ extension WindowManager {
     /// Toggles the window as the scratchpad. When it shows, it's centered on the focused
     /// display at the scratchpad's size, wherever it was moved or resized before: apply()
     /// gives a parked window back this frame as it shows it.
-    private func summon(_ window: WindowID) {
-        guard let model, model.toggleScratchpad(window) else { return }
+    private func summon(_ window: WindowID, home: String? = nil) {
+        guard let model, model.toggleScratchpad(window, home: home) else { return }
         center(window)
     }
 
@@ -40,8 +40,11 @@ extension WindowManager {
         parked[window] = CGRect(x: v.midX - size.width / 2, y: v.midY - size.height / 2, width: size.width, height: size.height).integral
     }
 
-    /// The first window of an app `scratchpad` opened becomes its scratchpad, after any rule.
-    func adoptScratchpad(_ new: [WindowRecord], of app: WindowApp) {
+    /// The first window of an app `scratchpad` opened becomes its scratchpad, after any rule,
+    /// in place of the app's scratchpad shown so far. It has no workspace of its own: put
+    /// away, it goes where a rule `placed` it, else where the app was last, else to the
+    /// fallback workspace.
+    func adoptScratchpad(_ new: [WindowRecord], of app: WindowApp, placed: [WindowID: String]) {
         guard let pending = pendingScratchpad, pending.bundleID == app.bundleID, let model else { return }
         guard ContinuousClock.now < pending.until else {
             pendingScratchpad = nil
@@ -49,7 +52,8 @@ extension WindowManager {
         }
         guard let window = new.first(where: { model.windows[$0.id] != nil })?.id else { return }
         pendingScratchpad = nil
-        summon(window)
+        for (id, entry) in records where entry.app === app && id != window && model.scratchpads.contains(id) { model.putAway(id) }
+        summon(window, home: placed[window] ?? app.bundleID.flatMap { appWorkspaces[$0] } ?? settings.scratchpadFallbackWorkspace)
         apply()
         focusNative()
     }

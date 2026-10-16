@@ -5,8 +5,13 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+### New
+
+- **A window opened by `scratchpad` has a place to go back to.** When the app had no window and `scratchpad` opens one, putting it away sends it to the workspace of the app's `on-window-detected` rule, else to the workspace the app was last on, else to a fallback workspace: `scratchpad-fallback-workspace` in wm.toml, `Scratch` by default. That one shows in the menu but `workspace next/prev` skip it.
+
 ### Changed
 
+- **`scratchpad` takes the app's shown scratchpad, else its most recent window.**
 - **Putting the scratchpad away sends it back to its workspace**, the one it was taken from, tiled as before (or floating, if it was), instead of parking it in a corner. ⌘-Tab to its app then shows that workspace, like for any window.
 - **The scratchpad always shows centered at 80% of the display**, even after being moved or resized.
 - **A scratchpad can become an ordinary window.** Tiling it (`layout tiling`) or moving it to another workspace or display leaves it there as an ordinary window; the next `scratchpad` of its app takes another of its windows when there is one.

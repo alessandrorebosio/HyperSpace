@@ -1,6 +1,6 @@
 import CoreGraphics
 import Foundation
-import HyperSpaceCore
+@testable import HyperSpaceCore
 @testable import HyperSpaceWM
 import Testing
 
@@ -273,6 +273,63 @@ struct WindowManagerTests {
         term.create(3, frame: CGRect(x: 10, y: 10, width: 300, height: 200))
         #expect(term.frames[2] == Self.scratchpadFrame)
         #expect(term.frames[3] == Self.right)
+    }
+
+    /// The ids of a workspace's windows, in order.
+    private func ids(_ wm: WindowManager, _ workspace: String) -> String {
+        wm.run(words: ["list-windows", "--workspace", workspace, "--format", "%{window-id}"]).output
+    }
+
+    @Test func anOpenedScratchpadIsPutAwayWhereItsAppBelongs() throws {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let term = FakeApp(pid: 11, bundleID: "term")
+        let system = FakeSystem(screens: [Self.main], apps: [other, term])
+        let wm = WindowManager.fake(system)
+        wm.start(try WMSettings(ConfigLoader.parse(WMConfig.self, """
+        [[on-window-detected]]
+            if.app-id = 'term'
+            run = 'move-node-to-workspace Shell'
+        """).get()))
+        defer { wm.stop() }
+
+        // A rule: where it sends the app's windows.
+        #expect(wm.run("scratchpad term") == nil)
+        term.create(2, frame: CGRect(x: 10, y: 10, width: 300, height: 200))
+        #expect(wm.focusedWorkspace == "1" && term.frames[2] == Self.scratchpadFrame)
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(ids(wm, "Shell") == "2" && term.frames[2]?.origin == Self.corner)
+
+        // No rule: where the app was last. It was on Shell when its last window closed.
+        wm.start(WMSettings())
+        term.destroy(2)
+        #expect(wm.run("scratchpad term") == nil)
+        term.create(3, frame: CGRect(x: 10, y: 10, width: 300, height: 200))
+        #expect(wm.focusedWorkspace == "1" && term.frames[3] == Self.scratchpadFrame)
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(ids(wm, "Shell") == "3")
+    }
+
+    @Test func anOpenedScratchpadWithNowhereToGoIsPutAwayOnTheFallbackWorkspace() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let system = FakeSystem(screens: [Self.main], apps: [other])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("scratchpad term") == nil)
+        let term = FakeApp(pid: 11, bundleID: "term")
+        system.apps[11] = term
+        system.send(.launched(11))
+        term.create(2, frame: CGRect(x: 10, y: 10, width: 300, height: 200))
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(ids(wm, "Scratch") == "2" && ids(wm, "1") == "1")
+        #expect(other.frames[1] == Self.full)
+
+        // Summoned and put away again: it went home to Scratch, so it goes back there.
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(term.frames[2] == Self.scratchpadFrame)
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(ids(wm, "Scratch") == "2")
+        #expect(wm.run("workspace next --wrap-around") == nil)
+        #expect(wm.focusedWorkspace == "1", "Scratch is left out of next/prev")
     }
 
     @Test func tilingOrMovingAScratchpadMakesItOrdinary() {

@@ -149,15 +149,17 @@ extension WindowManager {
             records.contains { $0.value.app === app && model.windows[$0.key] != nil } ? nil : name
         }
         reconcileTabs(app.pid, new: Set(new.map(\.id)))
+        // Windows an on-window-detected rule sent to a workspace, and which one.
+        var placed: [WindowID: String] = [:]
         for record in new where tabs[record.id] == nil {
             manage(record.id)
             if let reopened {
                 _ = try? model.run(.moveNodeToWorkspace(.named(reopened), focusFollows: false, wrapAround: false,
                                                         window: record.id, failIfNoop: false))
             }
-            windowDetected(record.id)
+            if windowDetected(record.id), let name = model.workspace(of: record.id)?.name { placed[record.id] = name }
         }
-        adoptScratchpad(new, of: app)
+        adoptScratchpad(new, of: app, placed: placed)
     }
 
     /// The app's last managed window is `closing`, or the app quits (`nil`): the workspace
@@ -186,9 +188,12 @@ extension WindowManager {
     }
 
     /// `on-window-detected`: the first matching callback runs on the new window (and the
-    /// next ones too while `check-further-callbacks` is set).
-    private func windowDetected(_ id: WindowID) {
-        guard let model, !settings.onWindowDetected.isEmpty else { return }
+    /// next ones too while `check-further-callbacks` is set). Returns whether one of them
+    /// moved it to a workspace.
+    @discardableResult
+    private func windowDetected(_ id: WindowID) -> Bool {
+        guard let model, !settings.onWindowDetected.isEmpty else { return false }
+        var placed = false
         let values = variables(window: id)
         let appName = values["app-name"] ?? "", title = values["window-title"] ?? ""
         for rule in settings.onWindowDetected {
@@ -207,8 +212,10 @@ extension WindowManager {
             }
             guard matches else { continue }
             if let error = execute(rule.run, window: id).error { log.error("on-window-detected: \(error)") }
+            placed = placed || rule.run.commands.contains { if case .moveNodeToWorkspace = $0 { true } else { false } }
             if !rule.checkFurtherCallbacks { break }
         }
+        return placed
     }
 
     private func setManaged(_ id: WindowID, _ managed: Bool) {
