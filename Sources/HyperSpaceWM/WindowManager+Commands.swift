@@ -86,6 +86,8 @@ extension WindowManager {
             }
         case let .scratchpad(bundleID, new):
             try scratchpad(bundleID, new: new)
+        case let .ignoreMonitor(on, patterns):
+            try ignoreMonitors(patterns, on)
         case let .moveMouse(position, failIfNoop):
             return (moveMouse(position) || !failIfNoop, nil)
         case let .list(query):

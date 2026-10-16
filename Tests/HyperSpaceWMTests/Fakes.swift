@@ -131,6 +131,12 @@ final class FakeSystem: WindowSystem {
 
     func monitors() -> [WMMonitor] { screens }
 
+    /// The input each display shows (DDC), by display id; read at once.
+    var inputs: [UInt32: UInt8] = [:]
+    func monitorInputs(_ ids: [UInt32], _ completion: @escaping @MainActor ([UInt32: UInt8]) -> Void) {
+        completion(inputs.filter { ids.contains($0.key) })
+    }
+
     func windowServer(_ ids: [WindowID]) -> [WindowID: (bounds: CGRect, onscreen: Bool)] {
         var result: [WindowID: (bounds: CGRect, onscreen: Bool)] = [:]
         for app in apps.values {

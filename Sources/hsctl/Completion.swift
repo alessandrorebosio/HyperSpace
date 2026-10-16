@@ -30,6 +30,7 @@ _hsctl() {
     'move-workspace-to-monitor:move the workspace to another monitor'
     'move-node-to-monitor:move the window to another monitor'
     'focus-monitor:focus another monitor'
+    'ignore-monitor:leave a monitor out, as if disconnected'
     'focus:focus a window'
     'focus-back-and-forth:focus the previous window'
     'move:move the window'
@@ -107,6 +108,7 @@ _hsctl() {
     resize) compadd smart smart-opposite width height ;;
     layout) compadd tiles accordion horizontal vertical tiling floating h_tiles v_tiles h_accordion v_accordion ;;
     fullscreen|macos-native-fullscreen) compadd on off toggle ;;
+    ignore-monitor) (( CURRENT == 3 )) && compadd on off toggle || compadd main secondary ;;
     scratchpad) compadd ${(f)"$(hsctl list-apps --format '%{app-bundle-id}' 2>/dev/null)"} ;;
     mode) compadd ${(f)"$(hsctl list-modes 2>/dev/null)"} ;;
     move-mouse) compadd monitor-lazy-center monitor-force-center window-lazy-center window-force-center ;;

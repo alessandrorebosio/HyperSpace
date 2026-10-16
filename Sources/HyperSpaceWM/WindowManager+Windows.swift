@@ -20,6 +20,8 @@ extension WindowManager {
             setHidden(pid, false)
         case .displaysChanged:
             monitorsChanged()
+            // A display just connected: its input matters now, not in 2 s.
+            if inputPolling != nil { readMonitorInputs() }
         }
     }
 
@@ -65,9 +67,9 @@ extension WindowManager {
 
     /// Displays connected, disconnected or woken up: workspaces are redistributed, and every
     /// frame is set again, since macOS moves windows of displays that left on its own.
-    private func monitorsChanged() {
+    func monitorsChanged() {
         guard let model else { return }
-        model.setMonitors(system.monitors())
+        model.setMonitors(shownMonitors())
         apply(force: true)
         announce()
     }

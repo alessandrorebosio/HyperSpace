@@ -182,6 +182,8 @@ public struct WMConfig: Sendable, Equatable {
     public var onWindowDetected: [WindowDetectedRule] = []
     /// HyperSpace's own: where a scratchpad with no workspace of its own goes when put away.
     public var scratchpadFallbackWorkspace = "Scratch"
+    /// HyperSpace's own: displays showing another input (another computer) are left out.
+    public var detectMonitorInput = false
 
     public init() {}
 }
@@ -407,6 +409,7 @@ extension WMConfig: Decodable {
         case assignment = "workspace-to-monitor-force-assignment"
         case onWindowDetected = "on-window-detected"
         case scratchpadFallback = "scratchpad-fallback-workspace"
+        case detectMonitorInput = "detect-monitor-input"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -427,6 +430,7 @@ extension WMConfig: Decodable {
         workspaceToMonitorForceAssignment = try c.decode(.assignment, default: [String: Patterns]()).mapValues(\.list)
         onWindowDetected = try c.decode(.onWindowDetected, default: [])
         scratchpadFallbackWorkspace = try c.decode(.scratchpadFallback, default: "Scratch")
+        detectMonitorInput = try c.decode(.detectMonitorInput, default: false)
     }
 }
 

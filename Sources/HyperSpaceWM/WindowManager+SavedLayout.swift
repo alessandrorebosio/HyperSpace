@@ -59,6 +59,29 @@ extension WindowManager {
         }
     }
 
+    private var macInputsURL: URL {
+        system.layoutURL.deletingLastPathComponent().appending(path: "monitor-inputs.json")
+    }
+
+    func loadMacInputs() -> [String: UInt8] {
+        Self.disk.sync {}
+        return (try? Data(contentsOf: macInputsURL)).flatMap { try? JSONDecoder().decode([String: UInt8].self, from: $0) } ?? [:]
+    }
+
+    /// The input that is the Mac's on each display (`detect-monitor-input`), written when learned.
+    func saveMacInputs() {
+        guard let data = try? JSONEncoder().encode(macInputs) else { return }
+        let url = macInputsURL, log = log
+        Self.disk.async {
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                log.error("saving the displays' inputs failed: \(error)")
+            }
+        }
+    }
+
     private func identity(_ app: WindowApp, _ record: WindowRecord) -> WMSnapshot.Identity {
         WMSnapshot.Identity(app: app.bundleID, title: record.title)
     }

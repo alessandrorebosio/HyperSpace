@@ -334,6 +334,10 @@ public enum ConfigLoader {
     # goes when put away, if no on-window-detected rule places its app. Left out of
     # workspace next/prev.
     # scratchpad-fallback-workspace = 'Scratch'
+    # A display still connected but showing another input (another computer) is left out,
+    # as if disconnected: its workspaces wait on the others. Read over DDC, every 2 s; the
+    # input it shows when first seen is taken as the Mac's (`ignore-monitor off` corrects it).
+    # detect-monitor-input = false
 
     # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned
     # to a monitor, which is usually what you want.

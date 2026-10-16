@@ -20,6 +20,8 @@ public struct WMSettings: Sendable, Equatable {
     /// Where a scratchpad with no workspace of its own goes when put away; left out of
     /// `workspace next/prev`.
     public var scratchpadFallbackWorkspace = "Scratch"
+    /// Displays whose input (read over DDC) isn't the Mac's are left out, as if disconnected.
+    public var detectMonitorInput = false
     /// Mode -> binding notation -> script, for `trigger-binding` and `list-modes`.
     public var modes: [String: [String: WMScript]] = ["main": [:]]
     /// Mode -> hotkey table for the event tap.
@@ -65,6 +67,7 @@ public struct WMSettings: Sendable, Equatable {
         focusFollowsMouse = config.focusFollowsMouse
         automaticallyUnhideMacosHiddenApps = config.automaticallyUnhideMacosHiddenApps
         scratchpadFallbackWorkspace = config.scratchpadFallbackWorkspace
+        detectMonitorInput = config.detectMonitorInput
         guard !scratchpadFallbackWorkspace.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw InvalidConfig(message: "scratchpad-fallback-workspace: needs a workspace name")
         }

@@ -189,6 +189,10 @@ Same concepts and command names as AeroSpace, so moving an existing config over 
 - Virtual workspaces (not macOS Spaces, no SIP changes), workspace-to-monitor assignment
 - App rules (e.g. Finder floating, Slack → workspace 9)
 - Commands from hotkeys and from `hsctl`
+- HyperSpace's own: displays left out as if disconnected, by `ignore-monitor` or, with
+  `detect-monitor-input`, when their input (DDC VCP 0x60, read every 2 s off the main
+  thread through `IOAVService`) isn't the one first read on them: a display switched to
+  another computer often stays connected to macOS
 
 Implementation: `WMModel` (HyperSpaceCore) is the pure state and every command over ids and
 rectangles, unit tested; `WindowManager` (HyperSpaceWM) feeds it AX events and applies its
@@ -314,7 +318,8 @@ buttons = ["com.apple.Xcode"]
 # on-focused-monitor-changed, on-mode-changed, exec-on-workspace-change,
 # automatically-unhide-macos-hidden-apps, persistent-workspaces (omitted = workspaces named
 # in bindings), focus-follows-mouse, gaps (per side, per monitor),
-# workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected
+# workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected, and
+# HyperSpace's scratchpad-fallback-workspace and detect-monitor-input
 # (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except split,
 # subscribe, config and debug-windows; shell syntax ; && || ( ) without pipes.
 # The menu bar shows the focused workspace, preceded by the mode's initial outside main.

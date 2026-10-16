@@ -94,6 +94,14 @@ public final class WindowManager {
     var inCallback = false
     /// The last layout applied: what `focus-follows-mouse` looks windows up in.
     var lastLayout = WMLayout()
+    /// Displays left out by `ignore-monitor`, by name, as if disconnected.
+    var ignoredMonitors: Set<String> = []
+    /// `detect-monitor-input`: the input each display was last read showing, and the one
+    /// that is the Mac's (the first one read, unless `ignore-monitor off` said otherwise;
+    /// kept across restarts), by name.
+    var monitorInputs: [String: UInt8] = [:]
+    var macInputs: [String: UInt8] = [:]
+    var inputPolling: Task<Void, Never>?
 
     public convenience init(handlers: Handlers) {
         self.init(handlers: handlers, system: MacSystem())
@@ -137,13 +145,17 @@ public final class WindowManager {
         if let model {
             model.settings = settings
             if settings.modes[mode] == nil { setMode("main") }
-            apply()
+            pollMonitorInputs(settings.detectMonitorInput)
+            // `detect-monitor-input` turned off: the displays it left out come back.
+            if Set(shownMonitors().map(\.id)) != Set(model.monitors.map(\.id)) { monitorsChanged() } else { apply() }
             return
         }
-        model = WMModel(monitors: system.monitors(), settings: settings)
+        macInputs = loadMacInputs()
+        model = WMModel(monitors: shownMonitors(), settings: settings)
         isStartingUp = true
         savedLayout = loadLayout()
         appWorkspaces = loadAppWorkspaces()
+        pollMonitorInputs(settings.detectMonitorInput)
         system.observe { [weak self] event in self?.handle(event) }
         startingApps = Set(system.runningApps().map(\.pid))
         for pid in startingApps { watch(pid) }
@@ -164,6 +176,8 @@ public final class WindowManager {
         for app in apps.values { app.flush(group) }
         if group.wait(timeout: .now() + .seconds(2)) == .timedOut { log.error("stopping: apps slow to take their windows back") }
         system.stopObserving()
+        pollMonitorInputs(false)
+        monitorInputs = [:]
         for app in apps.values { app.stop() }
         apps = [:]
         snapChecks.values.forEach { $0.cancel() }

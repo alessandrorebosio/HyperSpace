@@ -5,6 +5,11 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+### New
+
+- **`ignore-monitor (on|off|toggle) <monitor-pattern>...`** leaves displays out of the window manager as if they were disconnected: their workspaces wait on the other displays and come back with them.
+- **`detect-monitor-input = true`** in wm.toml leaves out, by itself, a display that shows another input (another computer) while still connected to the Mac. The input is read over DDC every 2 seconds (Apple silicon); the one a display shows when first seen is taken as the Mac's, and `ignore-monitor off` on a display makes the input it shows now the Mac's.
+
 ## [0.4.0] - 2026-10-16
 
 ### New

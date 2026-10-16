@@ -281,6 +281,10 @@ struct WMTests {
         #expect(try WMCommand(parsing: "test %{app-bundle-id} = com.apple.Terminal") == .test("%{app-bundle-id}", .equals, "com.apple.Terminal", negate: false))
         #expect(try WMCommand(parsing: "list-windows --workspace focused --format '%{app-name} %{window-title}'")
             == .list(.init(kind: .windows, filters: ["--workspace": ["focused"]], format: "%{app-name} %{window-title}")))
+        #expect(try WMCommand(parsing: "ignore-monitor on dell 2") == .ignoreMonitor(true, patterns: ["dell", "2"]))
+        #expect(try WMCommand(parsing: "ignore-monitor toggle secondary") == .ignoreMonitor(nil, patterns: ["secondary"]))
+        #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "ignore-monitor off") }
+        #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "ignore-monitor dell") }
         #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "focus sideways") }
         #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "teleport") }
         #expect(throws: InvalidConfig.self) { try WMCommand(parsing: "workspace 1 --bogus") }

@@ -159,6 +159,56 @@ struct WindowManagerTests {
         #expect(app.frames[2] == Self.dell.visible, "back on its display")
     }
 
+    @Test func anIgnoredDisplayIsAsIfDisconnected() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2, CGRect(x: 1100, y: 100, width: 300, height: 200))])
+        let system = FakeSystem(screens: [Self.main, Self.dell], apps: [app])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run(words: ["ignore-monitor", "on", "dell"]).ok)
+        #expect(app.frames[2]?.origin == Self.corner, "its workspace waits on the main display")
+        #expect(wm.run(words: ["list-monitors", "--count"]).output == "1")
+        #expect(wm.run(words: ["ignore-monitor", "toggle", "dell"]).ok)
+        #expect(app.frames[2] == Self.dell.visible, "back on its display")
+        #expect(wm.run(words: ["ignore-monitor", "on", "dell", "main"]).error?.contains("every monitor") == true)
+        #expect(wm.run(words: ["list-monitors", "--count"]).output == "2", "nothing left out")
+        #expect(wm.run(words: ["ignore-monitor", "on", "lg"]).error?.contains("no monitor matches") == true)
+    }
+
+    @Test func aDisplayShowingAnotherInputIsLeftOut() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2, CGRect(x: 1100, y: 100, width: 300, height: 200))])
+        let system = FakeSystem(screens: [Self.main, Self.dell], apps: [app])
+        system.inputs = [2: 0x1b]
+        let wm = WindowManager.fake(system)
+        var settings = WMSettings()
+        settings.detectMonitorInput = true
+        wm.start(settings)
+        defer { wm.stop() }
+        wm.readMonitorInputs()
+        #expect(wm.macInputs["DELL"] == 0x1b, "the input first read is the Mac's")
+        #expect(app.frames[2] == Self.dell.visible)
+        system.inputs = [2: 0x0f]
+        wm.readMonitorInputs()
+        #expect(app.frames[2]?.origin == Self.corner, "switched to another computer")
+        system.inputs = [:]
+        wm.readMonitorInputs()
+        #expect(app.frames[2]?.origin == Self.corner, "a missed read changes nothing")
+        system.inputs = [2: 0x1b]
+        wm.readMonitorInputs()
+        #expect(app.frames[2] == Self.dell.visible, "back to the Mac")
+        // Taken back while on another input: that one is the Mac's from now on.
+        system.inputs = [2: 0x0f]
+        wm.readMonitorInputs()
+        #expect(wm.run(words: ["ignore-monitor", "off", "dell"]).ok)
+        #expect(wm.macInputs["DELL"] == 0x0f)
+        #expect(app.frames[2] == Self.dell.visible)
+        // Turned off: every display is shown, whatever its input.
+        system.inputs = [2: 0x1b]
+        wm.readMonitorInputs()
+        #expect(app.frames[2]?.origin == Self.corner)
+        wm.start(WMSettings())
+        #expect(app.frames[2] == Self.dell.visible)
+    }
+
     @Test func appsCaughtWhenTheyFirstActivate() {
         let system = FakeSystem(screens: [Self.main])
         let wm = started(system)

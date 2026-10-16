@@ -26,6 +26,9 @@ public indirect enum WMCommand: Sendable, Equatable {
     /// HyperSpace's own: summons or puts away an app's scratchpad window, by bundle id.
     /// `new`: a new window of the app (its ⌘N menu item) is the scratchpad, if it has one.
     case scratchpad(String, new: Bool)
+    /// HyperSpace's own: the window manager leaves out (`true`), or takes back (`false`), the
+    /// displays matching the patterns, as if they were disconnected. nil toggles.
+    case ignoreMonitor(Bool?, patterns: [String])
     case focusBackAndForth
     case close(quitIfLastWindow: Bool, window: WindowID?)
     case closeAllWindowsButCurrent(quitIfLastWindow: Bool)
@@ -207,6 +210,18 @@ extension WMCommand {
         case "scratchpad":
             let new = p.flag("--new")
             return .scratchpad(try p.positional("<app-bundle-id>"), new: new)
+        case "ignore-monitor":
+            let usage = "(on|off|toggle) <monitor-pattern>..."
+            let state: Bool?
+            switch try p.positional(usage) {
+            case "on": state = true
+            case "off": state = false
+            case "toggle": state = nil
+            default: throw p.fail(usage)
+            }
+            let patterns = try p.rest()
+            guard !patterns.isEmpty else { throw p.fail(usage) }
+            return .ignoreMonitor(state, patterns: patterns)
         case "focus-back-and-forth":
             return .focusBackAndForth
         case "close":
