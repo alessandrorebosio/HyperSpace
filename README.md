@@ -1,5 +1,7 @@
 # HyperSpace
 
+[![Tests](https://github.com/alessandrorebosio/HyperSpace/actions/workflows/test.yml/badge.svg)](https://github.com/alessandrorebosio/HyperSpace/actions/workflows/test.yml)
+
 A single lightweight macOS app for:
 - keyboard remapping, including a fully customizable Caps Lock layer (like Karabiner-Elements)
 - generic remapping of any input from any mouse, Logitech included: side buttons as back/forward in every app (like LinearMouse)

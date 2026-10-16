@@ -1,0 +1,23 @@
+# Runs the test suite on every push to main or develop and on every pull request.
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: Swift version
+        run: swift --version
+      - name: Test
+        run: scripts/test.sh
