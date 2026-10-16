@@ -79,6 +79,9 @@ public final class WindowManager {
     var isStartingUp = true
     /// The layout saved by the last `stop()`, put back once every app's windows are read.
     var savedLayout: WMSnapshot?
+    /// Bundle id -> the workspace its windows were on when the last one closed: an app
+    /// opened again goes back there. Kept across restarts.
+    var appWorkspaces: [String: String] = [:]
     /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
     var inCallback = false
     /// The last layout applied: what `focus-follows-mouse` looks windows up in.
@@ -129,6 +132,7 @@ public final class WindowManager {
         model = WMModel(monitors: system.monitors(), settings: settings)
         isStartingUp = true
         savedLayout = loadLayout()
+        appWorkspaces = loadAppWorkspaces()
         system.observe { [weak self] event in self?.handle(event) }
         startingApps = Set(system.runningApps().map(\.pid))
         for pid in startingApps { watch(pid) }

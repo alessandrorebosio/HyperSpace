@@ -31,6 +31,32 @@ extension WindowManager {
         }
     }
 
+    /// Writes off the main thread, in order.
+    private static let disk = DispatchQueue(label: "hyperspace.wm.disk", qos: .utility)
+
+    private var appWorkspacesURL: URL {
+        system.layoutURL.deletingLastPathComponent().appending(path: "app-workspaces.json")
+    }
+
+    func loadAppWorkspaces() -> [String: String] {
+        Self.disk.sync {} // a write still pending
+        return (try? Data(contentsOf: appWorkspacesURL)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+    }
+
+    /// Written whenever it changes (an app quitting is rare), without holding up the main thread.
+    func saveAppWorkspaces() {
+        guard let data = try? JSONEncoder().encode(appWorkspaces) else { return }
+        let url = appWorkspacesURL, log = log
+        Self.disk.async {
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                log.error("saving the apps' workspaces failed: \(error)")
+            }
+        }
+    }
+
     private func identity(_ app: WindowApp, _ record: WindowRecord) -> WMSnapshot.Identity {
         WMSnapshot.Identity(app: app.bundleID, title: record.title)
     }

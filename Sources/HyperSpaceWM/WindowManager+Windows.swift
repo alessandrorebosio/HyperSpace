@@ -49,6 +49,7 @@ extension WindowManager {
     }
 
     private func forget(app pid: pid_t) {
+        if let app = apps[pid] { rememberWorkspace(of: app) }
         apps.removeValue(forKey: pid)?.stop()
         refreshes.removeValue(forKey: pid)?.cancel()
         appStarted(pid) // quit before reporting its windows
@@ -79,7 +80,12 @@ extension WindowManager {
             guard records[record.id] == nil else { return }
             add([record], of: app, managed: true)
             apply()
+            // Put on another workspace (a rule, or where the app was last): follow it if the
+            // app is in front, i.e. the user just opened it.
+            if system.frontmost == app.pid, let model, let workspace = model.workspace(of: record.id),
+               workspace.name != model.focusedWorkspace.name { syncFocus(app.pid) }
         case let .destroyed(id):
+            if model?.windows[id] != nil { rememberWorkspace(of: app, closing: id) }
             forget(window: id)
             apply()
         case .focusChanged:
@@ -137,12 +143,34 @@ extension WindowManager {
             records[record.id] = (app, record)
             frames[record.id] = record.frame
         }
-        guard managed else { return }
+        guard managed, let model else { return }
+        // Opened again (no window left before these): back to the workspace it was last on.
+        let reopened = isStartingUp ? nil : app.bundleID.flatMap { appWorkspaces[$0] }.flatMap { name in
+            records.contains { $0.value.app === app && model.windows[$0.key] != nil } ? nil : name
+        }
         reconcileTabs(app.pid, new: Set(new.map(\.id)))
         for record in new where tabs[record.id] == nil {
             manage(record.id)
+            if let reopened {
+                _ = try? model.run(.moveNodeToWorkspace(.named(reopened), focusFollows: false, wrapAround: false,
+                                                        window: record.id, failIfNoop: false))
+            }
             windowDetected(record.id)
         }
+    }
+
+    /// The app's last managed window is `closing`, or the app quits (`nil`): the workspace
+    /// its windows are on (the focused one's, if it's theirs) is where it opens next time.
+    private func rememberWorkspace(of app: WindowApp, closing: WindowID? = nil) {
+        guard let model, !isStartingUp, let bundleID = app.bundleID else { return }
+        var window: WindowID?
+        for (id, entry) in records where entry.app === app && model.windows[id] != nil {
+            if let closing, id != closing { return } // another window stays open
+            if window != model.focused, id == model.focused || id < window ?? .max { window = id }
+        }
+        guard let name = window.flatMap({ model.workspace(of: $0)?.name }), appWorkspaces[bundleID] != name else { return }
+        appWorkspaces[bundleID] = name
+        saveAppWorkspaces()
     }
 
     func manage(_ id: WindowID) {
