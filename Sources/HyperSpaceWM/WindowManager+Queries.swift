@@ -4,6 +4,20 @@ import HyperSpaceCore
 extension WindowManager {
     // MARK: - Queries
 
+    /// Every workspace with windows, plus the shown ones, in display order, with the apps of
+    /// its windows (each once, in window order): what the menu lists.
+    public var workspaceApps: [(name: String, focused: Bool, apps: [(pid: pid_t, name: String)])] {
+        guard let model else { return [] }
+        let focused = model.focusedWorkspace.name
+        return model.workspaceNames.compactMap { name in
+            let windows = model.workspaces[name]?.windows ?? []
+            guard !windows.isEmpty || model.isVisible(name) else { return nil }
+            var seen = Set<pid_t>()
+            let apps = windows.compactMap { records[$0]?.app }.filter { seen.insert($0.pid).inserted }.map { ($0.pid, $0.name) }
+            return (name, name == focused, apps)
+        }
+    }
+
     /// `%{name}` variables of AeroSpace's `--format`, `test` and `echo`.
     func variables(window: WindowID?, workspace name: String? = nil) -> [String: String] {
         guard let model else { return [:] }

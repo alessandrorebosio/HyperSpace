@@ -326,6 +326,18 @@ struct WindowManagerTests {
         #expect(wm.focusedWorkspace == "O", "⌘-Tab to an app: its workspace is shown")
     }
 
+    @Test func workspacesListTheirApps() {
+        let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let b = FakeApp(pid: 11, bundleID: "b", windows: [window(3)])
+        let wm = started(FakeSystem(screens: [Self.main, Self.dell], apps: [a, b]))
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace Music --window-id 3") == nil)
+        #expect(wm.run("move-node-to-workspace Cad --window-id 2") == nil)
+        let rows = wm.workspaceApps.map { "\($0.focused ? "*" : "")\($0.name): \($0.apps.map(\.name).joined(separator: " "))" }
+        // Numbers first; the DELL's empty shown workspace too; each app once.
+        #expect(rows == ["*1: a", "2: ", "Cad: a", "Music: b"])
+    }
+
     @Test func draggedTiledWindowsGoBack() async throws {
         let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
         let wm = started(FakeSystem(screens: [Self.main], apps: [app]))

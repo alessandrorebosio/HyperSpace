@@ -35,6 +35,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         controller.accessibility.refresh()
         menu.removeAllItems()
 
+        addWorkspaces()
+
         menu.addItem(disabled("HyperSpace \(HyperSpace.version)"))
         let enabled = action("Enabled", #selector(toggleEnabled), key: "e")
         enabled.state = controller.isEnabled ? .on : .off
@@ -67,6 +69,39 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(action("Quit HyperSpace", #selector(quit), key: "q"))
     }
 
+    /// Size of the app icons in the workspace rows.
+    private static let iconSize: CGFloat = 16
+
+    /// Every workspace with windows, the focused one checked, with its apps' icons lined up
+    /// in a column after the names. A click shows the workspace.
+    private func addWorkspaces() {
+        guard controller.isEnabled, case let rows = controller.wm.workspaceApps, !rows.isEmpty else { return }
+        let font = NSFont.menuFont(ofSize: 0), size = Self.iconSize
+        let names = rows.map { ceil(($0.name as NSString).size(withAttributes: [.font: font]).width) }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: (names.max() ?? 0) + size)]
+        var icons: [pid_t: NSImage] = [:]
+        for row in rows {
+            let title = NSMutableAttributedString(string: row.name + "\t", attributes: [.font: font, .paragraphStyle: paragraph])
+            for app in row.apps {
+                guard let icon = icons[app.pid] ?? NSRunningApplication(processIdentifier: app.pid)?.icon else { continue }
+                icons[app.pid] = icon
+                let attachment = NSTextAttachment()
+                attachment.image = icon
+                attachment.bounds = CGRect(x: 0, y: (font.capHeight - size) / 2, width: size, height: size)
+                title.append(NSAttributedString(attachment: attachment))
+                title.append(NSAttributedString(string: " ", attributes: [.font: font]))
+            }
+            let item = action(row.name, #selector(showWorkspace(_:)))
+            item.attributedTitle = title
+            item.representedObject = row.name
+            item.state = row.focused ? .on : .off
+            item.toolTip = row.apps.map(\.name).joined(separator: ", ")
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+    }
+
     private func disabled(_ title: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -77,6 +112,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.target = self
         return item
+    }
+
+    @objc private func showWorkspace(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        if let error = controller.wm.run(words: ["workspace", name]).error { HyperSpace.logger("app").error("menu: \(error)") }
     }
 
     @objc private func toggleEnabled() { controller.setEnabled(!controller.isEnabled) }
