@@ -23,7 +23,7 @@ rm -f $ZIP
 ditto -c -k --sequesterRsrc --keepParent build/HyperSpace.app $ZIP
 
 SHA=$(shasum -a 256 $ZIP | cut -d' ' -f1)
-print -r -- "${SECTION}"$'\n\n'"### Install"$'\n\n'"Unzip \`HyperSpace-$VERSION.zip\` and move \`HyperSpace.app\` to \`/Applications\`, replacing the old one (the Accessibility permission is kept)."$'\n\n'"SHA-256: \`$SHA\`" | sed -e '/./,$!d' > $NOTES
+print -r -- "${SECTION}"$'\n\n'"### Install"$'\n\n'"Unzip \`HyperSpace-$VERSION.zip\` and move \`HyperSpace.app\` to \`/Applications\`, replacing the old one (the Accessibility permission is kept), or use Check for Updates in the menu (0.6.0 and later install it themselves)."$'\n\n'"The app isn't notarized: the first time, macOS offers only to move it to the Trash. Allow it in System Settings → Privacy & Security (\"Open Anyway\"), or run \`xattr -dr com.apple.quarantine /Applications/HyperSpace.app\`."$'\n\n'"SHA-256: \`$SHA\`" | sed -e '/./,$!d' > $NOTES
 
 echo "Built $ZIP"
 echo "Notes in $NOTES"

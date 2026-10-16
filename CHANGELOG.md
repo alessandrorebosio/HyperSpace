@@ -14,6 +14,8 @@ section here, so a version's section is written before the version is released.
 - **Displays in the menu**: with more than one display, each one can be unchecked to leave it out of the window manager (`ignore-monitor`).
 - **`list-monitors --all`** lists the displays left out too, and `%{monitor-is-ignored}` and `%{monitor-input}` (the input read over DDC) go in `--format`.
 
+- **Check for Updates installs the update**: it downloads the release, checks that its app is signed with the same key, puts it in place of the running one and restarts HyperSpace. No quarantine, so macOS doesn't block it.
+
 ### Changed
 
 - **The Mac's input on a display is learned only when the display surely shows the Mac**: when it's plugged in, or when you focus a window on it, no longer on the first read at launch (the display may then be showing another computer). `ignore-monitor off` still sets it by hand.
