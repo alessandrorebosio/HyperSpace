@@ -11,7 +11,10 @@ extension WindowManager {
     func scratchpad(_ bundleID: String) throws(InvalidConfig) {
         guard let model else { return }
         let windows = records.compactMap { $0.value.app.bundleID == bundleID && model.windows[$0.key] != nil ? $0.key : nil }
-        guard let window = windows.first(where: model.scratchpads.contains) ?? model.mostRecent(of: windows) else {
+        // Its scratchpad, else its most recent window, one not just made ordinary if it can.
+        let candidates = windows.filter { !model.releasedScratchpads.contains($0) }
+        guard let window = windows.first(where: model.scratchpads.contains)
+            ?? model.mostRecent(of: candidates.isEmpty ? windows : candidates) else {
             // No window yet: the app is launched (or woken up, it opens one) and that one is it.
             guard system.open(bundleID: bundleID) else { throw InvalidConfig(message: "no app with bundle id '\(bundleID)'") }
             pendingScratchpad = (bundleID, .now + .seconds(15))

@@ -5,6 +5,10 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+### Changed
+
+- **A scratchpad can become an ordinary window.** Tiling it (`layout tiling`) or moving it to another workspace or display leaves it there as an ordinary window; the next `scratchpad` of its app takes another of its windows when there is one.
+
 ## [0.3.0] - 2026-10-16
 
 ### New

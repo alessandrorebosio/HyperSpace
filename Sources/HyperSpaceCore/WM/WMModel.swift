@@ -102,6 +102,9 @@ public final class WMModel {
     public internal(set) var scratchpads: Set<WindowID> = []
     /// Scratchpads put away: on no workspace, waiting in a corner to be summoned.
     public internal(set) var stashed: Set<WindowID> = []
+    /// Former scratchpads, made ordinary windows by tiling or moving them: the next
+    /// `scratchpad` of their app takes another window if it can.
+    public private(set) var releasedScratchpads: Set<WindowID> = []
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -190,6 +193,7 @@ public final class WMModel {
     public func remove(_ window: WindowID) {
         guard windows.removeValue(forKey: window) != nil else { return }
         scratchpads.remove(window)
+        releasedScratchpads.remove(window)
         history.removeAll { $0 == window }
         if stashed.remove(window) != nil {
             if focused == window { focused = nil }
@@ -210,6 +214,7 @@ public final class WMModel {
         windows[new] = WMWindowInfo(id: new, floating: info.floating)
         if scratchpads.remove(old) != nil { scratchpads.insert(new) }
         if stashed.remove(old) != nil { stashed.insert(new) }
+        if releasedScratchpads.remove(old) != nil { releasedScratchpads.insert(new) }
         location[new] = location.removeValue(forKey: old)
         if let workspace {
             if let index = workspace.floating.firstIndex(of: old) { workspace.floating[index] = new }
@@ -241,6 +246,7 @@ public final class WMModel {
         guard windows[window] != nil else { return false }
         let target = focusedWorkspace
         defer { collectEmptyWorkspaces() }
+        releasedScratchpads.remove(window)
         if !scratchpads.insert(window).inserted, focused == window, location[window] == target.name {
             detach(window, from: target)
             stashed.insert(window)
@@ -585,6 +591,7 @@ public final class WMModel {
 
     private func moveWindow(_ window: WindowID, to name: String, follow: Bool) {
         guard let from = workspace(of: window), from.name != name else { return }
+        releaseScratchpad(window) // put somewhere on purpose: it stays there
         let floating = from.floating.contains(window)
         detach(window, from: from)
         let target = workspace(name)
@@ -595,6 +602,11 @@ public final class WMModel {
         } else if focused == window {
             focused = recent(in: from)
         }
+    }
+
+    /// A scratchpad tiled or moved by a command becomes an ordinary window.
+    private func releaseScratchpad(_ window: WindowID) {
+        if scratchpads.remove(window) != nil { releasedScratchpads.insert(window) }
     }
 
     func attachFloating(_ window: WindowID, to workspace: WMWorkspace) {
@@ -904,6 +916,7 @@ public final class WMModel {
             windows[window]?.floating = true
         case .tiling:
             guard let window, node == nil else { return false }
+            releaseScratchpad(window)
             workspace.floating.removeAll { $0 == window }
             windows[window]?.floating = false
             insertTiled(window, into: workspace)

@@ -257,6 +257,33 @@ struct WindowManagerTests {
         #expect(term.frames[3] == Self.right)
     }
 
+    @Test func tilingOrMovingAScratchpadMakesItOrdinary() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2), window(3)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, term])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace Shell --window-id 3") == nil)
+        #expect(wm.run("focus --window-id 1") == nil)
+
+        // Tiled: it stays in the workspace, and the key takes the app's other window.
+        #expect(wm.run("scratchpad term") == nil)
+        let first = Int(wm.run(words: ["list-windows", "--focused", "--format", "%{window-id}"]).output)!
+        #expect(wm.run("layout tiling") == nil)
+        #expect(wm.run("scratchpad term") == nil)
+        let second = Int(wm.run(words: ["list-windows", "--focused", "--format", "%{window-id}"]).output)!
+        #expect(second != first)
+        #expect(wm.run("scratchpad term") == nil, "put away")
+        #expect(term.frames[WindowID(second)]?.origin == Self.corner)
+        #expect(wm.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id} %{window-layout}"]).output == "1 tiling\n\(first) tiling")
+
+        // Moved to another workspace: it stays there too.
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(wm.run("move-node-to-workspace Shell") == nil)
+        #expect(wm.run("scratchpad term") == nil, "both are ordinary now: the most recent one is taken again")
+        #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-layout}"]).output == "floating")
+    }
+
     @Test func theScratchpadSurvivesARestart() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])
