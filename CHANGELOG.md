@@ -5,10 +5,17 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
 ### New
 
 - **Check for Updates** in the menu: asks GitHub for the latest release, only when clicked, and offers to open its page.
 - **zsh completion for `hsctl`**: `eval "$(hsctl completion zsh)"` in `~/.zshrc` completes commands, flags and workspace names.
+
+### Project
+
+- The tests run on GitHub Actions for every push and pull request.
+- `CHANGELOG.md` holds the release notes, and `scripts/release.sh` takes them from there.
 
 ## [0.2.0] - 2026-10-16
 
@@ -39,7 +46,8 @@ First release: keyboard remapping (Caps Lock layer), mouse remapping (Logitech i
 - **Window manager**: AeroSpace's config (wm.toml) and commands (hsctl), layout kept across restarts, native tabs, floating dialogs, multiple displays with each display's workspace in the menu bar.
 - **hsctl**: status, enable/disable, reload, and every window manager command.
 
-[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.2.0...develop
+[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.3.0...develop
+[0.3.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/alessandrorebosio/HyperSpace/releases/tag/v0.1.0
