@@ -216,6 +216,24 @@ struct WindowManagerTests {
         #expect(restarted.focusedWorkspace == "1", "opened in the background: focus stays")
     }
 
+    @Test func aLateActivationOfTheWindowJustLeftDoesNotSwitchBack() {
+        let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1)])
+        let b = FakeApp(pid: 11, bundleID: "b", windows: [window(2)])
+        a.focused = 1
+        b.focused = 2
+        let system = FakeSystem(screens: [Self.main], apps: [a, b])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 2 --window-id 2") == nil)
+        #expect(wm.run("focus --window-id 1") == nil)
+        #expect(wm.run("workspace 2") == nil)
+        #expect(wm.run("workspace 3") == nil, "empty, nothing to focus there")
+        // The activation of window 2, the one `workspace 3` left, arrives only now.
+        system.frontmost = 11
+        system.send(.activated(11))
+        #expect(wm.focusedWorkspace == "3")
+    }
+
     /// Where a new scratchpad goes on the main monitor: 80% of it, centered.
     static let scratchpadFrame = CGRect(x: 100, y: 60, width: 800, height: 480)
 
@@ -453,7 +471,7 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["list-windows", "--workspace", "Shell", "--format", "%{window-id} %{window-layout}"]).output == "2 tiling")
     }
 
-    @Test func aScratchpadPutAwayIsAnOrdinaryWindowOfItsWorkspace() {
+    @Test func aScratchpadPutAwayIsAnOrdinaryWindowOfItsWorkspace() async throws {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])
         let system = FakeSystem(screens: [Self.main], apps: [other, term])
@@ -465,7 +483,9 @@ struct WindowManagerTests {
         #expect(wm.run("scratchpad term") == nil)
         #expect(other.frames[1] == Self.full && term.frames[2]?.origin == Self.corner)
 
-        // ⌘-Tab to the app: its workspace shows, the window tiled there as before.
+        // ⌘-Tab to the app (past the activations the key itself causes): its workspace
+        // shows, the window tiled there as before.
+        try await Task.sleep(for: .milliseconds(1100))
         term.focused = 2
         system.frontmost = 11
         system.send(.activated(11))

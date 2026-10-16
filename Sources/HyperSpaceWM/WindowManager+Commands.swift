@@ -135,7 +135,10 @@ extension WindowManager {
         guard let model else { return }
         apply()
         let workspace = model.focusedWorkspace.name
-        if model.focused != before.window || workspace != before.workspace { focusNative() }
+        if model.focused != before.window || workspace != before.workspace {
+            if let left = before.window, left != model.focused { leftByCommand = (left, .now) }
+            focusNative()
+        }
         focusChanged(since: before)
         announce()
     }

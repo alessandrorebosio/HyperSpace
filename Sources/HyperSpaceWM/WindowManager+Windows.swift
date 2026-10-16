@@ -272,7 +272,7 @@ extension WindowManager {
             // Still nothing we manage: one of the app's managed windows will do.
             let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
                 ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
-            if let known, self.isFalloutOfAClose(known) { return }
+            if let known, self.isStaleFocus(known) { return }
             if model.nativeFocus(known) {
                 self.log.info("following macOS focus to workspace \(model.focusedWorkspace.name) (\(app.name))")
                 self.apply()
@@ -282,13 +282,18 @@ extension WindowManager {
         }
     }
 
-    /// Closing the focused window makes macOS activate another app, the one used before:
-    /// if its window is on a hidden workspace, following it would switch workspaces under
-    /// the user. True for that activation: just after a close, or before the close is
-    /// reported (the focused window is already gone from the window server).
-    private func isFalloutOfAClose(_ window: WindowID) -> Bool {
+    /// Focus macOS reports late, for a window on a hidden workspace: following it would
+    /// switch workspaces under the user. True for
+    /// - the window a command just left: its app's activation can arrive after the command
+    ///   moved on (`workspace next` pressed in a row went back a step);
+    /// - closing the focused window, which makes macOS activate the app used before: just
+    ///   after a close, or before the close is reported (the focused window is already
+    ///   gone from the window server).
+    private func isStaleFocus(_ window: WindowID) -> Bool {
         guard let model, let workspace = model.workspace(of: window), !model.isVisible(workspace.name) else { return false }
-        if let at = focusedClosedAt, ContinuousClock.now - at < .seconds(1) { return true }
+        let now = ContinuousClock.now
+        if let left = leftByCommand, left.window == window, now - left.at < .seconds(1) { return true }
+        if let at = focusedClosedAt, now - at < .seconds(1) { return true }
         guard let focused = model.focused, focused != window, records[focused] != nil else { return false }
         return system.windowServer([focused])[focused] == nil
     }

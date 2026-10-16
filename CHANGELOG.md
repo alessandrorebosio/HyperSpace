@@ -19,6 +19,7 @@ section here, so a version's section is written before the version is released.
 
 ### Fixed
 
+- **A workspace switch is no longer undone by a late activation.** Pressing `workspace next` several times in a row could go back a step, or a display could go back to the workspace it showed before, when macOS reported the focus of the window just left after the switch.
 - **Windows come back intact after quitting or restarting HyperSpace.** Quitting could leave some windows of hidden workspaces off screen, and at the next start they could keep the size of a tile on another display (a window too short, a gap below). Quitting now waits for every app to take its windows back, and at start windows stay put until the saved layout is restored.
 
 ## [0.3.0] - 2026-10-16
