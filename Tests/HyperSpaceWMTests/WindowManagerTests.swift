@@ -222,7 +222,7 @@ struct WindowManagerTests {
         #expect(other.raised.last == 1)
         #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-id}"]).output == "1")
 
-        // Summoned on another workspace: it comes there, where it was on screen.
+        // Summoned on another workspace: it comes there, centered again.
         #expect(wm.run("workspace 2") == nil)
         #expect(wm.run("scratchpad term") == nil)
         #expect(term.frames[2] == Self.scratchpadFrame)
@@ -233,6 +233,24 @@ struct WindowManagerTests {
         #expect(wm.run("scratchpad term") == nil)
         #expect(wm.focusedWorkspace == "1" && term.frames[2] == Self.scratchpadFrame)
         #expect(wm.run(words: ["list-windows", "--focused", "--format", "%{window-id}"]).output == "2")
+    }
+
+    @Test func theScratchpadAlwaysComesBackAtItsSize() async throws {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [other, term]))
+        defer { wm.stop() }
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(term.frames[2] == Self.scratchpadFrame)
+        // The user drags and resizes it, past our own moves settling.
+        try await Task.sleep(for: .milliseconds(1100))
+        term.frames[2] = CGRect(x: 20, y: 30, width: 300, height: 200)
+        term.send(.moved(2))
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(term.frames[2] == CGRect(x: 20, y: 30, width: 300, height: 200), "a floating window keeps what it's given")
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(term.frames[2] == Self.scratchpadFrame, "centered at its size again")
     }
 
     @Test func scratchpadOpensItsAppWhenItHasNoWindow() {

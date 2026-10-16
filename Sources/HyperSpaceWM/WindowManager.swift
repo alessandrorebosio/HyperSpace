@@ -82,9 +82,6 @@ public final class WindowManager {
     /// Bundle id -> the workspace its windows were on when the last one closed: an app
     /// opened again goes back there. Kept across restarts.
     var appWorkspaces: [String: String] = [:]
-    /// Scratchpads placed since the start: the others are centered the first time they show
-    /// (one restored from the saved layout lost its frame to the tile it got meanwhile).
-    var placedScratchpads: Set<WindowID> = []
     /// `scratchpad` opened an app that had no window: the one it opens shortly is the scratchpad.
     var pendingScratchpad: (bundleID: String, until: ContinuousClock.Instant)?
     /// When the focused window last closed (see `isFalloutOfAClose`).
@@ -172,7 +169,6 @@ public final class WindowManager {
         tabs = [:]
         shownTab = [:]
         savedLayout = nil
-        placedScratchpads = []
         startingApps = []
         lastLayout = WMLayout()
         model = nil

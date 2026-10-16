@@ -2,10 +2,10 @@ import Foundation
 import HyperSpaceCore
 
 /// `scratchpad <app-bundle-id>`: one window of the app, floating, summoned onto the focused
-/// workspace and put away by the same key. Put away, it waits in a corner like the windows
-/// of hidden workspaces, so it comes back at once.
+/// workspace (always centered, at the same size) and put away by the same key. Put away,
+/// it waits in a corner like the windows of hidden workspaces, so it comes back at once.
 extension WindowManager {
-    /// Share of the display a new scratchpad gets, centered.
+    /// Share of the display the scratchpad gets, centered.
     private static let scratchpadSize = 0.8
 
     func scratchpad(_ bundleID: String) throws(InvalidConfig) {
@@ -23,18 +23,13 @@ extension WindowManager {
         summon(window)
     }
 
-    /// Toggles the window as the scratchpad, placed on the focused display when it shows.
+    /// Toggles the window as the scratchpad. When it shows, it's centered on the focused
+    /// display at the scratchpad's size, wherever it was moved or resized before: apply()
+    /// gives a parked window back this frame as it shows it.
     private func summon(_ window: WindowID) {
-        guard let model else { return }
-        guard model.toggleScratchpad(window), let monitor = model.monitors.first(where: { $0.id == model.focusedMonitor }) else { return }
-        let isNew = placedScratchpads.insert(window).inserted
-        // A new scratchpad, or one that was on another display: centered on this one. apply()
-        // gives a parked window back this frame as it shows it.
-        let v = monitor.visible
-        guard let frame = parked[window] ?? frames[window],
-              isNew || !v.contains(CGPoint(x: frame.midX, y: frame.midY)) else { return }
-        let size = isNew ? CGSize(width: v.width * Self.scratchpadSize, height: v.height * Self.scratchpadSize)
-            : CGSize(width: min(frame.width, v.width), height: min(frame.height, v.height))
+        guard let model, model.toggleScratchpad(window),
+              let v = model.monitors.first(where: { $0.id == model.focusedMonitor })?.visible else { return }
+        let size = CGSize(width: v.width * Self.scratchpadSize, height: v.height * Self.scratchpadSize)
         parked[window] = CGRect(x: v.midX - size.width / 2, y: v.midY - size.height / 2, width: size.width, height: size.height).integral
     }
 
