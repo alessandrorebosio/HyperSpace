@@ -120,6 +120,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 entry.toolTip = window.title.isEmpty ? window.app : "\(window.app): \(window.title)"
                 submenu.addItem(entry)
             }
+            // Scratchpads put away pile up there: emptied in one go.
+            if row.name == controller.wm.scratchpadFallbackWorkspace, !row.windows.isEmpty {
+                submenu.addItem(.separator())
+                let close = action("Close All Windows", #selector(closeWindows(_:)))
+                close.representedObject = row.windows.map(\.id)
+                submenu.addItem(close)
+            }
             item.submenu = submenu
             menu.addItem(item)
         }
@@ -146,6 +153,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func focusWindow(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? WindowID else { return }
         if let error = controller.wm.run(words: ["focus", "--window-id", String(id)]).error { HyperSpace.logger("app").error("menu: \(error)") }
+    }
+
+    @objc private func closeWindows(_ sender: NSMenuItem) {
+        for id in sender.representedObject as? [WindowID] ?? [] {
+            if let error = controller.wm.run(words: ["close", "--window-id", String(id)]).error { HyperSpace.logger("app").error("menu: \(error)") }
+        }
     }
 
     @objc private func toggleEnabled() { controller.setEnabled(!controller.isEnabled) }

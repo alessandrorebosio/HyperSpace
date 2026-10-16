@@ -106,6 +106,9 @@ public final class WindowManager {
 
     public var focusedWorkspace: String? { model?.focusedWorkspace.name }
 
+    /// Where scratchpads with no workspace of their own go when put away (for the menu).
+    public var scratchpadFallbackWorkspace: String { settings.scratchpadFallbackWorkspace }
+
     /// The workspace each display shows, the main display first and the others left to
     /// right, and which one is focused: what the menu bar shows.
     public var shownWorkspaces: [(name: String, focused: Bool)] {
