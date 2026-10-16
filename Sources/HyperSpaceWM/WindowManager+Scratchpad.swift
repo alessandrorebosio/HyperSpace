@@ -26,7 +26,7 @@ extension WindowManager {
         }
         // Its shown scratchpad, else its most recent window, one not just made ordinary if it can.
         let candidates = windows.filter { !model.releasedScratchpads.contains($0) }
-        guard let window = model.mostRecent(of: windows.filter(model.scratchpads.contains))
+        guard let window = model.mostRecent(of: windows.filter { model.scratchpadHomes[$0] != nil })
             ?? model.mostRecent(of: candidates.isEmpty ? windows : candidates) else {
             // No window yet: the app is launched (or woken up, it opens one) and that one is it.
             guard system.open(bundleID: bundleID) else { throw InvalidConfig(message: "no app with bundle id '\(bundleID)'") }
@@ -65,7 +65,7 @@ extension WindowManager {
         }
         guard let window = new.first(where: { model.windows[$0.id] != nil && !(pending.pressed && $0.floating) })?.id else { return }
         pendingScratchpad = nil
-        for (id, entry) in records where entry.app === app && id != window && model.scratchpads.contains(id) { model.putAway(id) }
+        for (id, entry) in records where entry.app === app && id != window && model.scratchpadHomes[id] != nil { model.putAway(id) }
         summon(window, home: placed[window] ?? app.bundleID.flatMap { appWorkspaces[$0] } ?? settings.scratchpadFallbackWorkspace)
         apply()
         focusNative()

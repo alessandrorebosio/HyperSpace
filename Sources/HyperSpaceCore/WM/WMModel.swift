@@ -110,10 +110,8 @@ public final class WMModel {
     /// Display name -> workspace it showed when it was disconnected, to show it again when
     /// the display comes back.
     private var lastShown: [String: String] = [:]
-    /// Shown scratchpad windows (`scratchpad`), floating over the focused workspace. Put
-    /// away, they're ordinary windows of their home workspace again.
-    public internal(set) var scratchpads: Set<WindowID> = []
-    /// Shown scratchpads -> the workspace they were taken from.
+    /// Shown scratchpad windows (`scratchpad`), floating over the focused workspace -> the
+    /// workspace they go back to. Put away, they're ordinary windows of it again.
     public internal(set) var scratchpadHomes: [WindowID: WMScratchpadHome] = [:]
     /// Former scratchpads, made ordinary windows by tiling or moving them: the next
     /// `scratchpad` of their app takes another window if it can.
@@ -205,7 +203,6 @@ public final class WMModel {
 
     public func remove(_ window: WindowID) {
         guard windows.removeValue(forKey: window) != nil else { return }
-        scratchpads.remove(window)
         scratchpadHomes[window] = nil
         releasedScratchpads.remove(window)
         history.removeAll { $0 == window }
@@ -222,7 +219,6 @@ public final class WMModel {
         guard let info = windows[old], workspace != nil else { return }
         windows[old] = nil
         windows[new] = WMWindowInfo(id: new, floating: info.floating)
-        if scratchpads.remove(old) != nil { scratchpads.insert(new) }
         if let home = scratchpadHomes.removeValue(forKey: old) { scratchpadHomes[new] = home }
         if releasedScratchpads.remove(old) != nil { releasedScratchpads.insert(new) }
         location[new] = location.removeValue(forKey: old)
@@ -265,7 +261,6 @@ public final class WMModel {
             putAway(window)
             return false
         }
-        scratchpads.insert(window)
         scratchpadHomes[window] = WMScratchpadHome(workspace: home ?? from.name, floating: home == nil && windows[window]?.floating == true)
         windows[window]?.floating = true
         moveFloating(window, from: from, to: target)
@@ -278,7 +273,6 @@ public final class WMModel {
     public func putAway(_ window: WindowID) {
         guard let home = scratchpadHomes.removeValue(forKey: window), let from = workspace(of: window) else { return }
         defer { collectEmptyWorkspaces() }
-        scratchpads.remove(window)
         detach(window, from: from)
         let workspace = workspace(home.workspace)
         windows[window]?.floating = home.floating
@@ -637,8 +631,7 @@ public final class WMModel {
 
     /// A scratchpad tiled or moved by a command becomes an ordinary window, where it is.
     private func releaseScratchpad(_ window: WindowID) {
-        scratchpadHomes[window] = nil
-        if scratchpads.remove(window) != nil { releasedScratchpads.insert(window) }
+        if scratchpadHomes.removeValue(forKey: window) != nil { releasedScratchpads.insert(window) }
     }
 
     func attachFloating(_ window: WindowID, to workspace: WMWorkspace) {

@@ -33,8 +33,7 @@ public struct WMSnapshot: Codable, Sendable, Equatable {
     public var visible: [String: String]
     public var focusedWorkspace: String
     public var windows: [WindowID: Identity]
-    /// Scratchpad windows, and where the shown ones go back to (absent from older layouts).
-    public var scratchpads: [WindowID]?
+    /// Shown scratchpads and where they go back to (absent from older layouts).
     public var scratchpadHomes: [WindowID: WMScratchpadHome]?
 
     /// Saved window -> the window it is now, among `current`: the same id of the same app,
@@ -73,7 +72,7 @@ extension WMModel {
                                 uniquingKeysWith: { first, _ in first }),
             focusedWorkspace: focusedWorkspace.name,
             windows: Dictionary(uniqueKeysWithValues: windows.keys.map { ($0, identity($0)) }),
-            scratchpads: scratchpads.sorted(), scratchpadHomes: scratchpadHomes)
+            scratchpadHomes: scratchpadHomes)
     }
 
     /// Puts the windows `map` finds (saved id -> current id) back where the snapshot had
@@ -111,9 +110,8 @@ extension WMModel {
             visible[monitor.id] = name
             workspace(name).monitor = monitor.id
         }
-        for id in (snapshot.scratchpads ?? []).compactMap(current) { scratchpads.insert(id) }
         for (saved, home) in snapshot.scratchpadHomes ?? [:] {
-            if let id = current(saved), scratchpads.contains(id) { scratchpadHomes[id] = home }
+            if let id = current(saved) { scratchpadHomes[id] = home }
         }
         if let monitor = visible.first(where: { $0.value == snapshot.focusedWorkspace })?.key { focusedMonitor = monitor }
         if let window = recent(in: focusedWorkspace) { focus(window) }
