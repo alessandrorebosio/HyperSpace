@@ -279,6 +279,53 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
     }
 
+    /// Workspace 1 has windows 1 (app 10) and 3 (app 12, focused); workspace O has window 2
+    /// (app 11), whose app macOS activates when window 3 closes.
+    private func closingSetup() -> (FakeSystem, WindowManager, FakeApp, FakeApp, FakeApp) {
+        let a = FakeApp(pid: 10, bundleID: "a", windows: [window(1)])
+        let b = FakeApp(pid: 11, bundleID: "b", windows: [window(2)])
+        let c = FakeApp(pid: 12, bundleID: "c", windows: [window(3)])
+        let system = FakeSystem(screens: [Self.main], apps: [a, b, c])
+        let wm = started(system)
+        _ = wm.run("move-node-to-workspace O --window-id 2")
+        _ = wm.run("focus --window-id 3")
+        b.focused = 2
+        return (system, wm, a, b, c)
+    }
+
+    @Test func closingTheFocusedWindowKeepsTheWorkspace() {
+        // Reported before macOS activates the app used before.
+        let (system, wm, a, _, c) = closingSetup()
+        defer { wm.stop() }
+        c.destroy(3)
+        system.frontmost = 11
+        system.send(.activated(11))
+        #expect(wm.focusedWorkspace == "1")
+        #expect(a.raised.last == 1, "focus goes to the workspace's next window")
+    }
+
+    @Test func closingTheFocusedWindowKeepsTheWorkspaceWhenReportedLate() {
+        // macOS activates the other app before the close is reported (an app quitting).
+        let (system, wm, a, _, c) = closingSetup()
+        defer { wm.stop() }
+        c.frames[3] = nil
+        system.apps[12] = nil
+        system.frontmost = 11
+        system.send(.activated(11))
+        #expect(wm.focusedWorkspace == "1")
+        system.send(.terminated(12))
+        #expect(wm.focusedWorkspace == "1")
+        #expect(a.raised.last == 1)
+    }
+
+    @Test func activatingAnAppStillShowsItsWorkspace() {
+        let (system, wm, _, _, _) = closingSetup()
+        defer { wm.stop() }
+        system.frontmost = 11
+        system.send(.activated(11))
+        #expect(wm.focusedWorkspace == "O", "⌘-Tab to an app: its workspace is shown")
+    }
+
     @Test func draggedTiledWindowsGoBack() async throws {
         let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
         let wm = started(FakeSystem(screens: [Self.main], apps: [app]))

@@ -84,6 +84,8 @@ public final class WindowManager {
     var appWorkspaces: [String: String] = [:]
     /// `scratchpad` opened an app that had no window: the one it opens shortly is the scratchpad.
     var pendingScratchpad: (bundleID: String, until: ContinuousClock.Instant)?
+    /// When the focused window last closed (see `isFalloutOfAClose`).
+    var focusedClosedAt: ContinuousClock.Instant?
     /// Callbacks don't retrigger themselves (AeroSpace's "recursion resistant").
     var inCallback = false
     /// The last layout applied: what `focus-follows-mouse` looks windows up in.

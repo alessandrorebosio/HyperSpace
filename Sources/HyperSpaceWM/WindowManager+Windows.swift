@@ -222,6 +222,12 @@ extension WindowManager {
             for (tab, group) in tabs where group == id { tabs[tab] = heir }
             shownTab[heir] = shownTab[id] == heir ? nil : shownTab[id]
             targets[heir] = targets[id]
+        } else if model?.focused == id {
+            // The focused window closed: focus goes to the workspace's next one, and the app
+            // macOS activates in its place mustn't take us to its workspace.
+            model?.remove(id)
+            focusedClosedAt = .now
+            focusNative()
         } else {
             model?.remove(id)
         }
@@ -254,10 +260,22 @@ extension WindowManager {
             // Still nothing we manage: one of the app's managed windows will do.
             let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
                 ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
+            if let known, self.isFalloutOfAClose(known) { return }
             if model.nativeFocus(known) { self.apply() }
             self.focusChanged(since: before)
             self.announce()
         }
+    }
+
+    /// Closing the focused window makes macOS activate another app, the one used before:
+    /// if its window is on a hidden workspace, following it would switch workspaces under
+    /// the user. True for that activation: just after a close, or before the close is
+    /// reported (the focused window is already gone from the window server).
+    private func isFalloutOfAClose(_ window: WindowID) -> Bool {
+        guard let model, let workspace = model.workspace(of: window), !model.isVisible(workspace.name) else { return false }
+        if let at = focusedClosedAt, ContinuousClock.now - at < .seconds(1) { return true }
+        guard let focused = model.focused, focused != window, records[focused] != nil else { return false }
+        return system.windowServer([focused])[focused] == nil
     }
 
     /// A window moved or resized. Floating: remember its frame. Tiled: if the user dragged
