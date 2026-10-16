@@ -543,14 +543,14 @@ public final class WMModel {
     }
 
     /// Workspaces for next/prev: those of the focused monitor that have windows (or are
-    /// persistent, or shown), in display order.
+    /// persistent, or shown), in display order. Not the scratchpads' fallback workspace.
     private func name(of target: WMCommand.WorkspaceTarget, wrapAround: Bool) -> String? {
         switch target {
         case let .named(name):
             return name
         case .next, .prev:
             let names = workspaceNames.filter { name in
-                assignedMonitor(name) == focusedMonitor
+                assignedMonitor(name) == focusedMonitor && name != settings.scratchpadFallbackWorkspace
                     && (!(workspaces[name]?.isEmpty ?? true) || settings.persistentWorkspaces.contains(name) || name == focusedWorkspace.name)
             }
             guard let index = names.firstIndex(of: focusedWorkspace.name) else { return names.first }

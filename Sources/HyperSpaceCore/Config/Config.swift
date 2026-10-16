@@ -180,6 +180,8 @@ public struct WMConfig: Sendable, Equatable {
     /// Workspace name -> monitor patterns.
     public var workspaceToMonitorForceAssignment: [String: [String]] = [:]
     public var onWindowDetected: [WindowDetectedRule] = []
+    /// HyperSpace's own: where a scratchpad with no workspace of its own goes when put away.
+    public var scratchpadFallbackWorkspace = "Scratch"
 
     public init() {}
 }
@@ -404,6 +406,7 @@ extension WMConfig: Decodable {
         case focusFollowsMouse = "focus-follows-mouse"
         case assignment = "workspace-to-monitor-force-assignment"
         case onWindowDetected = "on-window-detected"
+        case scratchpadFallback = "scratchpad-fallback-workspace"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -423,6 +426,7 @@ extension WMConfig: Decodable {
         focusFollowsMouse = try c.decode(.focusFollowsMouse, default: FocusFollowsMouseTable()).enabled
         workspaceToMonitorForceAssignment = try c.decode(.assignment, default: [String: Patterns]()).mapValues(\.list)
         onWindowDetected = try c.decode(.onWindowDetected, default: [])
+        scratchpadFallbackWorkspace = try c.decode(.scratchpadFallback, default: "Scratch")
     }
 }
 

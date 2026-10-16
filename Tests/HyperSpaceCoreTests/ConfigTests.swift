@@ -85,6 +85,13 @@ struct ConfigTests {
         #expect(mouse.scroll == ScrollConfig(reverse: .vertical, linear: true, lines: 3))
     }
 
+    @Test func scratchpadFallbackWorkspace() throws {
+        #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).scratchpadFallbackWorkspace == "Scratch")
+        let wm = try ConfigLoader.parse(WMConfig.self, "scratchpad-fallback-workspace = 'Bin'").get()
+        #expect(try WMSettings(wm).scratchpadFallbackWorkspace == "Bin")
+        #expect(error(WMConfig.self, "scratchpad-fallback-workspace = ' '")?.contains("needs a workspace name") == true)
+    }
+
     @Test func wmFileDecodesAeroSpaceFormat() throws {
         let wm = try ConfigLoader.parse(WMConfig.self, """
         accordion-padding = 5

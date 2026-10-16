@@ -17,6 +17,9 @@ public struct WMSettings: Sendable, Equatable {
     public var execOnWorkspaceChange: [String] = []
     public var focusFollowsMouse = false
     public var automaticallyUnhideMacosHiddenApps = false
+    /// Where a scratchpad with no workspace of its own goes when put away; left out of
+    /// `workspace next/prev`.
+    public var scratchpadFallbackWorkspace = "Scratch"
     /// Mode -> binding notation -> script, for `trigger-binding` and `list-modes`.
     public var modes: [String: [String: WMScript]] = ["main": [:]]
     /// Mode -> hotkey table for the event tap.
@@ -61,6 +64,10 @@ public struct WMSettings: Sendable, Equatable {
         execOnWorkspaceChange = config.execOnWorkspaceChange
         focusFollowsMouse = config.focusFollowsMouse
         automaticallyUnhideMacosHiddenApps = config.automaticallyUnhideMacosHiddenApps
+        scratchpadFallbackWorkspace = config.scratchpadFallbackWorkspace
+        guard !scratchpadFallbackWorkspace.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw InvalidConfig(message: "scratchpad-fallback-workspace: needs a workspace name")
+        }
         guard (0...1000).contains(config.accordionPadding) else { throw InvalidConfig(message: "accordion-padding: must be between 0 and 1000") }
 
         for (i, rule) in config.onWindowDetected.enumerated() {

@@ -330,6 +330,10 @@ public enum ConfigLoader {
     # on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
     # automatically-unhide-macos-hidden-apps = false
     # focus-follows-mouse.enabled = false
+    # Where a scratchpad window with no workspace of its own (opened by `scratchpad`)
+    # goes when put away, if no on-window-detected rule places its app. Left out of
+    # workspace next/prev.
+    # scratchpad-fallback-workspace = 'Scratch'
 
     # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned
     # to a monitor, which is usually what you want.

@@ -156,6 +156,19 @@ struct WMTests {
         #expect(m.focusedWorkspace.name == "2")
     }
 
+    @Test func nextAndPrevSkipTheScratchpadsFallbackWorkspace() throws {
+        let m = model(3)
+        try run(m, "move-node-to-workspace 2 --window-id 2")
+        try run(m, "move-node-to-workspace Scratch --window-id 3")
+        try run(m, "workspace next --wrap-around")
+        #expect(m.focusedWorkspace.name == "2")
+        try run(m, "workspace next --wrap-around")
+        #expect(m.focusedWorkspace.name == "1")
+        try run(m, "workspace Scratch")
+        try run(m, "workspace next")
+        #expect(m.focusedWorkspace.name == "1", "from it, the first one")
+    }
+
     @Test func nativeFocusShowsItsWorkspace() throws {
         let m = model(2)
         try run(m, "move-node-to-workspace 5")
