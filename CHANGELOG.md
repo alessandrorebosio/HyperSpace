@@ -5,6 +5,8 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-16
+
 ### New
 
 - **`ignore-monitor (on|off|toggle) <monitor-pattern>...`** leaves displays out of the window manager as if they were disconnected: their workspaces wait on the other displays and come back with them.
@@ -71,7 +73,8 @@ First release: keyboard remapping (Caps Lock layer), mouse remapping (Logitech i
 - **Window manager**: AeroSpace's config (wm.toml) and commands (hsctl), layout kept across restarts, native tabs, floating dialogs, multiple displays with each display's workspace in the menu bar.
 - **hsctl**: status, enable/disable, reload, and every window manager command.
 
-[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.4.0...develop
+[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.5.0...develop
+[0.5.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.1.1...v0.2.0
