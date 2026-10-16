@@ -2,7 +2,7 @@ import Foundation
 import os
 
 public enum HyperSpace {
-    public static let version = "0.3.0"
+    public static let version = "0.4.0"
     public static let bundleID = "com.alessandrorebosio.HyperSpace"
     /// The latest release, as GitHub's API describes it (for "Check for Updates").
     public static let latestReleaseURL = URL(string: "https://api.github.com/repos/alessandrorebosio/HyperSpace/releases/latest")!

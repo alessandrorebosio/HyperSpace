@@ -5,11 +5,13 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-16
+
 ### New
 
-- **`%{window-is-scratchpad}` and `%{window-scratchpad-home}`** in `--format`: whether a window is the shown scratchpad, and the workspace it goes back to.
 - **`scratchpad --new <app-bundle-id>`** opens a new window of the app as the scratchpad, through the app's ⌘N menu item, in place of the one shown so far; a dialog it opens first (a template chooser) is left alone. Without such an item it works like `scratchpad`; a closed app is launched.
 - **A window opened by `scratchpad` has a place to go back to.** When the app had no window and `scratchpad` opens one, putting it away sends it to the workspace of the app's `on-window-detected` rule, else to the workspace the app was last on, else to a fallback workspace: `scratchpad-fallback-workspace` in wm.toml, `Scratch` by default. That one shows in the menu, with Close All Windows to empty it, but `workspace next/prev` skip it.
+- **`%{window-is-scratchpad}` and `%{window-scratchpad-home}`** in `--format`: whether a window is the shown scratchpad, and the workspace it goes back to.
 
 ### Changed
 
@@ -64,7 +66,8 @@ First release: keyboard remapping (Caps Lock layer), mouse remapping (Logitech i
 - **Window manager**: AeroSpace's config (wm.toml) and commands (hsctl), layout kept across restarts, native tabs, floating dialogs, multiple displays with each display's workspace in the menu bar.
 - **hsctl**: status, enable/disable, reload, and every window manager command.
 
-[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.3.0...develop
+[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.4.0...develop
+[0.4.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.1.0...v0.1.1
