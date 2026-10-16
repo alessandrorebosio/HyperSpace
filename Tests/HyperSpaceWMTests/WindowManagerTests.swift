@@ -257,6 +257,25 @@ struct WindowManagerTests {
         #expect(term.frames[3] == Self.right)
     }
 
+    @Test func theScratchpadSurvivesARestart() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, term])
+        let first = started(system)
+        #expect(first.run("scratchpad term") == nil)
+        #expect(first.run("scratchpad term") == nil)
+        first.stop()
+        #expect(term.frames[2] == Self.scratchpadFrame, "given back on screen while HyperSpace is off")
+
+        // Started again: put away again, and the key still knows it.
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(term.frames[2]?.origin == Self.corner)
+        #expect(other.frames[1] == Self.full)
+        #expect(wm.run("scratchpad term") == nil)
+        #expect(term.frames[2] == Self.scratchpadFrame)
+    }
+
     @Test func aStashedScratchpadComesBackWhenMacOSFocusesIt() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let term = FakeApp(pid: 11, bundleID: "term", windows: [window(2)])

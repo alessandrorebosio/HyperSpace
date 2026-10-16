@@ -99,9 +99,9 @@ public final class WMModel {
     /// the display comes back.
     private var lastShown: [String: String] = [:]
     /// Scratchpad windows (`scratchpad`): floating on a workspace while shown, else stashed.
-    public private(set) var scratchpads: Set<WindowID> = []
+    public internal(set) var scratchpads: Set<WindowID> = []
     /// Scratchpads put away: on no workspace, waiting in a corner to be summoned.
-    public private(set) var stashed: Set<WindowID> = []
+    public internal(set) var stashed: Set<WindowID> = []
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings

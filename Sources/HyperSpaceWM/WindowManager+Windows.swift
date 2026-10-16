@@ -239,6 +239,7 @@ extension WindowManager {
         targets[id] = nil
         setAt[id] = nil
         parked[id] = nil
+        placedScratchpads.remove(id)
         snapChecks.removeValue(forKey: id)?.cancel()
     }
 

@@ -23,8 +23,8 @@ extension WindowManager {
     /// Toggles the window as the scratchpad, placed on the focused display when it shows.
     private func summon(_ window: WindowID) {
         guard let model else { return }
-        let isNew = !model.scratchpads.contains(window)
         guard model.toggleScratchpad(window), let monitor = model.monitors.first(where: { $0.id == model.focusedMonitor }) else { return }
+        let isNew = placedScratchpads.insert(window).inserted
         // A new scratchpad, or one that was on another display: centered on this one. apply()
         // gives a parked window back this frame as it shows it.
         let v = monitor.visible
