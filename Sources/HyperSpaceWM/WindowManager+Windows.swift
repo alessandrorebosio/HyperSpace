@@ -261,7 +261,10 @@ extension WindowManager {
             let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
                 ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
             if let known, self.isFalloutOfAClose(known) { return }
-            if model.nativeFocus(known) { self.apply() }
+            if model.nativeFocus(known) {
+                self.log.info("following macOS focus to workspace \(model.focusedWorkspace.name) (\(app.name))")
+                self.apply()
+            }
             self.focusChanged(since: before)
             self.announce()
         }
