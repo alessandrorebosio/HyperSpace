@@ -29,7 +29,7 @@ final class AXApp: WindowApp, @unchecked Sendable {
     private var enhancedUI: (on: Bool, at: DispatchTime)?
     private var stopped = false
     /// The ⌘N menu item last pressed, checked before it's pressed again: no walk through
-    /// every menu on each `scratchpad --new`.
+    /// the menus on each `scratchpad --new`.
     private var newWindowItem: AXUIElement?
     /// The app's own notifications are on, and its windows were first read.
     private var subscribed = false
@@ -249,33 +249,48 @@ final class AXApp: WindowApp, @unchecked Sendable {
 
     func pressNewWindow(_ completion: @escaping @MainActor (Bool) -> Void) {
         queue.async { [self] in
-            if let item = newWindowItem, !AXApp.isNewWindowItem(item) { newWindowItem = nil } // menus rebuilt
-            if newWindowItem == nil {
-                let bar: AXUIElement? = AX.value(element, kAXMenuBarAttribute)
-                newWindowItem = bar.flatMap { AXApp.menuItem(in: $0, depth: 0) }
+            if let item = newWindowItem, AXApp.newWindowItem(among: [item]) == nil { newWindowItem = nil } // menus rebuilt
+            if newWindowItem == nil, let bar: AXUIElement = AX.value(element, kAXMenuBarAttribute) {
+                newWindowItem = AXApp.newWindowItem(in: bar)
             }
             let pressed = newWindowItem.map { AXUIElementPerformAction($0, kAXPressAction as CFString) == .success } ?? false
             onMain { completion(pressed) }
         }
     }
 
-    /// The enabled ⌘N menu item under `element`, menus first, then their submenus
-    /// (Terminal's is in Shell > New Window). Only menus are walked into: items without a
-    /// submenu cost one call. App queue only.
-    private static func menuItem(in element: AXUIElement, depth: Int) -> AXUIElement? {
-        let children: [AXUIElement] = AX.value(element, kAXChildrenAttribute) ?? []
-        if let found = children.first(where: isNewWindowItem) { return found }
-        guard depth < 4 else { return nil } // bar, bar item, menu, item, submenu
-        for child in children {
-            if let found = menuItem(in: child, depth: depth + 1) { return found }
+    /// The enabled ⌘N menu item: in the menus' own items first, then in their submenus
+    /// (Terminal's is in Shell > New Window). The Apple and app menus never have it, and the
+    /// app menu's Services submenu is slow to read: they're skipped. App queue only.
+    private static func newWindowItem(in bar: AXUIElement) -> AXUIElement? {
+        let barItems: [AXUIElement] = AX.value(bar, kAXChildrenAttribute) ?? []
+        var menus = barItems.dropFirst(2).compactMap { (AX.value($0, kAXChildrenAttribute) as [AXUIElement]?)?.first }
+        for _ in 0..<2 {
+            var submenus: [AXUIElement] = []
+            for menu in menus {
+                let items: [AXUIElement] = AX.value(menu, kAXChildrenAttribute) ?? []
+                if let found = newWindowItem(among: items, submenus: &submenus) { return found }
+            }
+            menus = submenus
         }
         return nil
     }
 
-    /// An enabled menu item with ⌘N as its shortcut (no modifier flags means ⌘ alone).
-    private static func isNewWindowItem(_ item: AXUIElement) -> Bool {
-        AX.string(item, kAXMenuItemCmdCharAttribute) == "N" && (AX.value(item, kAXMenuItemCmdModifiersAttribute) as Int?) == 0
-            && AX.bool(item, kAXEnabledAttribute) == true
+    /// The first of `items` with ⌘N as its shortcut, enabled; the submenus of the others are
+    /// collected. One call per item.
+    private static func newWindowItem(among items: [AXUIElement]) -> AXUIElement? {
+        var ignored: [AXUIElement] = []
+        return newWindowItem(among: items, submenus: &ignored)
+    }
+
+    private static func newWindowItem(among items: [AXUIElement], submenus: inout [AXUIElement]) -> AXUIElement? {
+        for item in items {
+            let values = AX.values(item, [kAXMenuItemCmdCharAttribute, kAXMenuItemCmdModifiersAttribute, kAXEnabledAttribute,
+                                          kAXChildrenAttribute])
+            // No modifier flags means ⌘ alone.
+            if values[0] as? String == "N", values[1] as? Int == 0, values[2] as? Bool == true { return item }
+            if let submenu = (values[3] as? [AXUIElement])?.first { submenus.append(submenu) }
+        }
+        return nil
     }
 
     func flush(_ group: DispatchGroup) {

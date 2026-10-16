@@ -11,6 +11,17 @@ enum AX {
         return value as? T
     }
 
+    /// Several attributes in one round trip; nil for the ones the element doesn't have.
+    static func values(_ element: AXUIElement, _ attributes: [String]) -> [CFTypeRef?] {
+        var values: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(element, attributes as CFArray, AXCopyMultipleAttributeOptions(), &values) == .success,
+              let array = values as [CFTypeRef]?, array.count == attributes.count else { return attributes.map { _ in nil } }
+        // A missing attribute comes back as an AXValue holding its error.
+        return array.map { value in
+            CFGetTypeID(value) == AXValueGetTypeID() && AXValueGetType(value as! AXValue) == .axError ? nil : value
+        }
+    }
+
     static func string(_ element: AXUIElement, _ attribute: String) -> String? { value(element, attribute) }
     static func bool(_ element: AXUIElement, _ attribute: String) -> Bool? { value(element, attribute) }
 
