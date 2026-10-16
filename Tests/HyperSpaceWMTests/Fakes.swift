@@ -132,6 +132,12 @@ final class FakeSystem: WindowSystem {
     func app(_ pid: pid_t) -> WindowApp? { apps[pid] }
     func isHidden(_ pid: pid_t) -> Bool { false }
     func unhide(_ pid: pid_t) {}
+    /// Bundle ids `open` was asked for.
+    var opened: [String] = []
+    func open(bundleID: String) -> Bool {
+        opened.append(bundleID)
+        return true
+    }
     func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void) { self.handler = handler }
     func stopObserving() { handler = nil }
 

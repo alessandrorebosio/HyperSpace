@@ -98,6 +98,10 @@ public final class WMModel {
     /// Display name -> workspace it showed when it was disconnected, to show it again when
     /// the display comes back.
     private var lastShown: [String: String] = [:]
+    /// Scratchpad windows (`scratchpad`): floating on a workspace while shown, else stashed.
+    public private(set) var scratchpads: Set<WindowID> = []
+    /// Scratchpads put away: on no workspace, waiting in a corner to be summoned.
+    public private(set) var stashed: Set<WindowID> = []
 
     public init(monitors: [WMMonitor], settings: WMSettings = WMSettings()) {
         self.settings = settings
@@ -184,9 +188,15 @@ public final class WMModel {
     }
 
     public func remove(_ window: WindowID) {
-        guard windows.removeValue(forKey: window) != nil, let workspace = workspace(of: window) else { return }
-        detach(window, from: workspace)
+        guard windows.removeValue(forKey: window) != nil else { return }
+        scratchpads.remove(window)
         history.removeAll { $0 == window }
+        if stashed.remove(window) != nil {
+            if focused == window { focused = nil }
+            return
+        }
+        guard let workspace = workspace(of: window) else { return }
+        detach(window, from: workspace)
         if focused == window { focused = recent(in: workspace) }
         collectEmptyWorkspaces()
     }
@@ -194,25 +204,61 @@ public final class WMModel {
     /// `new` takes `old`'s place everywhere: tree position, workspace, focus history. Used
     /// when the shown tab of a native tab group closes and another tab stands in for it.
     public func replace(_ old: WindowID, with new: WindowID) {
-        guard let info = windows.removeValue(forKey: old), let workspace = workspace(of: old) else { return }
+        let workspace = workspace(of: old)
+        guard let info = windows[old], workspace != nil || stashed.contains(old) else { return }
+        windows[old] = nil
         windows[new] = WMWindowInfo(id: new, floating: info.floating)
+        if scratchpads.remove(old) != nil { scratchpads.insert(new) }
+        if stashed.remove(old) != nil { stashed.insert(new) }
         location[new] = location.removeValue(forKey: old)
-        if let index = workspace.floating.firstIndex(of: old) { workspace.floating[index] = new }
-        workspace.root.find(old)?.window = new
-        if workspace.fullscreen == old { workspace.fullscreen = new }
+        if let workspace {
+            if let index = workspace.floating.firstIndex(of: old) { workspace.floating[index] = new }
+            workspace.root.find(old)?.window = new
+            if workspace.fullscreen == old { workspace.fullscreen = new }
+        }
         history = history.map { $0 == old ? new : $0 }
         if focused == old { focused = new }
     }
 
     /// macOS focused a window (click, ⌘-Tab, an app opening one). If it sits on a hidden
-    /// workspace, that workspace is shown, as in AeroSpace. Returns whether visibility changed.
+    /// workspace, that workspace is shown, as in AeroSpace; a stashed scratchpad comes back.
+    /// Returns whether what's shown changed.
     @discardableResult
     public func nativeFocus(_ window: WindowID?) -> Bool {
-        guard let window, let workspace = workspace(of: window) else { return false }
+        guard let window else { return false }
+        if stashed.contains(window) { return toggleScratchpad(window) }
+        guard let workspace = workspace(of: window) else { return false }
         let before = visible
         show(workspace.name)
         focus(window)
         return before != visible
+    }
+
+    /// `scratchpad`: the window comes floating onto the focused workspace, focused; if it's
+    /// there and focused already, it's put away. Returns whether it's shown now.
+    @discardableResult
+    public func toggleScratchpad(_ window: WindowID) -> Bool {
+        guard windows[window] != nil else { return false }
+        let target = focusedWorkspace
+        defer { collectEmptyWorkspaces() }
+        if !scratchpads.insert(window).inserted, focused == window, location[window] == target.name {
+            detach(window, from: target)
+            stashed.insert(window)
+            focused = recent(in: target)
+            return false
+        }
+        stashed.remove(window)
+        if let from = workspace(of: window) { detach(window, from: from) }
+        attachFloating(window, to: target)
+        windows[window]?.floating = true
+        focus(window)
+        return true
+    }
+
+    /// The most recently focused of `candidates`, else the lowest id.
+    public func mostRecent(of candidates: [WindowID]) -> WindowID? {
+        let set = Set(candidates)
+        return history.last(where: set.contains) ?? candidates.min()
     }
 
     // MARK: - Commands
@@ -356,6 +402,9 @@ public final class WMModel {
             let monitor = assignedMonitor(name) ?? monitors.first?.id ?? 0
             for window in workspace.windows { result.hidden[window] = monitor }
         }
+        // The main monitor's corner: it doesn't move when focus goes to another display.
+        let corner = mainMonitor?.id ?? 0
+        for window in stashed { result.hidden[window] = corner }
         return result
     }
 

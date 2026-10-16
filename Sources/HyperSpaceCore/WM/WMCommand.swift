@@ -20,6 +20,8 @@ public indirect enum WMCommand: Sendable, Equatable {
     case focusMonitor(MonitorTarget, wrapAround: Bool)
     case moveNodeToMonitor(MonitorTarget, focusFollows: Bool, wrapAround: Bool, window: WindowID?)
     case moveWorkspaceToMonitor(MonitorTarget, wrapAround: Bool, workspace: String?)
+    /// HyperSpace's own: summons or puts away an app's scratchpad window, by bundle id.
+    case scratchpad(String)
     case focusBackAndForth
     case close(quitIfLastWindow: Bool, window: WindowID?)
     case closeAllWindowsButCurrent(quitIfLastWindow: Bool)
@@ -198,6 +200,8 @@ extension WMCommand {
         case "move-workspace-to-monitor":
             let workspace = try p.value("--workspace"), wrap = p.flag("--wrap-around")
             return .moveWorkspaceToMonitor(try p.monitorTarget(), wrapAround: wrap, workspace: workspace)
+        case "scratchpad":
+            return .scratchpad(try p.positional("<app-bundle-id>"))
         case "focus-back-and-forth":
             return .focusBackAndForth
         case "close":

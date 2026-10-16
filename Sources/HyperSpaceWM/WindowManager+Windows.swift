@@ -157,6 +157,7 @@ extension WindowManager {
             }
             windowDetected(record.id)
         }
+        adoptScratchpad(new, of: app)
     }
 
     /// The app's last managed window is `closing`, or the app quits (`nil`): the workspace

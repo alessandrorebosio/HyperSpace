@@ -72,6 +72,9 @@ protocol WindowSystem: AnyObject {
     func app(_ pid: pid_t) -> WindowApp?
     func isHidden(_ pid: pid_t) -> Bool
     func unhide(_ pid: pid_t)
+    /// Launches the app, or activates it if it runs (one without windows then opens one).
+    /// False if no app has that bundle id.
+    func open(bundleID: String) -> Bool
     func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void)
     func stopObserving()
 }
@@ -123,6 +126,12 @@ final class MacSystem: WindowSystem {
     func isHidden(_ pid: pid_t) -> Bool { NSRunningApplication(processIdentifier: pid)?.isHidden ?? false }
 
     func unhide(_ pid: pid_t) { NSRunningApplication(processIdentifier: pid)?.unhide() }
+
+    func open(bundleID: String) -> Bool {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return false }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        return true
+    }
 
     func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void) {
         let workspace = NSWorkspace.shared.notificationCenter
