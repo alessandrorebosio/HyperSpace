@@ -360,7 +360,7 @@ struct WindowManagerTests {
         defer { wm.stop() }
         #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
         app.send(.minimized(2, true))
-        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--count"]).output == "0")
+        #expect(!wm.run(words: ["list-workspaces", "--all"]).output.contains("7"), "out of the layout")
 
         // Restored while on workspace 1, in the background: back on 7, focus stays.
         app.send(.minimized(2, false))
@@ -430,9 +430,45 @@ struct WindowManagerTests {
         let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
         defer { wm.stop() }
         #expect(app.frames[1] == Self.full)
-        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
+        #expect(wm.run(words: ["list-windows", "--all", "--format", "%{window-id} %{window-is-macos-fullscreen}"]).output == "1 false\n2 true")
+        // Out of full screen: at the spot it would have had.
+        app.frames[2] = Self.left
         app.send(.nativeFullscreen(2, false))
-        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "2")
+        #expect(app.frames[1] == Self.left && app.frames[2] == Self.right)
+        #expect(wm.run(words: ["list-windows", "--all", "--format", "%{window-is-macos-fullscreen}"]).output == "false\nfalse")
+    }
+
+    @Test func aWindowOpenedInMacOSFullScreenFollowsTheRules() throws {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app")
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = WindowManager.fake(system)
+        wm.start(try WMSettings(ConfigLoader.parse(WMConfig.self, """
+        [[on-window-detected]]
+            if.app-id = 'app'
+            run = 'move-node-to-workspace 5'
+        """).get()))
+        defer { wm.stop() }
+        app.create(2, frame: Self.full, fullscreen: true)
+        #expect(other.frames[1] == Self.full)
+        #expect(wm.run(words: ["list-windows", "--workspace", "5", "--format", "%{window-id}"]).output == "2")
+        app.send(.nativeFullscreen(2, false))
+        #expect(wm.run(words: ["list-windows", "--workspace", "5", "--format", "%{window-is-macos-fullscreen}"]).output == "false")
+        #expect(wm.focusedWorkspace == "1")
+    }
+
+    @Test func windowsSetAsideAreListedWithTheirWorkspace() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [other, app]))
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        app.send(.minimized(2, true))
+        // Workspace 7 is gone (empty), its minimized window is still listed with it.
+        #expect(wm.run(words: ["list-workspaces", "--all"]).output.contains("7") == false)
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
+        #expect(wm.run(words: ["list-windows", "--all", "--format", "%{window-id} %{workspace}"]).output == "1 1\n2 7")
+        #expect(wm.run(words: ["list-windows", "--app-bundle-id", "app", "--count"]).output == "1")
     }
 
     @Test func aFullscreenTileStaysFullscreenThroughAMinimize() {
@@ -528,7 +564,7 @@ struct WindowManagerTests {
         #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
         #expect(wm.run("move-node-to-workspace 8 --window-id 3") == nil)
         system.send(.hidden(11, true))
-        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
+        #expect(wm.run(words: ["list-workspaces", "--all"]).output == "1", "out of the layout")
         system.send(.hidden(11, false))
         #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
         #expect(wm.run(words: ["list-windows", "--workspace", "8", "--format", "%{window-id}"]).output == "3")

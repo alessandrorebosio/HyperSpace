@@ -101,9 +101,9 @@ final class FakeApp: WindowApp, @unchecked Sendable {
     @MainActor func send(_ event: WindowEvent) { events?(event) }
 
     /// A new window, appearing where macOS puts it.
-    @MainActor func create(_ id: WindowID, frame: CGRect, title: String = "", floating: Bool = false) {
+    @MainActor func create(_ id: WindowID, frame: CGRect, title: String = "", floating: Bool = false, fullscreen: Bool = false) {
         frames[id] = frame
-        let record = WindowRecord(id: id, floating: floating, frame: frame, title: title)
+        let record = WindowRecord(id: id, floating: floating, frame: frame, title: title, fullscreen: fullscreen)
         all.append(record)
         send(.created(record))
     }

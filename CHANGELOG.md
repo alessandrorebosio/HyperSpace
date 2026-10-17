@@ -7,6 +7,7 @@ section here, so a version's section is written before the version is released.
 
 ### New
 
+- **`list-windows` lists minimized, hidden and macOS full screen windows** with the workspace they come back to (`--workspace`, `--all`, `%{workspace}`), as AeroSpace does, and **`%{window-is-macos-fullscreen}`** in `--format` tells full screen ones apart.
 - **Reopen Apps in Last Workspace and Show Mode Bindings in the menu**: a click sets the option in wm.toml itself, which stays the one place it lives. Shown while wm.toml sets something (the window manager is on).
 
 ### Changed
@@ -15,7 +16,7 @@ section here, so a version's section is written before the version is released.
 
 ### Fixed
 
-- **macOS full screen**: a window put in full screen (the green button, `macos-native-fullscreen`) leaves the layout, so the other windows take its room and HyperSpace no longer tries to put it back in its tile or park it on a workspace switch. Leaving full screen, it comes back to its spot. Going to its Space no longer switches to the workspace of another window of the app.
+- **macOS full screen**: a window put in full screen (the green button, `macos-native-fullscreen`) leaves the layout, so the other windows take its room and HyperSpace no longer tries to put it back in its tile or park it on a workspace switch. Leaving full screen, it comes back to its spot; a window already in full screen when it appears (at launch, or opened so) goes where a new window would, rules included. Going to its Space no longer switches to the workspace of another window of the app.
 - **A tile shown with `fullscreen` stays so** after being minimized or hidden.
 - **Minimized and hidden windows keep their spot across a restart** of HyperSpace (an update, Enabled off and on).
 - **A minimized window, or a window of an app hidden with ⌘H, comes back to its workspace**, no longer to the focused one, and to its place there: beside the same window, at the same size. Restored from the Dock, focus follows it there.

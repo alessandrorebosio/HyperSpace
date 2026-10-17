@@ -186,13 +186,17 @@ extension WindowManager {
         reconcileTabs(app.pid, new: ids)
         // Windows an on-window-detected rule sent to a workspace, and which one.
         var placed: [WindowID: String] = [:]
-        for record in new where tabs[record.id] == nil && !record.fullscreen {
-            // Set aside when the window manager last stopped (minimized): back to its spot.
-            if let aside = setAside.removeValue(forKey: record.id), aside.app == app.bundleID {
+        for record in new where tabs[record.id] == nil {
+            // Set aside when the window manager last stopped: back to its spot, or still in
+            // macOS full screen, kept aside with it.
+            if let aside = setAside[record.id], aside.app == app.bundleID {
+                if record.fullscreen { continue }
+                setAside[record.id] = nil
                 model.add(WMWindowInfo(id: record.id, floating: record.floating), at: aside.spot)
                 publishWindowDetected(record.id)
                 continue
             }
+            setAside[record.id] = nil // another app's window had this id
             manage(record.id)
             if let reopened {
                 _ = try? model.run(.moveNodeToWorkspace(.named(reopened), focusFollows: false, wrapAround: false,
@@ -200,6 +204,8 @@ extension WindowManager {
             }
             if windowDetected(record.id), let name = model.workspace(of: record.id)?.name { placed[record.id] = name }
             publishWindowDetected(record.id)
+            // Already in macOS full screen: aside at once, from the spot it was just given.
+            if record.fullscreen { setManaged(record.id, false) }
         }
         adoptScratchpad(new, of: app, placed: placed)
     }

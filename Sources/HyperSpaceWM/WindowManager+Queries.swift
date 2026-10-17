@@ -30,11 +30,15 @@ extension WindowManager {
     func variables(window: WindowID?, workspace name: String? = nil) -> [String: String] {
         guard let model else { return [:] }
         var values: [String: String] = [:]
-        let workspace = name.map { model.workspace($0) } ?? window.flatMap { model.workspace(of: $0) } ?? model.focusedWorkspace
-        values["workspace"] = workspace.name
-        values["workspace-is-focused"] = String(workspace.name == model.focusedWorkspace.name)
-        values["workspace-is-visible"] = String(model.isVisible(workspace.name))
-        let monitorID = model.visible.first { $0.value == workspace.name }?.key ?? model.assignedMonitor(workspace.name)
+        // A window set aside (minimized, in macOS full screen, its app hidden) is listed with
+        // the workspace it comes back to, which may be gone meanwhile.
+        let aside = window.flatMap { model.windows[$0] == nil ? setAside[$0] : nil }
+        let workspaceName = name ?? aside?.spot.workspace ?? window.flatMap { model.workspace(of: $0)?.name } ?? model.focusedWorkspace.name
+        let workspace = model.workspaces[workspaceName]
+        values["workspace"] = workspaceName
+        values["workspace-is-focused"] = String(workspaceName == model.focusedWorkspace.name)
+        values["workspace-is-visible"] = String(model.isVisible(workspaceName))
+        let monitorID = model.visible.first { $0.value == workspaceName }?.key ?? model.assignedMonitor(workspaceName)
         if let index = model.monitors.firstIndex(where: { $0.id == monitorID }) {
             values["monitor-id"] = String(index + 1)
             values["monitor-name"] = model.monitors[index].name
@@ -42,8 +46,10 @@ extension WindowManager {
         if let window, let (app, record) = records[window] {
             values["window-id"] = String(window)
             values["window-title"] = record.title
-            values["window-is-fullscreen"] = String(workspace.fullscreen == window)
-            values["window-layout"] = model.windows[window]?.floating == true ? "floating" : "tiling"
+            values["window-is-fullscreen"] = String(workspace?.fullscreen == window || aside?.spot.fullscreen == true)
+            values["window-layout"] = (model.windows[window]?.floating ?? aside?.spot.floating) == true ? "floating" : "tiling"
+            // HyperSpace's own: on a Space of its own, out of the layout.
+            values["window-is-macos-fullscreen"] = String(nativeFullscreen.contains(window))
             // HyperSpace's own: a shown scratchpad, and the workspace it goes back to.
             let home = model.scratchpadHomes[window]
             values["window-is-scratchpad"] = String(home != nil)
@@ -80,14 +86,13 @@ extension WindowManager {
             if filters["--focused"] != nil {
                 ids = model.focused.map { [$0] } ?? []
             } else if let names = filters["--workspace"] {
-                ids = names.flatMap { name in
-                    model.workspaces[name == "focused" ? model.focusedWorkspace.name : name]?.windows ?? []
-                }
+                ids = names.flatMap { name in windows(of: name == "focused" ? model.focusedWorkspace.name : name) }
             } else if let monitors = filters["--monitor"] {
                 let monitorIDs = monitorIDs(monitors)
-                ids = model.visible.filter { monitorIDs.contains($0.key) }.flatMap { model.workspace($0.value).windows }
+                ids = model.visible.filter { monitorIDs.contains($0.key) }.flatMap { windows(of: $0.value) }
             } else {
-                ids = model.workspaceNames.flatMap { model.workspaces[$0]?.windows ?? [] }
+                let names = model.workspaceNames
+                ids = names.flatMap(windows(of:)) + asideWindows.filter { !names.contains($0.workspace) }.map(\.id)
             }
             if let pid = filters["--pid"]?.first.flatMap(Int32.init) { ids = ids.filter { records[$0]?.app.pid == pid } }
             if let bundle = filters["--app-bundle-id"]?.first { ids = ids.filter { records[$0]?.app.bundleID == bundle } }
@@ -112,6 +117,17 @@ extension WindowManager {
             let modes = filters["--current"] != nil ? [mode] : settings.modes.keys.sorted()
             return format(modes.map { ["mode-id": $0] }, query, default: "%{mode-id}")
         }
+    }
+
+    /// The workspace's windows, then the ones set aside that come back to it.
+    private func windows(of name: String) -> [WindowID] {
+        (model?.workspaces[name]?.windows ?? []) + asideWindows.filter { $0.workspace == name }.map(\.id)
+    }
+
+    /// Windows set aside, by id, with the workspace each comes back to.
+    private var asideWindows: [(id: WindowID, workspace: String)] {
+        setAside.filter { records[$0.key] != nil && model?.windows[$0.key] == nil }
+            .map { ($0.key, $0.value.spot.workspace) }.sorted { $0.id < $1.id }
     }
 
     private func format(_ rows: [[String: String]], _ query: WMCommand.ListQuery, default fallback: String) -> String {

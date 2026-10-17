@@ -47,7 +47,7 @@ public struct WMSpot: Codable, Sendable, Equatable {
     var after = true
     var weight = 1.0
     /// Shown over the whole workspace (`fullscreen`), with or without outer gaps.
-    var fullscreen = false
+    public internal(set) var fullscreen = false
     var withoutGaps = false
 }
 
