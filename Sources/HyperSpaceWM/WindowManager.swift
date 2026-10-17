@@ -64,6 +64,9 @@ public final class WindowManager {
     var verifying: Task<Void, Never>?
     /// Windows parked off-screen, with the frame to give back to floating ones.
     var parked: [WindowID: CGRect] = [:]
+    /// Minimized windows and windows of hidden apps -> the workspace they were on, where
+    /// they come back.
+    var setAside: [WindowID: String] = [:]
     var snapChecks: [WindowID: Task<Void, Never>] = [:]
     /// Pending `refresh`es, by app.
     var refreshes: [pid_t: Task<Void, Never>] = [:]
@@ -80,7 +83,8 @@ public final class WindowManager {
     /// The layout saved by the last `stop()`, put back once every app's windows are read.
     var savedLayout: WMSnapshot?
     /// Bundle id -> the workspace its windows were on when the last one closed: an app
-    /// opened again goes back there. Kept across restarts.
+    /// opened again goes back there (with reopen-apps-in-last-workspace), and so does its
+    /// scratchpad put away. Kept across restarts.
     var appWorkspaces: [String: String] = [:]
     /// `scratchpad` opened an app that had no window, or `--new` pressed its ⌘N menu item:
     /// the window it opens shortly is the scratchpad. After ⌘N, one that floats is a dialog
@@ -205,6 +209,7 @@ public final class WindowManager {
         unverified = []
         resent = []
         parked = [:]
+        setAside = [:]
         tabs = [:]
         shownTab = [:]
         savedLayout = nil

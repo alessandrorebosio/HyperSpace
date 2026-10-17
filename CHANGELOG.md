@@ -9,6 +9,10 @@ section here, so a version's section is written before the version is released.
 
 - **An app opened again opens on the focused workspace**, like any new window, no longer on the workspace it was last on. `reopen-apps-in-last-workspace = true` in wm.toml brings the old behavior back. on-window-detected rules win either way, and a scratchpad put away still goes where its app was last.
 
+### Fixed
+
+- **A minimized window, or a window of an app hidden with ⌘H, comes back to its workspace**, no longer to the focused one. Restored from the Dock, focus follows it there.
+
 ## [0.6.0] - 2026-10-17
 
 ### New

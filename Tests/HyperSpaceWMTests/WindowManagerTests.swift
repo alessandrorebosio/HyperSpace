@@ -352,6 +352,46 @@ struct WindowManagerTests {
         #expect(wm.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id}"]).output.contains("4"))
     }
 
+    @Test func aMinimizedWindowComesBackToItsWorkspace() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        app.send(.minimized(2, true))
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--count"]).output == "0")
+
+        // Restored while on workspace 1, in the background: back on 7, focus stays.
+        app.send(.minimized(2, false))
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
+        #expect(wm.focusedWorkspace == "1")
+
+        // From the Dock, the app in front: focus follows it.
+        app.send(.minimized(2, true))
+        system.frontmost = 11
+        app.focused = 2
+        app.send(.minimized(2, false))
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
+        #expect(wm.focusedWorkspace == "7")
+    }
+
+    @Test func aHiddenAppsWindowsComeBackToTheirWorkspaces() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2), window(3)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        #expect(wm.run("move-node-to-workspace 8 --window-id 3") == nil)
+        system.send(.hidden(11, true))
+        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
+        system.send(.hidden(11, false))
+        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
+        #expect(wm.run(words: ["list-windows", "--workspace", "8", "--format", "%{window-id}"]).output == "3")
+        #expect(wm.focusedWorkspace == "1")
+    }
+
     @Test func theWorkspaceIsRememberedWhenTheLastWindowCloses() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])

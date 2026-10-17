@@ -83,10 +83,10 @@ extension WindowManager {
             guard records[record.id] == nil else { return }
             add([record], of: app, managed: true)
             apply()
-            // Put on another workspace (a rule, or where the app was last): follow it if the
-            // app is in front, i.e. the user just opened it.
-            if system.frontmost == app.pid, let model, let workspace = model.workspace(of: record.id),
-               workspace.name != model.focusedWorkspace.name { syncFocus(app.pid) }
+            // Put on another workspace (a rule, or where the app was last with
+            // reopen-apps-in-last-workspace): follow it if the app is in front, i.e. the user
+            // just opened it.
+            followIfFrontmost(record.id, of: app)
         case let .destroyed(id):
             if model?.windows[id] != nil { rememberWorkspace(of: app, closing: id) }
             forget(window: id)
@@ -99,11 +99,19 @@ extension WindowManager {
         case let .minimized(id, isMinimized):
             setManaged(id, !isMinimized)
             apply()
+            // Restored from the Dock onto its workspace: follow it there.
+            if !isMinimized { followIfFrontmost(id, of: app) }
         case let .moved(id):
             moved(id)
         case let .titleChanged(id, title):
             records[id]?.record.title = title
         }
+    }
+
+    /// A window just managed, of the app in front, is on another workspace: show it.
+    private func followIfFrontmost(_ id: WindowID, of app: WindowApp) {
+        if system.frontmost == app.pid, let model, let workspace = model.workspace(of: id),
+           workspace.name != model.focusedWorkspace.name { syncFocus(app.pid) }
     }
 
     /// `refresh` a moment after the app's focus settles: re-reading every window of a busy
@@ -223,8 +231,20 @@ extension WindowManager {
         return placed
     }
 
+    /// Minimized or hidden windows leave the model; back, they return to the workspace they
+    /// were on (a shown scratchpad to the one it goes back to), not the focused one.
     private func setManaged(_ id: WindowID, _ managed: Bool) {
-        if managed { manage(id) } else { model?.remove(id) }
+        guard let model else { return }
+        if managed {
+            manage(id)
+            if let name = setAside.removeValue(forKey: id), model.windows[id] != nil {
+                _ = try? model.run(.moveNodeToWorkspace(.named(name), focusFollows: false, wrapAround: false,
+                                                        window: id, failIfNoop: false))
+            }
+        } else {
+            if let name = model.scratchpadHomes[id]?.workspace ?? model.workspace(of: id)?.name { setAside[id] = name }
+            model.remove(id)
+        }
     }
 
     private func forget(window id: WindowID) {
@@ -253,6 +273,7 @@ extension WindowManager {
         targets[id] = nil
         setAt[id] = nil
         parked[id] = nil
+        setAside[id] = nil
         snapChecks.removeValue(forKey: id)?.cancel()
     }
 

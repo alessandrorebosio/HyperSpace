@@ -323,7 +323,8 @@ buttons = ["com.apple.Xcode"]
 # automatically-unhide-macos-hidden-apps, persistent-workspaces (omitted = workspaces named
 # in bindings), focus-follows-mouse, gaps (per side, per monitor),
 # workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected, and
-# HyperSpace's scratchpad-fallback-workspace and detect-monitor-input
+# HyperSpace's scratchpad-fallback-workspace, detect-monitor-input, show-mode-bindings and
+# reopen-apps-in-last-workspace
 # (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except split,
 # config and debug-windows (subscribe without binding-triggered); shell syntax ; && || ( ) without pipes.
 # The menu bar shows the focused workspace, preceded by the mode's initial outside main.
