@@ -10,6 +10,8 @@ struct WindowRecord: Sendable, Equatable {
     var title: String
     /// In macOS full screen (its own Space) when read.
     var fullscreen = false
+    /// Minimized when read.
+    var minimized = false
 }
 
 /// What an app reports about its windows, already read: the window manager never waits

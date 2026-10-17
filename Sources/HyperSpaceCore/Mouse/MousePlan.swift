@@ -1,13 +1,9 @@
-/// Mouse inputs as table indices. 0...31 are CoreGraphics button numbers (0 left, 1 right,
-/// 2 middle, 3 back, 4 forward...). 32...39 are Logitech controls read over HID++, like the
-/// Lift's DPI button, which never reach macOS on their own.
+/// Mouse inputs as table indices: CoreGraphics button numbers (0 left, 1 right, 2 middle,
+/// 3 back, 4 forward...).
 public enum MouseButtons {
-    public static let count = 40
-    static let logitech = 32..<40
+    public static let count = 32
 
     static let aliases = ["middle": 2, "back": 3, "forward": 4]
-    /// Logitech control ids (CIDs) by name; any other one is written `cid.0x00c3`.
-    static let logitechAliases: [String: UInt16] = ["dpi": 0x00FD, "gesture": 0x00C3]
 }
 
 /// What the wheel and mouse movement do while a button is held (`[hold.<button>]`).
@@ -65,7 +61,7 @@ extension DeviceMatch {
     }
 }
 
-/// `MouseConfig` compiled for the event tap, the pointer settings and the Logitech reader.
+/// `MouseConfig` compiled for the event tap and the pointer settings.
 /// Compiling validates every name, so a config that compiles can be applied as is.
 public struct MousePlan: Sendable, Equatable {
     public var buttons = OutputTable.buttons
@@ -75,44 +71,23 @@ public struct MousePlan: Sendable, Equatable {
     public var scroll: ScrollPlan?
     public var pointer = PointerPlan()
     public var navigation = NavigationRules()
-    /// Logitech control id -> button index, for the controls the config uses.
-    public var logitech: [UInt16: Int] = [:]
 
     public var needsEventTap: Bool {
         !buttons.isEmpty || !apps.isEmpty || scroll != nil || holds.contains { $0 != nil }
     }
 
-    /// The tap also needs plain mouse moves when a Logitech control has a move gesture:
-    /// those controls don't make macOS send drag events.
-    public var needsMoveEvents: Bool {
-        MouseButtons.logitech.contains { holds[$0]?.hasMove == true }
-    }
-
     public init() {}
 
     public init(_ config: MouseConfig) throws(InvalidConfig) {
-        var logitech: [UInt16: Int] = [:]
-        /// `button1`...`button31`, `middle`, `back`, `forward`, `dpi`, `gesture` or `cid.0x00c3`.
+        /// `button1`...`button31`, `middle`, `back` or `forward`.
         func button(_ name: String, path: String) throws(InvalidConfig) -> Int {
-            if let cid = MouseButtons.logitechAliases[name] ?? MousePlan.cid(name) {
-                if let index = logitech[cid] { return index }
-                guard logitech.count < MouseButtons.logitech.count else {
-                    throw InvalidConfig(message: "\(path): at most \(MouseButtons.logitech.count) Logitech controls can be used")
-                }
-                let index = MouseButtons.logitech.lowerBound + logitech.count
-                logitech[cid] = index
-                return index
-            }
             guard let number = MouseButtons.aliases[name] ?? (name.hasPrefix("button") ? Int(name.dropFirst(6)) : nil),
-                  (0..<32).contains(number) else {
-                throw InvalidConfig(message: "\(path): unknown mouse input '\(name)'; use button1...button31, middle, back, forward, dpi, gesture or cid.0x00c3")
+                  (0..<MouseButtons.count).contains(number) else {
+                throw InvalidConfig(message: "\(path): unknown mouse input '\(name)'; use button1...button31, middle, back or forward")
             }
             guard number > 0 else { throw InvalidConfig(message: "\(path): the left button can't be remapped") }
             return number
         }
-
-        // Sorted, so Logitech indices are stable across reloads of the same file.
-        for name in config.buttons.keys.sorted() + config.hold.keys.sorted() { _ = try button(name, path: "buttons.\(name)") }
 
         buttons = try Compile.table(config.buttons, path: "buttons", over: .buttons, index: button)
         for (i, app) in config.app.enumerated() {
@@ -124,12 +99,6 @@ public struct MousePlan: Sendable, Equatable {
         if let scroll = config.scroll { self.scroll = try MousePlan.scroll(scroll) }
         pointer = try MousePlan.pointer(config)
         navigation = NavigationRules(config.navigate)
-        self.logitech = logitech
-    }
-
-    private static func cid(_ name: String) -> UInt16? {
-        guard name.hasPrefix("cid.0x") else { return nil }
-        return UInt16(name.dropFirst(6), radix: 16)
     }
 
     private static func hold(_ config: HoldConfig, path: String) throws(InvalidConfig) -> HoldPlan {

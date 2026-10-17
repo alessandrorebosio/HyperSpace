@@ -9,19 +9,21 @@ section here, so a version's section is written before the version is released.
 
 - **`show-bindings-on-hold = { modifiers = 'ctrl-alt-shift', delay-ms = 1000 }`** in wm.toml: holding those modifiers alone for the delay (Caps Lock too, when it holds them) shows the main bindings that use them, key and commands, in the panel of `show-mode-bindings`. A key, or letting go, hides it; the key still does what it's bound to.
 - **`list-windows` lists minimized, hidden and macOS full screen windows** with the workspace they come back to (`--workspace`, `--all`, `%{workspace}`), as AeroSpace does, and **`%{window-is-macos-fullscreen}`** in `--format` tells full screen ones apart.
-- **Reopen Apps in Last Workspace and Show Mode Bindings in the menu**: a click sets the option in wm.toml itself, which stays the one place it lives. Shown while wm.toml sets something (the window manager is on).
 
 ### Changed
 
-- **An app opened again opens on the focused workspace**, like any new window, no longer on the workspace it was last on. `reopen-apps-in-last-workspace = true` in wm.toml brings the old behavior back. on-window-detected rules win either way, and a scratchpad put away still goes where its app was last.
+- **An app opened again opens on the focused workspace**, like any new window, no longer on the workspace it was last on. on-window-detected rules still win, and a scratchpad put away still goes where its app was last.
+
+### Removed
+
+- **Logitech controls over HID++** (`dpi`, `gesture`, `"cid.0x…"` in mouse.toml): the side buttons and the wheel click, which reach macOS on their own, work as before. A mouse.toml that still names those controls shows an error until they're taken out.
 
 ### Fixed
 
 - **macOS full screen**: a window put in full screen (the green button, `macos-native-fullscreen`) leaves the layout, so the other windows take its room and HyperSpace no longer tries to put it back in its tile or park it on a workspace switch. Leaving full screen, it comes back to its spot; a window already in full screen when it appears (at launch, or opened so) goes where a new window would, rules included. Going to its Space no longer switches to the workspace of another window of the app.
 - **A tile shown with `fullscreen` stays so** after being minimized or hidden.
-- **Minimized and hidden windows keep their spot across a restart** of HyperSpace (an update, Enabled off and on).
+- **Minimized and hidden windows keep their spot across a restart** of HyperSpace (an update, Enabled off and on), and are listed meanwhile. A minimized window stays minimized when its app is shown again after ⌘H.
 - **A minimized window, or a window of an app hidden with ⌘H, comes back to its workspace**, no longer to the focused one, and to its place there: beside the same window, at the same size. Restored from the Dock, focus follows it there.
-- **With `reopen-apps-in-last-workspace`, an app with only minimized windows isn't opened again**: a new window of it joins the focused workspace.
 - **Apps uninstalled are forgotten** from app-workspaces.json at launch.
 
 ### Performance

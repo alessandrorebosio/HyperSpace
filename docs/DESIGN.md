@@ -2,7 +2,7 @@
 
 > One macOS app, lightweight and with the fewest possible permissions, that combines:
 > - **keyboard remapping** (like Karabiner-Elements)
-> - **mouse button and scroll remapping**, including Logitech mice (like LinearMouse)
+> - **mouse button and scroll remapping** (like LinearMouse)
 > - **tiling window manager** (like AeroSpace, but more optimized)
 
 Status: design approved in principle, spike phase next.
@@ -160,6 +160,7 @@ MouseInput = button(n) | scroll(axis, delta) | move(dx, dy) | vendor(usagePage, 
 
 - S1 is always on. S2/S3 start only if the config maps an input that S1 can't see, so with a plain mouse the cost is zero.
 - S3 is a plugin per vendor (`VendorProtocol`); Logitech HID++ is the first one. HID++ is the same protocol across all modern Logitech mice, so it isn't model-specific.
+- **Status:** only S1 is implemented. S3 (Logitech HID++, for the DPI button) shipped up to 0.6.0 and was removed in 0.7.0: unused, and the one piece of code tied to a vendor. S2 was never built. Both remain the way to go if an input S1 can't see is ever needed (the spike findings are in `docs/SPIKE.md`).
 - Outputs are generic too: any input can become a key/combo, a mouse button, scroll, a shell command or a WM command.
 
 **Generic rule (same as the keyboard):** a remapped input loses its original function; unmapped inputs pass through untouched.
@@ -281,7 +282,6 @@ middle = "media.play"        # named actions: volume.*, brightness.*, media.*, m
 button5 = "mission.control"  #   window.*, click.*, scroll.*, lookup, zoom.smart (list in mouse.toml)
 button6 = { scroll = "down", lines = 5 }
 
-dpi = "mission.control"      # Logitech controls over HID++ (dpi, gesture, cid.0x....)
 button7 = { action = "volume.up", repeat = true }   # repeat while held
 button8 = { action = "click.left", hold = true }    # held down while held: drags
 button9 = { app = "Safari" } # also text, sequence, shell, scroll
@@ -325,8 +325,8 @@ buttons = ["com.apple.Xcode"]
 # automatically-unhide-macos-hidden-apps, persistent-workspaces (omitted = workspaces named
 # in bindings), focus-follows-mouse, gaps (per side, per monitor),
 # workspace-to-monitor-force-assignment, mode.*.binding, on-window-detected, and
-# HyperSpace's scratchpad-fallback-workspace, detect-monitor-input, show-mode-bindings,
-# show-bindings-on-hold and reopen-apps-in-last-workspace
+# HyperSpace's scratchpad-fallback-workspace, detect-monitor-input, show-mode-bindings
+# and show-bindings-on-hold
 # (if = 'test ...' or the legacy if.* table). Commands: all of AeroSpace's except split,
 # config and debug-windows (subscribe without binding-triggered); shell syntax ; && || ( ) without pipes.
 # The menu bar shows the focused workspace, preceded by the mode's initial outside main.
@@ -370,9 +370,9 @@ gaps.outer.top = [{ monitor.main = 16 }, 24]
 | **0 — Spike** ✅ | Minimal event tap; Caps→F18 via `UserKeyMapping`; swipe vs ⌘[ for back/forward; AX window enumeration; list every Logitech Lift input per source (S1/S2/S3) and the permissions S2/S3 need | Real permissions and limits confirmed on the target Mac |
 | **1 — Foundations** ✅ | Package, menu bar app, Accessibility onboarding, TOML config + hot reload, `hsctl` | App starts, asks for one permission, reloads config. Measured: 12 MB footprint, 0% idle CPU |
 | **2 — Keyboard** ✅ | L0 + KeyEngine (Caps layer, `[map]` remaps, per-app and per-device overrides). General dual-role keys deferred | Replaces typical Karabiner usage |
-| **3 — Mouse** ✅ | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Next: HIDInput (S3 Logitech HID++ for the DPI button), `hsctl list-inputs`, per-device settings | Replaces LinearMouse, remaps any mouse input |
+| **3 — Mouse** ✅ | ✅ MouseEngine (S1): any button except left, universal back/forward, per-app overrides, wheel reverse/linear. Then per-device pointer settings; S3 (Logitech HID++) came and went, see §5.2 | Replaces LinearMouse, remaps any mouse input |
 | **4 — WM** ✅ (needs real-world testing) | Tree, virtual workspaces, commands, rules, optimizations from §5.4 | Replaces AeroSpace for daily use |
-| **5 — Extras** | Simultaneous keys, more vendor protocols, settings UI, Karabiner rule importer | — |
+| **5 — Extras** | Simultaneous keys, settings UI, Karabiner rule importer | — |
 
 ---
 

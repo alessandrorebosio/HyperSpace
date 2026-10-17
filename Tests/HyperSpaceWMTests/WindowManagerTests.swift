@@ -27,13 +27,6 @@ struct WindowManagerTests {
         return wm
     }
 
-    /// reopen-apps-in-last-workspace = true
-    private static let reopening = {
-        var settings = WMSettings()
-        settings.reopenAppsInLastWorkspace = true
-        return settings
-    }()
-
     @Test func windowsAreTiledFromTheStart() {
         let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
         let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
@@ -95,6 +88,22 @@ struct WindowManagerTests {
         #expect(app.frames[3] == Self.full, "window 3 is alone on workspace 7")
         #expect(again.run("workspace 1") == nil)
         #expect(app.frames[1] == Self.full, "window 2 floats: window 1 has the workspace")
+    }
+
+    @Test func aMinimizedWindowDoesNotTakeTheSavedPlaceOfAnother() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [WindowRecord(id: 2, floating: false, frame: Self.full, title: "doc")])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system)
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        wm.stop()
+
+        // After a reboot: new ids, and a minimized window with the same title.
+        app.initial = [WindowRecord(id: 5, floating: false, frame: Self.full, title: "doc", minimized: true),
+                       WindowRecord(id: 6, floating: false, frame: Self.full, title: "doc")]
+        let again = started(system)
+        defer { again.stop() }
+        #expect(again.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "6")
     }
 
     @Test func layoutWaitsForEveryAppPresentAtLaunch() {
@@ -303,55 +312,6 @@ struct WindowManagerTests {
         #expect(wm.focusedWorkspace == "1")
     }
 
-    @Test func aRuleWinsOverTheWorkspaceAnAppWasLastOn() throws {
-        for reopen in [false, true] {
-            let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
-            let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
-            let system = FakeSystem(screens: [Self.main], apps: [other, app])
-            var settings = try WMSettings(ConfigLoader.parse(WMConfig.self, """
-            [[on-window-detected]]
-                if.app-id = 'app'
-                run = 'move-node-to-workspace 5'
-            """).get())
-            settings.reopenAppsInLastWorkspace = reopen
-            let wm = started(system, settings)
-            #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
-            app.destroy(2)
-            app.create(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
-            #expect(wm.run(words: ["list-windows", "--workspace", "5", "--format", "%{window-id}"]).output == "3",
-                    "reopen-apps-in-last-workspace = \(reopen)")
-            wm.stop()
-        }
-    }
-
-    @Test func anAppOpenedAgainGoesBackToItsWorkspaceWhenAsked() {
-        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
-        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
-        let system = FakeSystem(screens: [Self.main], apps: [other, app])
-        let wm = started(system, Self.reopening)
-        defer { wm.stop() }
-        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
-        system.apps[11] = nil
-        system.send(.terminated(11))
-        #expect(wm.focusedWorkspace == "1")
-
-        // Launched again from workspace 1: its window goes to 7, and so does focus.
-        let again = FakeApp(pid: 12, bundleID: "app")
-        system.apps[12] = again
-        system.frontmost = 12
-        system.send(.launched(12))
-        again.focused = 3
-        again.create(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(wm.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "3")
-        #expect(wm.focusedWorkspace == "7")
-
-        // A second window while it's open joins the focused workspace as usual.
-        #expect(wm.run("workspace 1") == nil)
-        system.frontmost = 10
-        again.create(4, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(wm.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id}"]).output.contains("4"))
-    }
-
     @Test func aMinimizedWindowComesBackToItsWorkspace() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
@@ -492,16 +452,20 @@ struct WindowManagerTests {
         app.send(.minimized(2, true))
         wm.stop()
 
-        // Minimized windows aren't reported at launch: found later, when restored.
-        app.initial = []
+        // Still minimized at launch: listed, kept aside, and back to its spot when restored.
+        app.initial = [WindowRecord(id: 2, floating: false, frame: Self.full, title: "", minimized: true)]
         let restarted = started(system)
         defer { restarted.stop() }
-        app.create(2, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
+        #expect(other.frames[1] == Self.full)
+        #expect(restarted.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
+        app.send(.minimized(2, false))
+        #expect(restarted.run(words: ["list-workspaces", "--all"]).output == "1\n7")
         #expect(restarted.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
 
         // Not for another app's window with the same id (after a reboot).
         app.send(.minimized(2, true))
         restarted.stop()
+        app.initial = [] // the window server reuses its id for another app's window
         let third = started(system)
         defer { third.stop() }
         #expect(third.setAside[2] != nil)
@@ -510,19 +474,6 @@ struct WindowManagerTests {
         system.send(.launched(12))
         stranger.create(2, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
         #expect(third.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id}"]).output.contains("2"))
-    }
-
-    @Test func aMinimizedWindowDoesNotMakeAnAppReopened() {
-        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
-        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
-        let system = FakeSystem(screens: [Self.main], apps: [other, app])
-        let wm = started(system, Self.reopening)
-        defer { wm.stop() }
-        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
-        app.send(.minimized(2, true))
-        // Still open (minimized): a new window joins the focused workspace.
-        app.create(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(wm.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id}"]).output.contains("3"))
     }
 
     @Test func uninstalledAppsAreForgotten() {
@@ -571,22 +522,37 @@ struct WindowManagerTests {
         #expect(wm.focusedWorkspace == "1")
     }
 
+    @Test func aMinimizedWindowStaysMinimizedWhenItsAppUnhides() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2), window(3)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        #expect(wm.run("move-node-to-workspace 8 --window-id 3") == nil)
+        app.send(.minimized(3, true))
+        system.send(.hidden(11, true))
+        system.send(.hidden(11, false))
+        #expect(wm.run(words: ["list-workspaces", "--all"]).output == "1\n7")
+        app.send(.minimized(3, false))
+        #expect(wm.run(words: ["list-windows", "--workspace", "8", "--format", "%{window-id}"]).output == "3")
+    }
+
     @Test func theWorkspaceIsRememberedWhenTheLastWindowCloses() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
         let system = FakeSystem(screens: [Self.main], apps: [other, app])
-        let wm = started(system, Self.reopening)
+        let wm = started(system)
         #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
         app.destroy(2)
+        #expect(wm.appWorkspaces["app"] == "7")
         app.initial = []
         wm.stop()
 
-        // Across a restart too.
-        let restarted = started(system, Self.reopening)
+        // Across a restart too, for a scratchpad it opens.
+        let restarted = started(system)
         defer { restarted.stop() }
-        app.create(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
-        #expect(restarted.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "3")
-        #expect(restarted.focusedWorkspace == "1", "opened in the background: focus stays")
+        #expect(restarted.appWorkspaces["app"] == "7")
     }
 
     @Test func aLateActivationOfTheWindowJustLeftDoesNotSwitchBack() {

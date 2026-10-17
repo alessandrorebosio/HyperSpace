@@ -38,7 +38,7 @@ final class FakeApp: WindowApp, @unchecked Sendable {
         self.events = events
         // Where the windows are now, as a real app reports them.
         let initial = self.initial.map { WindowRecord(id: $0.id, floating: $0.floating, frame: frames[$0.id] ?? $0.frame, title: $0.title,
-                                                    fullscreen: $0.fullscreen) }
+                                                    fullscreen: $0.fullscreen, minimized: $0.minimized) }
         if slowStart {
             pendingStart = { completion(initial) }
         } else {

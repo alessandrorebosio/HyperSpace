@@ -37,7 +37,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         addWorkspaces()
         addDisplays()
-        addOptions()
 
         menu.addItem(disabled("HyperSpace \(HyperSpace.version)"))
         let enabled = action("Enabled", #selector(toggleEnabled), key: "e")
@@ -151,27 +150,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         item.submenu = submenu
         menu.addItem(item)
         menu.addItem(.separator())
-    }
-
-    /// wm.toml options worth a click, written to the file (which stays the one place they
-    /// live). Only while wm.toml sets something: a first key would turn the window manager on.
-    private static let options = [("Reopen Apps in Last Workspace", "reopen-apps-in-last-workspace", \WMConfig.reopenAppsInLastWorkspace),
-                                  ("Show Mode Bindings", "show-mode-bindings", \WMConfig.showModeBindings)]
-
-    private func addOptions() {
-        guard controller.isEnabled, !controller.config.wm.isEmpty else { return }
-        for (title, key, path) in Self.options {
-            let entry = action(title, #selector(toggleOption(_:)))
-            entry.state = controller.config.wm[keyPath: path] ? .on : .off
-            entry.representedObject = key
-            menu.addItem(entry)
-        }
-        menu.addItem(.separator())
-    }
-
-    @objc private func toggleOption(_ sender: NSMenuItem) {
-        guard let key = sender.representedObject as? String else { return }
-        controller.setWMOption(key, sender.state != .on)
     }
 
     private func disabled(_ title: String) -> NSMenuItem {

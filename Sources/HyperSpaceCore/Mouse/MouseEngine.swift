@@ -100,7 +100,7 @@ public struct MouseEngine: Sendable {
         holding = nil
         if holdUsed { return .drop }
         guard let output = tables.buttons[number] else {
-            return number < 32 ? .click(number) : .drop // Logitech controls have no click of their own
+            return .click(number)
         }
         return output == .drop ? .drop : .emit(Self.once(output))
     }

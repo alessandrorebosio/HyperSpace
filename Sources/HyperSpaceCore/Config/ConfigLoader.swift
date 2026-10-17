@@ -56,32 +56,6 @@ public enum ConfigLoader {
         directory.appending(path: file.fileName)
     }
 
-    /// `text` with the top-level `key = value`: its line replaced (else its commented-out
-    /// template line, else a new line before the first table), the rest untouched.
-    public static func setting(_ key: String, to value: Bool, in text: String) -> String {
-        var lines = text.components(separatedBy: "\n")
-        let top = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("[") } ?? lines.count
-        func assigns(_ line: String, commented: Bool) -> Bool {
-            var rest = Substring(line.trimmingCharacters(in: .whitespaces))
-            if commented {
-                guard rest.hasPrefix("#") else { return false }
-                rest = rest.dropFirst().drop { $0 == " " }
-            }
-            guard rest.hasPrefix(key) else { return false }
-            return rest.dropFirst(key.count).drop { $0 == " " }.hasPrefix("=")
-        }
-        let new = "\(key) = \(value)"
-        if let i = lines[..<top].firstIndex(where: { assigns($0, commented: false) })
-            ?? lines[..<top].firstIndex(where: { assigns($0, commented: true) }) {
-            lines[i] = String(lines[i].prefix { $0 == " " }) + new
-        } else if top < lines.count {
-            lines.insert(contentsOf: [new, ""], at: top)
-        } else {
-            lines.insert(new, at: lines.last == "" ? lines.count - 1 : lines.count) // before the final newline
-        }
-        return lines.joined(separator: "\n")
-    }
-
     /// Loads every file. A file with errors keeps its section from `previous` (the last good
     /// config), so a mistake in mouse.toml doesn't turn off the keyboard.
     public static func load(from directory: URL = defaultDirectory, previous: Config = Config()) -> (config: Config, errors: [ConfigError]) {
@@ -294,8 +268,6 @@ public enum ConfigLoader {
     #
     # Buttons: button1 = right, button2 (or middle) = wheel click,
     #          button3 (or back) / button4 (or forward) = side buttons, button5...31 = extra.
-    #          Logitech: dpi (the Lift's top button), gesture, or any control as "cid.0x00c3":
-    #          read over Logitech's protocol, these never reach macOS on their own.
     #          The left button can't be remapped.
     \(actions)
 
@@ -303,7 +275,6 @@ public enum ConfigLoader {
     # back = "navigate.back"
     # forward = "navigate.forward"
     # middle = "media.play"
-    # dpi = "mission.control"
 
     # Per-app exceptions: these buttons behave differently in one app.
     # [[app]]
@@ -371,9 +342,6 @@ public enum ConfigLoader {
     # detect-monitor-input = false
     # A binding mode other than main (`mode service`) shows its keys while it's on.
     # show-mode-bindings = false
-    # An app opened again (no window of it left) goes back to the workspace it was last on,
-    # instead of opening on the focused one. on-window-detected rules still win.
-    # reopen-apps-in-last-workspace = false
     # Holding these modifiers alone (or Caps Lock, when it holds them) shows the main
     # bindings that use them, after delay-ms; a key or letting go hides them.
     # show-bindings-on-hold = { modifiers = 'ctrl-alt-shift', delay-ms = 1000 }

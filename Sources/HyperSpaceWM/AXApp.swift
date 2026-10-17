@@ -89,8 +89,8 @@ final class AXApp: WindowApp, @unchecked Sendable {
     }
 
     /// Windows the app has that weren't reported yet: notifications can be missed (an app
-    /// slow to subscribe, a window not ready when it was created, one minimized at startup
-    /// and brought back). Known windows cost one call each; subscribing is tried again.
+    /// slow to subscribe, a window not ready when it was created). Known windows cost one
+    /// call each; subscribing is tried again.
     func windows(_ completion: @escaping @MainActor ([WindowRecord]) -> Void) {
         queue.async { [self] in
             guard started, !stopped else { return }
@@ -115,7 +115,7 @@ final class AXApp: WindowApp, @unchecked Sendable {
 
     /// Reads a window and subscribes to its own notifications. App queue only.
     private func record(_ window: AXUIElement) -> WindowRecord? {
-        guard let id = AX.windowID(window), !ignored.contains(id), AX.bool(window, kAXMinimizedAttribute) != true else { return nil }
+        guard let id = AX.windowID(window), !ignored.contains(id) else { return nil }
         // Not a window to manage (helper windows, popups): never read again.
         guard AX.string(window, kAXRoleAttribute) == kAXWindowRole, let floating = AXApp.classify(window, bundleID: bundleID) else {
             ignored.insert(id)
@@ -134,8 +134,9 @@ final class AXApp: WindowApp, @unchecked Sendable {
         }
         let isFullscreen = AX.bool(window, "AXFullScreen") == true
         if isFullscreen { fullscreen.insert(id) }
+        // Minimized ones too (at startup): known, they're listed and their restore is heard.
         return WindowRecord(id: id, floating: floating, frame: AX.frame(window), title: AX.string(window, kAXTitleAttribute) ?? "",
-                            fullscreen: isFullscreen)
+                            fullscreen: isFullscreen, minimized: AX.bool(window, kAXMinimizedAttribute) == true)
     }
 
     @MainActor
@@ -158,9 +159,12 @@ final class AXApp: WindowApp, @unchecked Sendable {
             events(.minimized(id, true))
         case kAXWindowDeminiaturizedNotification where id != 0:
             events(.minimized(id, false))
-        case kAXWindowMovedNotification where id != 0, kAXWindowResizedNotification where id != 0:
+        case kAXWindowMovedNotification where id != 0:
             events(.moved(id))
-            // Entering or leaving macOS full screen resizes the window.
+        case kAXWindowResizedNotification where id != 0:
+            events(.moved(id))
+            // Entering or leaving macOS full screen resizes the window; a window only moved
+            // (parked on a workspace switch) isn't read again.
             queue.async { [self] in
                 guard let window = elements[id], let on = AX.bool(window, "AXFullScreen"),
                       on ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil else { return }

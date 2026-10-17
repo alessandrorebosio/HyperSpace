@@ -81,7 +81,7 @@ public struct DeviceMap: Sendable, Equatable {
 // MARK: - Mouse (mouse.toml)
 
 public struct MouseConfig: Sendable, Equatable {
-    /// `[buttons]`: button name (e.g. `button3`, `back`, `dpi`) -> action, for every mouse.
+    /// `[buttons]`: button name (e.g. `button3`, `back`) -> action, for every mouse.
     public var buttons: [String: Action] = [:]
     /// `[[app]]`: per-app overrides; `map` holds button names.
     public var app: [AppMap] = []
@@ -189,8 +189,6 @@ public struct WMConfig: Sendable, Equatable {
     public var detectMonitorInput = false
     /// HyperSpace's own: a mode other than main shows its bindings while it's on.
     public var showModeBindings = false
-    /// HyperSpace's own: an app opened again goes back to the workspace it was last on.
-    public var reopenAppsInLastWorkspace = false
     /// HyperSpace's own: holding these modifiers alone shows the main bindings that use them.
     public var showBindingsOnHold: BindingsOnHold?
 
@@ -427,7 +425,6 @@ extension WMConfig: Decodable {
         case scratchpadFallback = "scratchpad-fallback-workspace"
         case detectMonitorInput = "detect-monitor-input"
         case showModeBindings = "show-mode-bindings"
-        case reopenAppsInLastWorkspace = "reopen-apps-in-last-workspace"
         case showBindingsOnHold = "show-bindings-on-hold"
     }
 
@@ -451,7 +448,6 @@ extension WMConfig: Decodable {
         scratchpadFallbackWorkspace = try c.decode(.scratchpadFallback, default: "Scratch")
         detectMonitorInput = try c.decode(.detectMonitorInput, default: false)
         showModeBindings = try c.decode(.showModeBindings, default: false)
-        reopenAppsInLastWorkspace = try c.decode(.reopenAppsInLastWorkspace, default: false)
         showBindingsOnHold = try c.decodeIfPresent(BindingsOnHoldTable.self, forKey: .showBindingsOnHold)?.value
     }
 }

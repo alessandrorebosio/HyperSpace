@@ -124,7 +124,7 @@ public struct OutputTable: Sendable, Equatable {
     /// Indexed by `Hotkeys.index(code:modifiers:)`: every key code under every combination
     /// of ⌘⇧⌥⌃.
     public static var hotkeys: OutputTable { OutputTable(count: 16 * 128) }
-    /// Indexed by `MouseButtons` index: CoreGraphics buttons, then Logitech controls.
+    /// Indexed by CoreGraphics button number.
     public static var buttons: OutputTable { OutputTable(count: MouseButtons.count) }
 
     private init(count: Int) {

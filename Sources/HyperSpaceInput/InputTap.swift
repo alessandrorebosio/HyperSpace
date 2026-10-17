@@ -28,7 +28,7 @@ public final class InputTap: @unchecked Sendable {
     private let snapshot = Mutex(Snapshot(InputPlan().tables(forApp: nil), 0))
     private let perform: @Sendable (Output) -> Void
     private let capsLock: CapsLockState
-    /// Also tap plain mouse moves (gestures on Logitech controls, focus-follows-mouse).
+    /// Also tap plain mouse moves (focus-follows-mouse).
     /// Off otherwise: moves are the most frequent event and the tap shouldn't see them for nothing.
     private let moveEvents: Bool
     /// `display_keys`: a media key (NX key code, down, pointer) for external displays; true
@@ -137,14 +137,6 @@ public final class InputTap: @unchecked Sendable {
     /// Performs an output outside of any input event (`hsctl do`). False if the tap isn't running.
     public func run(_ output: Output) -> Bool {
         onInputThread { [self] in emit(output, pid: current.frontmostPID, location: Post.cursor) }
-    }
-
-    /// A Logitech control (read over HID++) went down or up: handled like a mouse button.
-    public func logitechButton(_ index: Int, down: Bool) {
-        _ = onInputThread { [self] in
-            let decision = mouse.button(index, down: down, tables: current.tables)
-            apply(decision, pid: current.frontmostPID, location: Post.cursor)
-        }
     }
 
     private func onInputThread(_ block: @escaping () -> Void) -> Bool {

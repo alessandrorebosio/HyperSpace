@@ -13,7 +13,9 @@ extension WindowManager {
         isStartingUp = false
         guard let model, let saved = savedLayout else { return }
         savedLayout = nil
-        model.restore(saved, map: saved.match(records.mapValues { identity($0.app, $0.record) }))
+        // Managed windows only: a minimized one with the same title mustn't take a tile's place.
+        let managed = records.filter { model.windows[$0.key] != nil }
+        model.restore(saved, map: saved.match(managed.mapValues { identity($0.app, $0.record) }))
         // Tiled for a moment while apps were read: shown scratchpads are centered again.
         for window in model.scratchpadHomes.keys { center(window) }
         apply()

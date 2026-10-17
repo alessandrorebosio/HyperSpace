@@ -196,13 +196,6 @@ struct FeatureTests {
         #expect(e.button(2, down: false, tables: t) == .click(2), "tapped with no action: a normal middle click")
     }
 
-    @Test func logitechControlsGetTheirOwnIndices() throws {
-        let p = try mouse("[buttons]\ndpi = \"mission.control\"\n\"cid.0x00c3\" = \"none\"\n[hold.dpi]\n\"move.left\" = \"space.left\"")
-        #expect(p.logitech.keys.sorted() == [0x00C3, 0x00FD])
-        #expect(p.buttons[p.logitech[0x00FD]!] == .system(.missionControl))
-        #expect(p.needsMoveEvents, "gestures on a Logitech control need plain mouse moves")
-    }
-
     // MARK: Scroll and pointer
 
     @Test func scrollSettings() throws {

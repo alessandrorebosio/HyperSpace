@@ -2,8 +2,7 @@ import AppKit
 import HyperSpaceCore
 
 /// Applies an `InputPlan` to every input layer:
-/// - L0, no permission: key mappings (`HIDMapper`), pointer speed (`PointerSettings`) and
-///   Logitech controls over HID++ (`LogitechControls`);
+/// - L0, no permission: key mappings (`HIDMapper`) and pointer speed (`PointerSettings`);
 /// - L1, Accessibility: keyboard and mouse remapping in the event tap (`InputTap`), kept in
 ///   sync with the frontmost app.
 @MainActor
@@ -17,7 +16,6 @@ public final class InputService {
     private lazy var mapper = HIDMapper(services: services)
     private lazy var pointer = PointerSettings(services: services)
     private let capsLock = CapsLockState()
-    private var logitech: LogitechControls?
     private var tap: InputTap?
     private var plan = InputPlan()
     private var frontmostApp = NSWorkspace.shared.frontmostApplication
@@ -56,7 +54,7 @@ public final class InputService {
     /// - Parameter trackMouse: gets pointer moves (throttled), for focus-follows-mouse.
     public func apply(_ plan: InputPlan, accessibilityGranted: Bool,
                       trackMouse: (@MainActor @Sendable (CGPoint) -> Void)? = nil) {
-        let restartTap = needsMoves(plan, trackMouse) != needsMoves(self.plan, self.trackMouse)
+        let restartTap = (trackMouse != nil) != (self.trackMouse != nil)
             || plan.keyboard.displayKeys != self.plan.keyboard.displayKeys
         self.plan = plan
         self.trackMouse = trackMouse
@@ -67,19 +65,10 @@ public final class InputService {
             stopTap()
         }
         pointer.apply(plan.mouse.pointer)
-        // Caps Lock -> F18 and diverted Logitech controls only while the tap is there to give
-        // them a meaning; otherwise they would just go dead.
+        // Caps Lock -> F18 only while the tap is there to give it a meaning; otherwise it
+        // would just go dead.
         let running = tapState == .running
         mapper.apply(running ? plan.keyboard.hid : plan.keyboard.hid.filter { $0.to != KeyNames.key(code: Layer.capsLockTrigger)?.usage })
-        if running, !plan.mouse.logitech.isEmpty {
-            if logitech == nil {
-                logitech = LogitechControls { [weak tap = self.tap] index, down in tap?.logitechButton(index, down: down) }
-            }
-            logitech?.apply(plan.mouse.logitech)
-        } else {
-            logitech?.stop()
-            logitech = nil
-        }
         // Remapped Caps Lock: turn off a caps lock that was on before, LED included.
         if running, plan.keyboard.capsLock != nil { capsLock.set(false) }
         pushTables()
@@ -89,10 +78,6 @@ public final class InputService {
     public func setMode(_ mode: String) {
         self.mode = mode
         pushTables()
-    }
-
-    private func needsMoves(_ plan: InputPlan, _ track: ((CGPoint) -> Void)?) -> Bool {
-        plan.mouse.needsMoveEvents || track != nil
     }
 
     /// Performs an output now, as if a mapped input fired (`hsctl do`). False if it needs
@@ -108,8 +93,6 @@ public final class InputService {
     }
 
     public func shutdown() {
-        logitech?.stop()
-        logitech = nil
         stopTap()
         mapper.restore()
         pointer.restore()
@@ -130,7 +113,7 @@ public final class InputService {
         if let track = trackMouse {
             mouseMoved = { point in Task { @MainActor in track(point) } }
         }
-        let tap = InputTap(capsLock: capsLock, moveEvents: needsMoves(plan, trackMouse), mouseMoved: mouseMoved,
+        let tap = InputTap(capsLock: capsLock, moveEvents: trackMouse != nil, mouseMoved: mouseMoved,
                            displayKeys: plan.keyboard.displayKeys ? displayKeys : nil,
                            holdHint: { [onHoldHint] shown in Task { @MainActor in onHoldHint(shown) } }) { [weak self] output in
             Task { @MainActor in self?.perform(output) }
@@ -139,9 +122,6 @@ public final class InputService {
             self.tap = tap
             tapState = .running
             log.info("event tap running")
-            // The Logitech reader posts to the tap it was made with.
-            logitech?.stop()
-            logitech = nil
         } else {
             tapState = .failed
             log.error("event tap could not be created")

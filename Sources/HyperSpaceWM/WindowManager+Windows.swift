@@ -61,7 +61,7 @@ extension WindowManager {
     }
 
     private func setHidden(_ pid: pid_t, _ hidden: Bool) {
-        for (id, entry) in records where entry.app.pid == pid && tabs[id] == nil && !nativeFullscreen.contains(id) {
+        for (id, entry) in records where entry.app.pid == pid && tabs[id] == nil && !nativeFullscreen.contains(id) && !minimized.contains(id) {
             setManaged(id, !hidden)
         }
         if !hidden { reconcileTabs(pid) }
@@ -85,9 +85,8 @@ extension WindowManager {
             guard records[record.id] == nil else { return }
             add([record], of: app, managed: true)
             apply()
-            // Put on another workspace (a rule, or where the app was last with
-            // reopen-apps-in-last-workspace): follow it if the app is in front, i.e. the user
-            // just opened it.
+            // Put on another workspace by a rule: follow it if the app is in front, i.e. the
+            // user just opened it.
             followIfFrontmost(record.id, of: app)
         case let .destroyed(id):
             if model?.windows[id] != nil { rememberWorkspace(of: app, closing: id) }
@@ -99,6 +98,7 @@ extension WindowManager {
             scheduleRefresh(app.pid)
             syncFocus(app.pid)
         case let .minimized(id, isMinimized):
+            guard records[id] != nil, isMinimized ? minimized.insert(id).inserted : minimized.remove(id) != nil else { return }
             setManaged(id, !isMinimized)
             apply()
             // Restored from the Dock onto its workspace: follow it there.
@@ -175,22 +175,18 @@ extension WindowManager {
             records[record.id] = (app, record)
             frames[record.id] = record.frame
             if record.fullscreen { nativeFullscreen.insert(record.id) }
+            if record.minimized { minimized.insert(record.id) }
         }
         guard managed, let model else { return }
-        // Opened again (no window left before these, minimized ones included): back to the
-        // workspace it was last on, if reopen-apps-in-last-workspace is on.
         let ids = Set(new.map(\.id))
-        let reopened = isStartingUp || !settings.reopenAppsInLastWorkspace ? nil : app.bundleID.flatMap { appWorkspaces[$0] }.flatMap { name in
-            records.contains { $0.value.app === app && !ids.contains($0.key) } ? nil : name
-        }
-        reconcileTabs(app.pid, new: ids)
+        reconcileTabs(app.pid, new: ids.subtracting(minimized)) // off screen, yet not a tab
         // Windows an on-window-detected rule sent to a workspace, and which one.
         var placed: [WindowID: String] = [:]
         for record in new where tabs[record.id] == nil {
-            // Set aside when the window manager last stopped: back to its spot, or still in
-            // macOS full screen, kept aside with it.
+            // Set aside when the window manager last stopped: back to its spot, or still
+            // minimized or in macOS full screen, kept aside with it.
             if let aside = setAside[record.id], aside.app == app.bundleID {
-                if record.fullscreen { continue }
+                if record.fullscreen || record.minimized { continue }
                 setAside[record.id] = nil
                 model.add(WMWindowInfo(id: record.id, floating: record.floating), at: aside.spot)
                 publishWindowDetected(record.id)
@@ -198,14 +194,11 @@ extension WindowManager {
             }
             setAside[record.id] = nil // another app's window had this id
             manage(record.id)
-            if let reopened {
-                _ = try? model.run(.moveNodeToWorkspace(.named(reopened), focusFollows: false, wrapAround: false,
-                                                        window: record.id, failIfNoop: false))
-            }
             if windowDetected(record.id), let name = model.workspace(of: record.id)?.name { placed[record.id] = name }
             publishWindowDetected(record.id)
-            // Already in macOS full screen: aside at once, from the spot it was just given.
-            if record.fullscreen { setManaged(record.id, false) }
+            // Already minimized or in macOS full screen: aside at once, from the spot it was
+            // just given.
+            if record.fullscreen || record.minimized { setManaged(record.id, false) }
         }
         adoptScratchpad(new, of: app, placed: placed)
     }
@@ -310,6 +303,7 @@ extension WindowManager {
         parked[id] = nil
         setAside[id] = nil
         nativeFullscreen.remove(id)
+        minimized.remove(id)
         snapChecks.removeValue(forKey: id)?.cancel()
     }
 

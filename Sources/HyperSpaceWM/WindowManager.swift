@@ -74,6 +74,8 @@ public final class WindowManager {
     }
     /// Windows in macOS full screen: on a Space of their own, out of the layout.
     var nativeFullscreen: Set<WindowID> = []
+    /// Minimized windows: out of the layout, and not brought back when their app unhides.
+    var minimized: Set<WindowID> = []
     var snapChecks: [WindowID: Task<Void, Never>] = [:]
     /// Pending `refresh`es, by app.
     var refreshes: [pid_t: Task<Void, Never>] = [:]
@@ -90,8 +92,7 @@ public final class WindowManager {
     /// The layout saved by the last `stop()`, put back once every app's windows are read.
     var savedLayout: WMSnapshot?
     /// Bundle id -> the workspace its windows were on when the last one closed: an app
-    /// opened again goes back there (with reopen-apps-in-last-workspace), and so does its
-    /// scratchpad put away. Kept across restarts.
+    /// opened by `scratchpad` is put away there. Kept across restarts.
     var appWorkspaces: [String: String] = [:]
     /// `scratchpad` opened an app that had no window, or `--new` pressed its ⌘N menu item:
     /// the window it opens shortly is the scratchpad. After ⌘N, one that floats is a dialog
@@ -226,6 +227,7 @@ public final class WindowManager {
         parked = [:]
         setAside = [:]
         nativeFullscreen = []
+        minimized = []
         tabs = [:]
         shownTab = [:]
         savedLayout = nil

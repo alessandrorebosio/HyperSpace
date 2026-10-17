@@ -116,9 +116,8 @@ under the pointer, and the volume keys its speakers when the sound plays there, 
 ## Mouse (`mouse.toml`)
 
 Buttons: `button1` = right, `button2` or `middle` = wheel click, `button3` or `back` and
-`button4` or `forward` = side buttons, `button5`…`button31` = extra. Logitech mice also have
-`dpi`, `gesture` and any control as `"cid.0x00c3"`, read over Logitech's protocol. The left
-button can't be remapped.
+`button4` or `forward` = side buttons, `button5`…`button31` = extra. The left button can't
+be remapped.
 
 ```toml
 [buttons]
@@ -279,8 +278,7 @@ run = 'move-node-to-workspace Shell'
 Also `if.app-name-regex-substring`, `if.window-title-regex-substring`, `if.workspace`,
 `if.during-aerospace-startup`, `check-further-callbacks = true`, or `if = 'test …'`.
 
-An app you open again opens on the workspace you're on (rules still win). To send it back to
-the workspace it was last on instead: `reopen-apps-in-last-workspace = true`, or the menu.
+An app you open again opens on the workspace you're on, like any new window (rules still win).
 
 ### Scratchpad
 
@@ -331,8 +329,7 @@ hsctl subscribe --all       # one JSON line per event, for SketchyBar and the li
 ### Menu
 
 The menu bar shows each display's workspace. The menu lists the workspaces and their windows
-(click to go there), the displays to leave out, and the options Reopen Apps in Last Workspace
-and Show Mode Bindings, which write to `wm.toml`.
+(click to go there) and the displays to leave out. Every option lives in the files.
 
 ## Files HyperSpace keeps
 
@@ -342,5 +339,5 @@ In `~/Library/Application Support/HyperSpace/`, none of them to edit by hand:
 |---|---|
 | `layout.json` | the layout, put back when HyperSpace starts |
 | `set-aside.json` | where minimized, hidden and full screen windows go back |
-| `app-workspaces.json` | the workspace each app was last on (scratchpads, `reopen-apps-in-last-workspace`) |
+| `app-workspaces.json` | the workspace each app was last on, where a scratchpad it opened is put away |
 | `monitor-inputs.json` | the Mac's input on each display (`detect-monitor-input`) |
