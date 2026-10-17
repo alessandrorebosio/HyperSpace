@@ -345,6 +345,9 @@ public enum ConfigLoader {
     # detect-monitor-input = false
     # A binding mode other than main (`mode service`) shows its keys while it's on.
     # show-mode-bindings = false
+    # An app opened again (no window of it left) goes back to the workspace it was last on,
+    # instead of opening on the focused one. on-window-detected rules still win.
+    # reopen-apps-in-last-workspace = false
 
     # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned
     # to a monitor, which is usually what you want.

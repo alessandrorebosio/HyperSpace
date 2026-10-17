@@ -24,6 +24,9 @@ public struct WMSettings: Sendable, Equatable {
     public var detectMonitorInput = false
     /// Shows the bindings of a mode other than main while it's on.
     public var showModeBindings = false
+    /// An app opened again (no window left) goes back to the workspace it was last on,
+    /// instead of joining the focused one.
+    public var reopenAppsInLastWorkspace = false
     /// Mode -> its bindings as written (notation, commands), sorted, for that list.
     public var bindingTexts: [String: [BindingText]] = [:]
     /// Mode -> binding notation -> script, for `trigger-binding` and `list-modes`.
@@ -78,6 +81,7 @@ public struct WMSettings: Sendable, Equatable {
         scratchpadFallbackWorkspace = config.scratchpadFallbackWorkspace
         detectMonitorInput = config.detectMonitorInput
         showModeBindings = config.showModeBindings
+        reopenAppsInLastWorkspace = config.reopenAppsInLastWorkspace
         guard !scratchpadFallbackWorkspace.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw InvalidConfig(message: "scratchpad-fallback-workspace: needs a workspace name")
         }

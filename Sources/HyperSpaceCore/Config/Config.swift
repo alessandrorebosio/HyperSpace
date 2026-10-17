@@ -189,6 +189,8 @@ public struct WMConfig: Sendable, Equatable {
     public var detectMonitorInput = false
     /// HyperSpace's own: a mode other than main shows its bindings while it's on.
     public var showModeBindings = false
+    /// HyperSpace's own: an app opened again goes back to the workspace it was last on.
+    public var reopenAppsInLastWorkspace = false
 
     public init() {}
 }
@@ -417,6 +419,7 @@ extension WMConfig: Decodable {
         case scratchpadFallback = "scratchpad-fallback-workspace"
         case detectMonitorInput = "detect-monitor-input"
         case showModeBindings = "show-mode-bindings"
+        case reopenAppsInLastWorkspace = "reopen-apps-in-last-workspace"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -439,6 +442,7 @@ extension WMConfig: Decodable {
         scratchpadFallbackWorkspace = try c.decode(.scratchpadFallback, default: "Scratch")
         detectMonitorInput = try c.decode(.detectMonitorInput, default: false)
         showModeBindings = try c.decode(.showModeBindings, default: false)
+        reopenAppsInLastWorkspace = try c.decode(.reopenAppsInLastWorkspace, default: false)
     }
 }
 

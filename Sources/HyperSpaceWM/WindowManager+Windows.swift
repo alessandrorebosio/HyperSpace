@@ -147,8 +147,9 @@ extension WindowManager {
             frames[record.id] = record.frame
         }
         guard managed, let model else { return }
-        // Opened again (no window left before these): back to the workspace it was last on.
-        let reopened = isStartingUp ? nil : app.bundleID.flatMap { appWorkspaces[$0] }.flatMap { name in
+        // Opened again (no window left before these): back to the workspace it was last on,
+        // if reopen-apps-in-last-workspace is on.
+        let reopened = isStartingUp || !settings.reopenAppsInLastWorkspace ? nil : app.bundleID.flatMap { appWorkspaces[$0] }.flatMap { name in
             records.contains { $0.value.app === app && model.windows[$0.key] != nil } ? nil : name
         }
         reconcileTabs(app.pid, new: Set(new.map(\.id)))

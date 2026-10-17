@@ -111,6 +111,11 @@ struct ConfigTests {
                                                       .init(key: "r", commands: "flatten-workspace-tree; mode main")])
     }
 
+    @Test func reopenAppsInLastWorkspace() throws {
+        #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).reopenAppsInLastWorkspace == false)
+        #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "reopen-apps-in-last-workspace = true").get()).reopenAppsInLastWorkspace)
+    }
+
     @Test func detectMonitorInput() throws {
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).detectMonitorInput == false)
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "detect-monitor-input = true").get()).detectMonitorInput)
