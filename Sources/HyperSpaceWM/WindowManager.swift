@@ -64,9 +64,8 @@ public final class WindowManager {
     var verifying: Task<Void, Never>?
     /// Windows parked off-screen, with the frame to give back to floating ones.
     var parked: [WindowID: CGRect] = [:]
-    /// Minimized windows and windows of hidden apps -> the workspace they were on, where
-    /// they come back.
-    var setAside: [WindowID: String] = [:]
+    /// Minimized windows and windows of hidden apps -> where they were, where they come back.
+    var setAside: [WindowID: WMSpot] = [:]
     var snapChecks: [WindowID: Task<Void, Never>] = [:]
     /// Pending `refresh`es, by app.
     var refreshes: [pid_t: Task<Void, Never>] = [:]
@@ -171,6 +170,12 @@ public final class WindowManager {
         model = WMModel(monitors: shownMonitors(), settings: settings)
         savedLayout = loadLayout()
         appWorkspaces = loadAppWorkspaces()
+        // Apps uninstalled since are forgotten, or the file would only grow.
+        let installed = appWorkspaces.filter { system.isInstalled(bundleID: $0.key) }
+        if installed.count < appWorkspaces.count {
+            appWorkspaces = installed
+            saveAppWorkspaces()
+        }
         pollMonitorInputs(settings.detectMonitorInput)
         system.observe { [weak self] event in self?.handle(event) }
         startingApps = Set(system.runningApps().map(\.pid))

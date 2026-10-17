@@ -211,7 +211,8 @@ Optimizations over AeroSpace:
 - **Native tabs**: with macOS tabs (Finder, Safari, Terminal) every tab is a window; a window with a tab bar on the exact frame of a managed window of the same app joins that window's tile instead of splitting the screen. Closing the shown tab promotes another; dragging a tab out makes it a window again.
 - **Window index**: the model keeps window → workspace in a dictionary instead of searching every tree.
 - **Diff-based layout**: after each command only the windows whose frame actually changed get an AX `setFrame`. Unchanged windows aren't touched.
-- **Batched workspace switch**: all hide/show moves are computed first, then applied concurrently per app. Today they are applied one after the other.
+- **Batched workspace switch**: all hide/show moves are computed first, then sent as one batch per app, each on the app's own queue, so apps move concurrently and a slow one holds up only its own windows.
+- **Fewer calls per frame**: a window that both moves and resizes gets two AX calls, in the order that keeps it on screen (shrinking: size then position; growing: position then size), three only when one side grows and the other shrinks.
 - **Per-app timeouts** (`AXUIElementSetMessagingTimeout`): a frozen app can't block the whole WM.
 - **WM actor off the input thread**: hotkeys never wait for the WM.
 

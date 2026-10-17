@@ -37,6 +37,17 @@ public struct WMScratchpadHome: Codable, Sendable, Equatable {
     }
 }
 
+/// Where a window that leaves the model for a while (minimized, its app hidden) was, to
+/// put it back there: its workspace, and next to which sibling window, at which weight.
+public struct WMSpot: Sendable, Equatable {
+    public var workspace: String
+    public var floating: Bool
+    var anchor: WindowID?
+    /// After the anchor, else before it.
+    var after = true
+    var weight = 1.0
+}
+
 public struct WMWindowInfo: Sendable, Equatable {
     public let id: WindowID
     /// Floating windows keep their own frame; the others are tiled.
@@ -202,6 +213,42 @@ public final class WMModel {
             attachFloating(info.id, to: target)
         } else {
             insertTiled(info.id, into: target)
+        }
+    }
+
+    /// Where `window` is, for `add(_:at:)`. A shown scratchpad's is where it goes back to.
+    public func spot(of window: WindowID) -> WMSpot? {
+        guard let from = workspace(of: window) else { return nil }
+        if let home = scratchpadHomes[window] { return WMSpot(workspace: home.workspace, floating: home.floating) }
+        var spot = WMSpot(workspace: from.name, floating: from.floating.contains(window))
+        guard let node = from.root.find(window), let siblings = node.parent?.children, let index = node.index else { return spot }
+        spot.weight = node.weight
+        if index > 0, let before = siblings[index - 1].window {
+            spot.anchor = before
+        } else if index + 1 < siblings.count, let next = siblings[index + 1].window {
+            spot.anchor = next
+            spot.after = false
+        }
+        return spot
+    }
+
+    /// Adds the window back where it was: beside its sibling if that's still there, else in
+    /// the same workspace.
+    public func add(_ info: WMWindowInfo, at spot: WMSpot) {
+        guard windows[info.id] == nil else { return }
+        windows[info.id] = WMWindowInfo(id: info.id, floating: spot.floating)
+        let target = workspace(spot.workspace)
+        if spot.floating {
+            attachFloating(info.id, to: target)
+        } else if let anchorID = spot.anchor, location[anchorID] == target.name, let anchor = target.root.find(anchorID),
+                  let parent = anchor.parent, let index = anchor.index {
+            let node = WMNode(window: info.id)
+            location[info.id] = target.name
+            parent.insert(node, at: spot.after ? index + 1 : index)
+            node.weight = spot.weight
+            target.root.normalize()
+        } else {
+            insertTiled(info.id, into: target, nextTo: info.id) // no anchor: at the end
         }
     }
 

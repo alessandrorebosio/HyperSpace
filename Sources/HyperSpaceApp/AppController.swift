@@ -142,6 +142,18 @@ final class AppController: NSObject, NSApplicationDelegate {
         return errors
     }
 
+    /// Sets a boolean of wm.toml in the file itself, then reloads.
+    func setWMOption(_ key: String, _ value: Bool) {
+        let url = ConfigLoader.url(.wm, in: configDirectory)
+        do {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            try ConfigLoader.setting(key, to: value, in: text).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            log.error("cannot set \(key) in wm.toml: \(error)")
+        }
+        reloadConfig()
+    }
+
     /// Creates any missing file from its template and opens all three.
     func openConfig() {
         do {

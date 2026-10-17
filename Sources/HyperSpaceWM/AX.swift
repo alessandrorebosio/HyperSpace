@@ -39,13 +39,28 @@ enum AX {
     }
 
     /// Sets only what changed between `old` and `new`: one call instead of two when a
-    /// window just moves or just resizes. Size, position, size when both change, so a
-    /// window growing near a screen edge isn't clamped by its old size.
+    /// window just moves or just resizes.
     static func setFrame(_ element: AXUIElement, _ new: CGRect, old: CGRect?) {
+        for step in frameSteps(new, old: old) {
+            switch step {
+            case .position: setPosition(element, new.origin)
+            case .size: setSize(element, new.size)
+            }
+        }
+    }
+
+    enum FrameStep { case position, size }
+
+    /// When both change, the order keeps the window on screen at every step, or macOS would
+    /// clamp it: shrinking, size then position; growing, position then size; otherwise (or
+    /// `old` unknown) size, position, size.
+    static func frameSteps(_ new: CGRect, old: CGRect?) -> [FrameStep] {
         let moves = old?.origin != new.origin, resizes = old?.size != new.size
-        if resizes, moves { setSize(element, new.size) }
-        if moves { setPosition(element, new.origin) }
-        if resizes { setSize(element, new.size) }
+        guard moves, resizes else { return (moves ? [.position] : []) + (resizes ? [.size] : []) }
+        guard let old else { return [.size, .position, .size] }
+        if old.width >= new.width && old.height >= new.height { return [.size, .position] }
+        if old.width <= new.width && old.height <= new.height { return [.position, .size] }
+        return [.size, .position, .size]
     }
 
     static func setPosition(_ element: AXUIElement, _ point: CGPoint) {

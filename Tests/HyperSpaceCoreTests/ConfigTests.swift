@@ -111,6 +111,22 @@ struct ConfigTests {
                                                       .init(key: "r", commands: "flatten-workspace-tree; mode main")])
     }
 
+    @Test func aSettingIsWrittenInPlace() {
+        let key = "show-mode-bindings"
+        // Its line, set or commented out (the template's), keeps its indentation.
+        #expect(ConfigLoader.setting(key, to: false, in: "a = 1\nshow-mode-bindings = true\n[mode]\n") == "a = 1\nshow-mode-bindings = false\n[mode]\n")
+        #expect(ConfigLoader.setting(key, to: true, in: "  # show-mode-bindings = false\n[mode]\n") == "  show-mode-bindings = true\n[mode]\n")
+        // A set line wins over a commented one; a longer key isn't it.
+        #expect(ConfigLoader.setting(key, to: true, in: "# show-mode-bindings = false\nshow-mode-bindings = false\n") == "# show-mode-bindings = false\nshow-mode-bindings = true\n")
+        #expect(ConfigLoader.setting(key, to: true, in: "show-mode-bindings-x = 1\n") == "show-mode-bindings-x = 1\nshow-mode-bindings = true\n")
+        // Absent: before the first table, never inside one.
+        #expect(ConfigLoader.setting(key, to: true, in: "a = 1\n[mode.main.binding]\n# show-mode-bindings = false\n")
+                == "a = 1\nshow-mode-bindings = true\n\n[mode.main.binding]\n# show-mode-bindings = false\n")
+        // The result parses.
+        let written = ConfigLoader.setting(key, to: true, in: ConfigLoader.wmTemplate)
+        #expect((try? ConfigLoader.parse(WMConfig.self, written).get())?.showModeBindings == true)
+    }
+
     @Test func reopenAppsInLastWorkspace() throws {
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).reopenAppsInLastWorkspace == false)
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "reopen-apps-in-last-workspace = true").get()).reopenAppsInLastWorkspace)

@@ -376,6 +376,66 @@ struct WindowManagerTests {
         #expect(wm.focusedWorkspace == "7")
     }
 
+    @Test func aMinimizedWindowComesBackToItsSpotInTheTree() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        defer { wm.stop() }
+        #expect(app.frames[1] == Self.left && app.frames[2] == Self.right)
+        #expect(wm.run("focus --window-id 2") == nil)
+        #expect(wm.run("resize width -100 --window-id 1") == nil)
+        let narrowed = app.frames[1]
+        app.send(.minimized(1, true))
+        #expect(app.frames[2] == Self.full)
+
+        // Left of 2 again, at its width, not after the focused window.
+        app.send(.minimized(1, false))
+        #expect(app.frames[1] == narrowed)
+        #expect(app.frames[2].map { $0.minX == narrowed?.maxX } == true)
+    }
+
+    @Test func aMinimizedWindowDoesNotMakeAnAppReopened() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system, Self.reopening)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        app.send(.minimized(2, true))
+        // Still open (minimized): a new window joins the focused workspace.
+        app.create(3, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
+        #expect(wm.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id}"]).output.contains("3"))
+    }
+
+    @Test func uninstalledAppsAreForgotten() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "gone", windows: [window(2)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system)
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        system.apps[11] = nil
+        system.send(.terminated(11))
+        #expect(wm.appWorkspaces["gone"] == "7")
+        wm.stop()
+
+        system.uninstalled = ["gone"]
+        let restarted = started(system)
+        defer { restarted.stop() }
+        #expect(restarted.appWorkspaces["gone"] == nil)
+        restarted.stop()
+        #expect(restarted.loadAppWorkspaces()["gone"] == nil, "and off the disk")
+    }
+
+    @Test func framesTakeTheFewestCallsThatStayOnScreen() {
+        let a = CGRect(x: 0, y: 0, width: 500, height: 600), b = CGRect(x: 500, y: 0, width: 400, height: 300)
+        #expect(AX.frameSteps(b, old: a) == [.size, .position], "shrinking")
+        #expect(AX.frameSteps(a, old: b) == [.position, .size], "growing")
+        #expect(AX.frameSteps(CGRect(x: 10, y: 0, width: 600, height: 200), old: a) == [.size, .position, .size])
+        #expect(AX.frameSteps(b, old: nil) == [.size, .position, .size])
+        #expect(AX.frameSteps(a.offsetBy(dx: 10, dy: 0), old: a) == [.position])
+        #expect(AX.frameSteps(CGRect(x: 0, y: 0, width: 300, height: 600), old: a) == [.size])
+        #expect(AX.frameSteps(a, old: a).isEmpty)
+    }
+
     @Test func aHiddenAppsWindowsComeBackToTheirWorkspaces() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2), window(3)])

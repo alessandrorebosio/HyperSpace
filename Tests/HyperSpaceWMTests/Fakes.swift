@@ -164,6 +164,9 @@ final class FakeSystem: WindowSystem {
         opened.append(bundleID)
         return true
     }
+    /// Bundle ids of apps uninstalled.
+    var uninstalled: Set<String> = []
+    func isInstalled(bundleID: String) -> Bool { !uninstalled.contains(bundleID) }
     func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void) { self.handler = handler }
     func stopObserving() { handler = nil }
 

@@ -155,12 +155,13 @@ extension WindowManager {
             frames[record.id] = record.frame
         }
         guard managed, let model else { return }
-        // Opened again (no window left before these): back to the workspace it was last on,
-        // if reopen-apps-in-last-workspace is on.
+        // Opened again (no window left before these, minimized ones included): back to the
+        // workspace it was last on, if reopen-apps-in-last-workspace is on.
+        let ids = Set(new.map(\.id))
         let reopened = isStartingUp || !settings.reopenAppsInLastWorkspace ? nil : app.bundleID.flatMap { appWorkspaces[$0] }.flatMap { name in
-            records.contains { $0.value.app === app && model.windows[$0.key] != nil } ? nil : name
+            records.contains { $0.value.app === app && !ids.contains($0.key) } ? nil : name
         }
-        reconcileTabs(app.pid, new: Set(new.map(\.id)))
+        reconcileTabs(app.pid, new: ids)
         // Windows an on-window-detected rule sent to a workspace, and which one.
         var placed: [WindowID: String] = [:]
         for record in new where tabs[record.id] == nil {
@@ -231,18 +232,18 @@ extension WindowManager {
         return placed
     }
 
-    /// Minimized or hidden windows leave the model; back, they return to the workspace they
-    /// were on (a shown scratchpad to the one it goes back to), not the focused one.
+    /// Minimized or hidden windows leave the model; back, they return to where they were
+    /// (a shown scratchpad to the workspace it goes back to), not to the focused workspace.
     private func setManaged(_ id: WindowID, _ managed: Bool) {
         guard let model else { return }
         if managed {
-            manage(id)
-            if let name = setAside.removeValue(forKey: id), model.windows[id] != nil {
-                _ = try? model.run(.moveNodeToWorkspace(.named(name), focusFollows: false, wrapAround: false,
-                                                        window: id, failIfNoop: false))
+            if let spot = setAside.removeValue(forKey: id), let record = records[id]?.record {
+                model.add(WMWindowInfo(id: id, floating: record.floating), at: spot)
+            } else {
+                manage(id)
             }
         } else {
-            if let name = model.scratchpadHomes[id]?.workspace ?? model.workspace(of: id)?.name { setAside[id] = name }
+            if let spot = model.spot(of: id) { setAside[id] = spot }
             model.remove(id)
         }
     }

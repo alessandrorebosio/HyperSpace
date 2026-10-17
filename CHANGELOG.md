@@ -5,13 +5,23 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+### New
+
+- **Reopen Apps in Last Workspace and Show Mode Bindings in the menu**: a click sets the option in wm.toml itself, which stays the one place it lives. Shown while wm.toml sets something (the window manager is on).
+
 ### Changed
 
 - **An app opened again opens on the focused workspace**, like any new window, no longer on the workspace it was last on. `reopen-apps-in-last-workspace = true` in wm.toml brings the old behavior back. on-window-detected rules win either way, and a scratchpad put away still goes where its app was last.
 
 ### Fixed
 
-- **A minimized window, or a window of an app hidden with ⌘H, comes back to its workspace**, no longer to the focused one. Restored from the Dock, focus follows it there.
+- **A minimized window, or a window of an app hidden with ⌘H, comes back to its workspace**, no longer to the focused one, and to its place there: beside the same window, at the same size. Restored from the Dock, focus follows it there.
+- **With `reopen-apps-in-last-workspace`, an app with only minimized windows isn't opened again**: a new window of it joins the focused workspace.
+- **Apps uninstalled are forgotten** from app-workspaces.json at launch.
+
+### Performance
+
+- **A window that moves and resizes takes two Accessibility calls instead of three** (size then position when it shrinks, position then size when it grows), so workspace switches and layout changes touch apps less.
 
 ## [0.6.0] - 2026-10-17
 

@@ -85,6 +85,8 @@ protocol WindowSystem: AnyObject {
     /// Launches the app, or activates it if it runs (one without windows then opens one).
     /// False if no app has that bundle id.
     func open(bundleID: String) -> Bool
+    /// Whether an app with that bundle id is installed.
+    func isInstalled(bundleID: String) -> Bool
     func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void)
     func stopObserving()
 }
@@ -161,6 +163,10 @@ final class MacSystem: WindowSystem {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return false }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         return true
+    }
+
+    func isInstalled(bundleID: String) -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
     }
 
     func observe(_ handler: @escaping @MainActor (SystemEvent) -> Void) {

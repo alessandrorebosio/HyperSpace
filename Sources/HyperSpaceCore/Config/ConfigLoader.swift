@@ -56,6 +56,32 @@ public enum ConfigLoader {
         directory.appending(path: file.fileName)
     }
 
+    /// `text` with the top-level `key = value`: its line replaced (else its commented-out
+    /// template line, else a new line before the first table), the rest untouched.
+    public static func setting(_ key: String, to value: Bool, in text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        let top = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("[") } ?? lines.count
+        func assigns(_ line: String, commented: Bool) -> Bool {
+            var rest = Substring(line.trimmingCharacters(in: .whitespaces))
+            if commented {
+                guard rest.hasPrefix("#") else { return false }
+                rest = rest.dropFirst().drop { $0 == " " }
+            }
+            guard rest.hasPrefix(key) else { return false }
+            return rest.dropFirst(key.count).drop { $0 == " " }.hasPrefix("=")
+        }
+        let new = "\(key) = \(value)"
+        if let i = lines[..<top].firstIndex(where: { assigns($0, commented: false) })
+            ?? lines[..<top].firstIndex(where: { assigns($0, commented: true) }) {
+            lines[i] = String(lines[i].prefix { $0 == " " }) + new
+        } else if top < lines.count {
+            lines.insert(contentsOf: [new, ""], at: top)
+        } else {
+            lines.insert(new, at: lines.last == "" ? lines.count - 1 : lines.count) // before the final newline
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Loads every file. A file with errors keeps its section from `previous` (the last good
     /// config), so a mistake in mouse.toml doesn't turn off the keyboard.
     public static func load(from directory: URL = defaultDirectory, previous: Config = Config()) -> (config: Config, errors: [ConfigError]) {
