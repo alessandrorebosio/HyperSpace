@@ -40,7 +40,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             exit(0)
         }
 
-        input = InputService(displayKeys: DisplayKeys.handle) { [weak self] command in
+        input = InputService(displayKeys: DisplayKeys.handle, onHoldHint: { [weak self] shown in
+            guard let self else { return }
+            if shown, let hold = wmSettings?.bindingsOnHold, !hold.bindings.isEmpty {
+                overlay.show(hold.title, hold.bindings)
+            } else {
+                overlay.show("mode \(wm.mode)", wm.shownBindings) // back to the mode's, or none
+            }
+        }) { [weak self] command in
             if let error = self?.wm.run(command) { self?.log.error("wm: \(error)") }
         }
         wm = WindowManager(handlers: .init(
@@ -49,7 +56,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             modeChanged: { [weak self] mode in
                 self?.input.setMode(mode)
                 self?.menu?.refresh()
-                self?.overlay.show(mode, self?.wm.shownBindings)
+                self?.overlay.show("mode \(mode)", self?.wm.shownBindings)
             },
             mediaKey: { [weak self] key in _ = self?.input.run(.system(key)) },
             changed: { [weak self] in self?.menu?.refresh() }

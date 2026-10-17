@@ -127,6 +127,46 @@ struct ConfigTests {
         #expect((try? ConfigLoader.parse(WMConfig.self, written).get())?.showModeBindings == true)
     }
 
+    @Test func bindingsOnHold() throws {
+        let settings = try WMSettings(ConfigLoader.parse(WMConfig.self, """
+        show-bindings-on-hold = { modifiers = 'shift-ctrl-alt', delay-ms = 500 }
+        [mode.main.binding]
+        ctrl-alt-shift-h = 'focus left'
+        alt-shift-l = 'focus right'
+        ctrl-alt-shift-1 = ['workspace 1', 'move-mouse monitor-lazy-center']
+        """).get())
+        #expect(settings.bindingsOnHold?.hint == HoldHint(modifiers: [.shift, .control, .option], delayNs: 500_000_000))
+        #expect(settings.bindingsOnHold?.bindings == [.init(key: "1", commands: "workspace 1; move-mouse monitor-lazy-center"),
+                                                      .init(key: "h", commands: "focus left")])
+        #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).bindingsOnHold == nil)
+        #expect(error(WMConfig.self, "show-bindings-on-hold = { modifiers = 'meh' }")?.contains("unknown modifier 'meh'") == true)
+        #expect(error(WMConfig.self, "show-bindings-on-hold = { modifiers = 'alt', delay-ms = 50 }")?.contains("between 100 and 10000") == true)
+        // In the main mode only.
+        var config = Config()
+        config.wm = try ConfigLoader.parse(WMConfig.self, "show-bindings-on-hold = { modifiers = 'alt' }").get()
+        let plan = try InputPlan(config)
+        #expect(plan.tables(forApp: nil).holdHint?.delayNs == 1_000_000_000)
+        #expect(plan.tables(forApp: nil, mode: "service").holdHint == nil)
+    }
+
+    @Test func modifiersHeldAlone() {
+        var hold = ModifierHold()
+        let meh: Modifiers = [.shift, .control, .option]
+        #expect(hold.update(held: [.shift], keyPressed: false, target: meh) == .none)
+        #expect(hold.update(held: meh, keyPressed: false, target: meh) == .arm)
+        #expect(hold.update(held: meh, keyPressed: false, target: meh) == .none)
+        // A key: off, and not again until the modifiers change.
+        #expect(hold.update(held: meh, keyPressed: true, target: meh) == .disarm)
+        #expect(hold.update(held: meh, keyPressed: false, target: meh) == .none)
+        #expect(hold.update(held: [.shift, .control], keyPressed: false, target: meh) == .none)
+        #expect(hold.update(held: meh, keyPressed: false, target: meh) == .arm)
+        // One more modifier, or one let go.
+        #expect(hold.update(held: meh.union(.command), keyPressed: false, target: meh) == .disarm)
+        #expect(hold.update(held: meh, keyPressed: false, target: meh) == .arm)
+        #expect(hold.update(held: [], keyPressed: false, target: meh) == .disarm)
+        #expect(hold.update(held: meh, keyPressed: false, target: nil) == .none, "no hint")
+    }
+
     @Test func reopenAppsInLastWorkspace() throws {
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "accordion-padding = 5").get()).reopenAppsInLastWorkspace == false)
         #expect(try WMSettings(ConfigLoader.parse(WMConfig.self, "reopen-apps-in-last-workspace = true").get()).reopenAppsInLastWorkspace)

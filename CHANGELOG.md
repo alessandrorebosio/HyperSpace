@@ -7,6 +7,7 @@ section here, so a version's section is written before the version is released.
 
 ### New
 
+- **`show-bindings-on-hold = { modifiers = 'ctrl-alt-shift', delay-ms = 1000 }`** in wm.toml: holding those modifiers alone for the delay (Caps Lock too, when it holds them) shows the main bindings that use them, key and commands, in the panel of `show-mode-bindings`. A key, or letting go, hides it; the key still does what it's bound to.
 - **`list-windows` lists minimized, hidden and macOS full screen windows** with the workspace they come back to (`--workspace`, `--all`, `%{workspace}`), as AeroSpace does, and **`%{window-is-macos-fullscreen}`** in `--format` tells full screen ones apart.
 - **Reopen Apps in Last Workspace and Show Mode Bindings in the menu**: a click sets the option in wm.toml itself, which stays the one place it lives. Shown while wm.toml sets something (the window manager is on).
 

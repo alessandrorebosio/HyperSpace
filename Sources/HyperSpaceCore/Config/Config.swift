@@ -191,6 +191,14 @@ public struct WMConfig: Sendable, Equatable {
     public var showModeBindings = false
     /// HyperSpace's own: an app opened again goes back to the workspace it was last on.
     public var reopenAppsInLastWorkspace = false
+    /// HyperSpace's own: holding these modifiers alone shows the main bindings that use them.
+    public var showBindingsOnHold: BindingsOnHold?
+
+    public struct BindingsOnHold: Sendable, Equatable {
+        /// `ctrl-alt-shift`, in the notation of bindings.
+        public var modifiers: String
+        public var delayMs = 1000
+    }
 
     public init() {}
 }
@@ -420,6 +428,7 @@ extension WMConfig: Decodable {
         case detectMonitorInput = "detect-monitor-input"
         case showModeBindings = "show-mode-bindings"
         case reopenAppsInLastWorkspace = "reopen-apps-in-last-workspace"
+        case showBindingsOnHold = "show-bindings-on-hold"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -443,6 +452,7 @@ extension WMConfig: Decodable {
         detectMonitorInput = try c.decode(.detectMonitorInput, default: false)
         showModeBindings = try c.decode(.showModeBindings, default: false)
         reopenAppsInLastWorkspace = try c.decode(.reopenAppsInLastWorkspace, default: false)
+        showBindingsOnHold = try c.decodeIfPresent(BindingsOnHoldTable.self, forKey: .showBindingsOnHold)?.value
     }
 }
 
@@ -470,6 +480,21 @@ private struct ModeTable: Decodable {
     init(from decoder: any Decoder) throws {
         let c = try decoder.table(CodingKeys.self)
         bindings = try c.decode(.binding, default: [String: Commands]()).mapValues(\.list)
+    }
+}
+
+/// `{ modifiers = 'ctrl-alt-shift', delay-ms = 1000 }`.
+private struct BindingsOnHoldTable: Decodable {
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case modifiers
+        case delayMs = "delay-ms"
+    }
+    var value: WMConfig.BindingsOnHold
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.table(CodingKeys.self)
+        value = WMConfig.BindingsOnHold(modifiers: try c.decode(String.self, forKey: .modifiers),
+                                        delayMs: try c.decode(.delayMs, default: 1000))
     }
 }
 

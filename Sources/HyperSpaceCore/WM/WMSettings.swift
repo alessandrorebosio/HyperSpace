@@ -27,12 +27,23 @@ public struct WMSettings: Sendable, Equatable {
     /// An app opened again (no window left) goes back to the workspace it was last on,
     /// instead of joining the focused one.
     public var reopenAppsInLastWorkspace = false
+    /// `show-bindings-on-hold`: holding exactly these modifiers, and no key, for a while shows
+    /// the main bindings that use them.
+    public var bindingsOnHold: BindingsOnHold?
     /// Mode -> its bindings as written (notation, commands), sorted, for that list.
     public var bindingTexts: [String: [BindingText]] = [:]
     /// Mode -> binding notation -> script, for `trigger-binding` and `list-modes`.
     public var modes: [String: [String: WMScript]] = ["main": [:]]
     /// Mode -> hotkey table for the event tap.
     public var hotkeys: [String: OutputTable] = [:]
+
+    public struct BindingsOnHold: Sendable, Equatable {
+        public var hint: HoldHint
+        /// The modifiers as written, for the panel's title.
+        public var title: String
+        /// The main bindings with exactly these modifiers, by their key alone.
+        public var bindings: [BindingText]
+    }
 
     public struct BindingText: Sendable, Equatable {
         public var key: String
@@ -130,6 +141,24 @@ public struct WMSettings: Sendable, Equatable {
             bindingTexts[mode] = bindings.sorted { $0.key < $1.key }.map { BindingText(key: $0.key, commands: $0.value.joined(separator: "; ")) }
         }
         if modes["main"] == nil { modes["main"] = [:] }
+        if let hold = config.showBindingsOnHold {
+            let path = "show-bindings-on-hold"
+            var modifiers: Modifiers = []
+            for part in hold.modifiers.split(separator: "-").map(String.init) {
+                guard let modifier = WMKeys.modifiers[part] else {
+                    throw InvalidConfig(message: "\(path).modifiers: unknown modifier '\(part)'; use cmd, alt, ctrl, shift")
+                }
+                modifiers.insert(modifier)
+            }
+            guard !modifiers.isEmpty else { throw InvalidConfig(message: "\(path).modifiers: needs at least one modifier") }
+            guard (100...10_000).contains(hold.delayMs) else { throw InvalidConfig(message: "\(path).delay-ms: must be between 100 and 10000") }
+            let bindings = (config.modes["main"] ?? [:]).sorted { $0.key < $1.key }.compactMap { notation, commands -> BindingText? in
+                guard let combo = try? WMKeys.combo(notation, path: path), combo.modifiers == modifiers else { return nil }
+                return BindingText(key: String(notation.split(separator: "-").last ?? ""), commands: commands.joined(separator: "; "))
+            }
+            bindingsOnHold = BindingsOnHold(hint: HoldHint(modifiers: modifiers, delayNs: UInt64(hold.delayMs) * 1_000_000),
+                                            title: hold.modifiers, bindings: bindings)
+        }
         // Without persistent-workspaces, the workspaces named in bindings and the ones assigned
         // to a monitor stay alive.
         persistentWorkspaces = config.persistentWorkspaces ?? Array(Set(modes.values.flatMap(\.values).flatMap(\.commands).compactMap { command in

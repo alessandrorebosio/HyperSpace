@@ -59,6 +59,16 @@ struct FeatureTests {
         #expect(e.handle(code: ret, down: false, isRepeat: false, now: 150 * ms, tables: t) == .emit(.key(Combo(parsing: "return")!)))
     }
 
+    @Test func aHeldLayerKeyReportsItsModifiers() throws {
+        let t = try keyboard("[layer.return]\nalone = \"return\"\nhold = \"shift-ctrl-opt\"")
+        var e = KeyEngine()
+        #expect(e.layerModifiers(t).isEmpty)
+        _ = e.handle(code: ret, down: true, isRepeat: false, now: 0, tables: t)
+        #expect(e.layerModifiers(t) == [.shift, .control, .option])
+        _ = e.handle(code: ret, down: false, isRepeat: false, now: 10 * ms, tables: t)
+        #expect(e.layerModifiers(t).isEmpty)
+    }
+
     @Test func longHoldDecidesAtOnce() throws {
         let t = try keyboard("[layer.space]\nalone = \"space\"\ntap_timeout_ms = 200\nmap = { j = \"arrow.down\" }")
         var e = KeyEngine()

@@ -37,6 +37,9 @@ public final class InputTap: @unchecked Sendable {
     /// Pointer position for focus-follows-mouse, at most every 30 ms.
     private let mouseMoved: (@Sendable (CGPoint) -> Void)?
     private var lastMouseReport: UInt64 = 0
+    /// `show-bindings-on-hold`: true when the modifiers were held long enough, false when
+    /// the bindings shown must go.
+    private let holdHint: (@Sendable (Bool) -> Void)?
 
     // Input thread only.
     private var keys = KeyEngine()
@@ -44,14 +47,19 @@ public final class InputTap: @unchecked Sendable {
     private var navigation = NavigationSender()
     private var smooth = SmoothScroller()
     private var repeater: CFRunLoopTimer?
+    private var modifierHold = ModifierHold()
+    private var holdTimer: CFRunLoopTimer?
+    private var holdShown = false
     private var port: CFMachPort?
     private var runLoop: CFRunLoop?
 
     /// - Parameter perform: runs `.shell`, `.wm` and `.app` outputs; called on the input
     ///   thread, must not block.
     init(capsLock: CapsLockState, moveEvents: Bool, mouseMoved: (@Sendable (CGPoint) -> Void)? = nil,
-         displayKeys: (@Sendable (Int32, Bool, CGPoint) -> Bool)? = nil, perform: @escaping @Sendable (Output) -> Void) {
+         displayKeys: (@Sendable (Int32, Bool, CGPoint) -> Bool)? = nil, holdHint: (@Sendable (Bool) -> Void)? = nil,
+         perform: @escaping @Sendable (Output) -> Void) {
         self.capsLock = capsLock
+        self.holdHint = holdHint
         self.moveEvents = moveEvents
         self.displayKeys = displayKeys
         self.mouseMoved = mouseMoved
@@ -88,6 +96,7 @@ public final class InputTap: @unchecked Sendable {
         guard let runLoop, let port else { return }
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) { [self] in
             stopRepeat()
+            disarmHold()
             smooth.stop()
             CGEvent.tapEnable(tap: port, enable: false)
             CFMachPortInvalidate(port)
@@ -195,6 +204,8 @@ public final class InputTap: @unchecked Sendable {
         let decision = keys.handle(code: code, down: type == .keyDown, isRepeat: isRepeat,
                                    modifiers: InputTap.modifiers(event.flags),
                                    now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: tables)
+        let isLayerKey = tables.layers.contains { $0.trigger == code }
+        checkHold(InputTap.modifiers(event.flags), keyPressed: type == .keyDown && !isRepeat && !isLayerKey, tables: tables)
         // A Caps Lock LED that is on is the caps lock state: keep it from making capitals.
         if keys.isLayerHeld { event.flags.remove(.maskAlphaShift) }
         let pid = snapshot.frontmostPID
@@ -226,6 +237,39 @@ public final class InputTap: @unchecked Sendable {
         if let output = keys.modifier(code: code, down: event.flags.contains(mask),
                                       now: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), tables: snapshot.tables) {
             emit(output, pid: snapshot.frontmostPID, location: Post.cursor)
+        }
+        checkHold(InputTap.modifiers(event.flags), keyPressed: false, tables: snapshot.tables)
+    }
+
+    /// `show-bindings-on-hold`: the modifiers held, physically or by a layer key (Caps Lock
+    /// held as shift-ctrl-opt), are the hint's and nothing else was pressed: shown after the
+    /// delay. Any key, or a modifier let go, hides them.
+    private func checkHold(_ physical: Modifiers, keyPressed: Bool, tables: ActiveTables) {
+        guard holdHint != nil else { return }
+        let held = physical.union(keys.layerModifiers(tables)).subtracting(.fn)
+        switch modifierHold.update(held: held, keyPressed: keyPressed, target: tables.holdHint?.modifiers) {
+        case .arm:
+            guard let hint = tables.holdHint else { return }
+            let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + Double(hint.delayNs) / 1e9, 0, 0, 0) { [self] _ in
+                holdTimer = nil
+                holdShown = true
+                holdHint?(true)
+            }
+            CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, .commonModes)
+            holdTimer = timer
+        case .disarm:
+            disarmHold()
+        case .none:
+            break
+        }
+    }
+
+    private func disarmHold() {
+        if let holdTimer { CFRunLoopTimerInvalidate(holdTimer) }
+        holdTimer = nil
+        if holdShown {
+            holdShown = false
+            holdHint?(false)
         }
     }
 

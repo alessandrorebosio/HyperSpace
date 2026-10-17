@@ -374,6 +374,9 @@ public enum ConfigLoader {
     # An app opened again (no window of it left) goes back to the workspace it was last on,
     # instead of opening on the focused one. on-window-detected rules still win.
     # reopen-apps-in-last-workspace = false
+    # Holding these modifiers alone (or Caps Lock, when it holds them) shows the main
+    # bindings that use them, after delay-ms; a key or letting go hides them.
+    # show-bindings-on-hold = { modifiers = 'ctrl-alt-shift', delay-ms = 1000 }
 
     # Workspaces kept alive when empty; omitted = the ones named in bindings or assigned
     # to a monitor, which is usually what you want.

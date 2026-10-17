@@ -44,6 +44,11 @@ public struct KeyEngine: Sendable {
     /// True while a layer key is held.
     public var isLayerHeld: Bool { layer != nil }
 
+    /// The modifiers the held layer key adds (`hold = "shift-ctrl-opt"`), none without one.
+    public func layerModifiers(_ tables: ActiveTables) -> Modifiers {
+        layer.map { tables.layers[$0].hold } ?? []
+    }
+
     /// An output to perform before applying the decision just returned: the keys a permissive
     /// layer held back, once it turns out to be a hold. The tap reads it after every event.
     public private(set) var emitBefore: Output?

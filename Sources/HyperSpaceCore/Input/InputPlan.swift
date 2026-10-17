@@ -4,6 +4,8 @@ public struct InputPlan: Sendable, Equatable {
     public var mouse = MousePlan()
     /// Window manager hotkeys per binding mode (wm.toml `[mode.<name>.binding]`).
     public var hotkeys: [String: OutputTable] = [:]
+    /// wm.toml `show-bindings-on-hold`, in the main mode only.
+    public var holdHint: HoldHint?
 
     public var needsEventTap: Bool { keyboard.needsEventTap || mouse.needsEventTap || !hotkeys.isEmpty }
 
@@ -15,7 +17,11 @@ public struct InputPlan: Sendable, Equatable {
     public init(_ config: Config) throws(InvalidConfig) {
         keyboard = try KeyboardPlan(config.keyboard)
         mouse = try MousePlan(config.mouse)
-        if !config.wm.isEmpty { hotkeys = try WMSettings(config.wm).hotkeys }
+        if !config.wm.isEmpty {
+            let wm = try WMSettings(config.wm)
+            hotkeys = wm.hotkeys
+            holdHint = wm.bindingsOnHold?.hint
+        }
     }
 
     /// The tables the event tap uses while `bundleID` is the frontmost app and `mode` is the
@@ -36,7 +42,8 @@ public struct InputPlan: Sendable, Equatable {
             buttons: pick(mouse.apps, mouse.buttons),
             holds: mouse.holds,
             scroll: mouse.scroll,
-            navigation: mouse.navigation
+            navigation: mouse.navigation,
+            holdHint: mode == "main" ? holdHint : nil
         )
     }
 }
@@ -57,4 +64,5 @@ public struct ActiveTables: Sendable, Equatable {
     public var holds: [HoldPlan?] = []
     public var scroll: ScrollPlan?
     public var navigation = NavigationRules()
+    public var holdHint: HoldHint?
 }
