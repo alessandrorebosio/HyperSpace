@@ -5,6 +5,8 @@ section here, so a version's section is written before the version is released.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-17
+
 ### New
 
 - **`show-bindings-on-hold = { modifiers = 'ctrl-alt-shift', delay-ms = 1000 }`** in wm.toml: holding those modifiers alone for the delay (Caps Lock too, when it holds them) shows the main bindings that use them, key and commands, in the panel of `show-mode-bindings`. A key, or letting go, hides it; the key still does what it's bound to.
@@ -115,7 +117,8 @@ First release: keyboard remapping (Caps Lock layer), mouse remapping (Logitech i
 - **Window manager**: AeroSpace's config (wm.toml) and commands (hsctl), layout kept across restarts, native tabs, floating dialogs, multiple displays with each display's workspace in the menu bar.
 - **hsctl**: status, enable/disable, reload, and every window manager command.
 
-[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.6.0...develop
+[Unreleased]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.7.0...develop
+[0.7.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/alessandrorebosio/HyperSpace/compare/v0.3.0...v0.4.0
