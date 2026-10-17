@@ -48,6 +48,8 @@ Three optional files in `~/.config/hyperspace/` (or `$XDG_CONFIG_HOME/hyperspace
 errors show up in the menu and in `hsctl status`, per file, and a broken file keeps its
 last good settings.
 
+How to use each feature, with every option: [docs/GUIDE.md](docs/GUIDE.md).
+
 ## hsctl
 
 ```sh
