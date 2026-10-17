@@ -59,6 +59,33 @@ extension WindowManager {
         }
     }
 
+    private var setAsideURL: URL {
+        system.layoutURL.deletingLastPathComponent().appending(path: "set-aside.json")
+    }
+
+    /// The windows set aside when the window manager last stopped, the ones still open.
+    func loadSetAside() -> [WindowID: SetAside] {
+        Self.disk.sync {}
+        let saved = (try? Data(contentsOf: setAsideURL)).flatMap { try? JSONDecoder().decode([WindowID: SetAside].self, from: $0) } ?? [:]
+        guard !saved.isEmpty else { return [:] }
+        let open = system.windowServer(Array(saved.keys))
+        return saved.filter { open[$0.key] != nil }
+    }
+
+    /// Written when the window manager stops, with the layout.
+    func saveSetAside() {
+        guard let data = try? JSONEncoder().encode(setAside) else { return }
+        let url = setAsideURL, log = log
+        Self.disk.async {
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                log.error("saving the windows set aside failed: \(error)")
+            }
+        }
+    }
+
     private var macInputsURL: URL {
         system.layoutURL.deletingLastPathComponent().appending(path: "monitor-inputs.json")
     }

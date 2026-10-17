@@ -209,6 +209,7 @@ Optimizations over AeroSpace:
 - **Attribute-level diffs**: a window that only moves gets a position call, one that only resizes a size call; frames are diffed against the last requested frame, so a window refusing a size (minimum size) isn't asked again on every change.
 - **Coalescing**: per window, a queued frame superseded by a newer command is skipped.
 - **Native tabs**: with macOS tabs (Finder, Safari, Terminal) every tab is a window; a window with a tab bar on the exact frame of a managed window of the same app joins that window's tile instead of splitting the screen. Closing the shown tab promotes another; dragging a tab out makes it a window again.
+- **Windows set aside**: a minimized window, a window in macOS full screen (its own Space) and the windows of a hidden app leave the layout; their tile closes and nothing moves or parks them. Each keeps its spot (workspace, sibling window, weight, `fullscreen`) and comes back there, even after a restart (`set-aside.json`). While a full screen Space is shown, focus there doesn't switch workspaces.
 - **Window index**: the model keeps window → workspace in a dictionary instead of searching every tree.
 - **Diff-based layout**: after each command only the windows whose frame actually changed get an AX `setFrame`. Unchanged windows aren't touched.
 - **Batched workspace switch**: all hide/show moves are computed first, then sent as one batch per app, each on the app's own queue, so apps move concurrently and a slow one holds up only its own windows.

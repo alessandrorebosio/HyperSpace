@@ -39,13 +39,16 @@ public struct WMScratchpadHome: Codable, Sendable, Equatable {
 
 /// Where a window that leaves the model for a while (minimized, its app hidden) was, to
 /// put it back there: its workspace, and next to which sibling window, at which weight.
-public struct WMSpot: Sendable, Equatable {
+public struct WMSpot: Codable, Sendable, Equatable {
     public var workspace: String
     public var floating: Bool
     var anchor: WindowID?
     /// After the anchor, else before it.
     var after = true
     var weight = 1.0
+    /// Shown over the whole workspace (`fullscreen`), with or without outer gaps.
+    var fullscreen = false
+    var withoutGaps = false
 }
 
 public struct WMWindowInfo: Sendable, Equatable {
@@ -223,6 +226,8 @@ public final class WMModel {
         var spot = WMSpot(workspace: from.name, floating: from.floating.contains(window))
         guard let node = from.root.find(window), let siblings = node.parent?.children, let index = node.index else { return spot }
         spot.weight = node.weight
+        spot.fullscreen = from.fullscreen == window
+        spot.withoutGaps = from.fullscreenWithoutGaps
         if index > 0, let before = siblings[index - 1].window {
             spot.anchor = before
         } else if index + 1 < siblings.count, let next = siblings[index + 1].window {
@@ -249,6 +254,10 @@ public final class WMModel {
             target.root.normalize()
         } else {
             insertTiled(info.id, into: target, nextTo: info.id) // no anchor: at the end
+        }
+        if spot.fullscreen, !spot.floating, target.fullscreen == nil {
+            target.fullscreen = info.id
+            target.fullscreenWithoutGaps = spot.withoutGaps
         }
     }
 

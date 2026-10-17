@@ -61,7 +61,9 @@ extension WindowManager {
     }
 
     private func setHidden(_ pid: pid_t, _ hidden: Bool) {
-        for (id, entry) in records where entry.app.pid == pid && tabs[id] == nil { setManaged(id, !hidden) }
+        for (id, entry) in records where entry.app.pid == pid && tabs[id] == nil && !nativeFullscreen.contains(id) {
+            setManaged(id, !hidden)
+        }
         if !hidden { reconcileTabs(pid) }
         apply()
     }
@@ -101,11 +103,30 @@ extension WindowManager {
             apply()
             // Restored from the Dock onto its workspace: follow it there.
             if !isMinimized { followIfFrontmost(id, of: app) }
+        case let .nativeFullscreen(id, on):
+            setNativeFullscreen(id, on, of: app)
         case let .moved(id):
             moved(id)
         case let .titleChanged(id, title):
             records[id]?.record.title = title
         }
+    }
+
+    /// macOS full screen puts the window on a Space of its own: it leaves the layout like a
+    /// minimized window (its tile closes, nothing moves or parks it) and comes back to its
+    /// spot when it leaves full screen.
+    private func setNativeFullscreen(_ id: WindowID, _ on: Bool, of app: WindowApp) {
+        guard records[id] != nil, tabs[id] == nil,
+              on ? nativeFullscreen.insert(id).inserted : nativeFullscreen.remove(id) != nil else { return }
+        // Its frame on the way back is macOS's, not the one we set last.
+        if !on {
+            targets[id] = nil
+            frames[id] = nil
+        }
+        guard !system.isHidden(app.pid) else { return } // comes back with the app
+        setManaged(id, !on)
+        apply()
+        if !on { followIfFrontmost(id, of: app) }
     }
 
     /// A window just managed, of the app in front, is on another workspace: show it.
@@ -153,6 +174,7 @@ extension WindowManager {
         for record in new {
             records[record.id] = (app, record)
             frames[record.id] = record.frame
+            if record.fullscreen { nativeFullscreen.insert(record.id) }
         }
         guard managed, let model else { return }
         // Opened again (no window left before these, minimized ones included): back to the
@@ -164,7 +186,13 @@ extension WindowManager {
         reconcileTabs(app.pid, new: ids)
         // Windows an on-window-detected rule sent to a workspace, and which one.
         var placed: [WindowID: String] = [:]
-        for record in new where tabs[record.id] == nil {
+        for record in new where tabs[record.id] == nil && !record.fullscreen {
+            // Set aside when the window manager last stopped (minimized): back to its spot.
+            if let aside = setAside.removeValue(forKey: record.id), aside.app == app.bundleID {
+                model.add(WMWindowInfo(id: record.id, floating: record.floating), at: aside.spot)
+                publishWindowDetected(record.id)
+                continue
+            }
             manage(record.id)
             if let reopened {
                 _ = try? model.run(.moveNodeToWorkspace(.named(reopened), focusFollows: false, wrapAround: false,
@@ -237,13 +265,13 @@ extension WindowManager {
     private func setManaged(_ id: WindowID, _ managed: Bool) {
         guard let model else { return }
         if managed {
-            if let spot = setAside.removeValue(forKey: id), let record = records[id]?.record {
-                model.add(WMWindowInfo(id: id, floating: record.floating), at: spot)
+            if let aside = setAside.removeValue(forKey: id), let entry = records[id], aside.app == entry.app.bundleID {
+                model.add(WMWindowInfo(id: id, floating: entry.record.floating), at: aside.spot)
             } else {
                 manage(id)
             }
         } else {
-            if let spot = model.spot(of: id) { setAside[id] = spot }
+            if let spot = model.spot(of: id) { setAside[id] = SetAside(app: records[id]?.app.bundleID, spot: spot) }
             model.remove(id)
         }
     }
@@ -275,6 +303,7 @@ extension WindowManager {
         setAt[id] = nil
         parked[id] = nil
         setAside[id] = nil
+        nativeFullscreen.remove(id)
         snapChecks.removeValue(forKey: id)?.cancel()
     }
 
@@ -296,6 +325,8 @@ extension WindowManager {
             } else if let window = id, self.shownTab[window] != nil {
                 self.shownTab[window] = nil
             }
+            // On its own full screen Space: no workspace to show.
+            if let window = id, self.nativeFullscreen.contains(window) { return }
             // Still nothing we manage: one of the app's managed windows will do.
             let known = id.flatMap { model.windows[$0] != nil ? $0 : nil }
                 ?? self.records.filter { $0.value.app.pid == pid && model.windows[$0.key] != nil }.map(\.key).min()
@@ -329,7 +360,7 @@ extension WindowManager {
     /// A window moved or resized. Floating: remember its frame. Tiled: if the user dragged
     /// it, put it back once the drag is over (our own moves match the known frame).
     private func moved(_ id: WindowID) {
-        guard parked[id] == nil, let app = records[id]?.app else { return }
+        guard parked[id] == nil, !nativeFullscreen.contains(id), let app = records[id]?.app else { return }
         snapChecks.removeValue(forKey: id)?.cancel()
         snapChecks[id] = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))

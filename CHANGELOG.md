@@ -15,6 +15,9 @@ section here, so a version's section is written before the version is released.
 
 ### Fixed
 
+- **macOS full screen**: a window put in full screen (the green button, `macos-native-fullscreen`) leaves the layout, so the other windows take its room and HyperSpace no longer tries to put it back in its tile or park it on a workspace switch. Leaving full screen, it comes back to its spot. Going to its Space no longer switches to the workspace of another window of the app.
+- **A tile shown with `fullscreen` stays so** after being minimized or hidden.
+- **Minimized and hidden windows keep their spot across a restart** of HyperSpace (an update, Enabled off and on).
 - **A minimized window, or a window of an app hidden with ⌘H, comes back to its workspace**, no longer to the focused one, and to its place there: beside the same window, at the same size. Restored from the Dock, focus follows it there.
 - **With `reopen-apps-in-last-workspace`, an app with only minimized windows isn't opened again**: a new window of it joins the focused workspace.
 - **Apps uninstalled are forgotten** from app-workspaces.json at launch.

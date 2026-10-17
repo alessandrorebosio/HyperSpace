@@ -8,6 +8,8 @@ struct WindowRecord: Sendable, Equatable {
     let frame: CGRect?
     /// Kept up to date through title events, for rules and `list-windows`.
     var title: String
+    /// In macOS full screen (its own Space) when read.
+    var fullscreen = false
 }
 
 /// What an app reports about its windows, already read: the window manager never waits
@@ -17,6 +19,8 @@ enum WindowEvent: Sendable {
     case destroyed(WindowID)
     case focusChanged
     case minimized(WindowID, Bool)
+    /// Entered or left macOS full screen.
+    case nativeFullscreen(WindowID, Bool)
     case moved(WindowID)
     case titleChanged(WindowID, String)
 }

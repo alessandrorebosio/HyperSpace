@@ -64,8 +64,16 @@ public final class WindowManager {
     var verifying: Task<Void, Never>?
     /// Windows parked off-screen, with the frame to give back to floating ones.
     var parked: [WindowID: CGRect] = [:]
-    /// Minimized windows and windows of hidden apps -> where they were, where they come back.
-    var setAside: [WindowID: WMSpot] = [:]
+    /// Minimized windows, windows in macOS full screen and windows of hidden apps -> where
+    /// they were, where they come back. Kept across restarts.
+    var setAside: [WindowID: SetAside] = [:]
+    struct SetAside: Codable, Equatable {
+        /// Bundle id: a window id can be another app's after a reboot.
+        var app: String?
+        var spot: WMSpot
+    }
+    /// Windows in macOS full screen: on a Space of their own, out of the layout.
+    var nativeFullscreen: Set<WindowID> = []
     var snapChecks: [WindowID: Task<Void, Never>] = [:]
     /// Pending `refresh`es, by app.
     var refreshes: [pid_t: Task<Void, Never>] = [:]
@@ -170,6 +178,7 @@ public final class WindowManager {
         model = WMModel(monitors: shownMonitors(), settings: settings)
         savedLayout = loadLayout()
         appWorkspaces = loadAppWorkspaces()
+        setAside = loadSetAside()
         // Apps uninstalled since are forgotten, or the file would only grow.
         let installed = appWorkspaces.filter { system.isInstalled(bundleID: $0.key) }
         if installed.count < appWorkspaces.count {
@@ -189,6 +198,7 @@ public final class WindowManager {
     public func stop() {
         guard let current = model else { return }
         if !isStartingUp { saveLayout(current) }
+        saveSetAside()
         for (id, frame) in parked { records[id]?.app.setFrames([(id, frame, frames[id])]) }
         // Frames are set on the apps' queues: on quit, the process would end before they
         // are, leaving windows off screen (and the next start would take them for windows
@@ -215,6 +225,7 @@ public final class WindowManager {
         resent = []
         parked = [:]
         setAside = [:]
+        nativeFullscreen = []
         tabs = [:]
         shownTab = [:]
         savedLayout = nil

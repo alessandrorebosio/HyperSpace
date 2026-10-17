@@ -142,7 +142,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         return errors
     }
 
-    /// Sets a boolean of wm.toml in the file itself, then reloads.
+    /// Sets a boolean of wm.toml in the file itself; the config watcher reloads it.
     func setWMOption(_ key: String, _ value: Bool) {
         let url = ConfigLoader.url(.wm, in: configDirectory)
         do {
@@ -151,7 +151,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         } catch {
             log.error("cannot set \(key) in wm.toml: \(error)")
         }
-        reloadConfig()
     }
 
     /// Creates any missing file from its template and opens all three.

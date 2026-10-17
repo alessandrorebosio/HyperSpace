@@ -24,6 +24,8 @@ final class AXApp: WindowApp, @unchecked Sendable {
     private var elements: [WindowID: AXUIElement] = [:]
     /// Windows that aren't to be managed, so `windows(_:)` doesn't read them every time.
     private var ignored: Set<WindowID> = []
+    /// Windows in macOS full screen (their own Space), as last read.
+    private var fullscreen: Set<WindowID> = []
     /// Whether the app has "enhanced UI" on, read at most every few seconds: one call less
     /// to a busy app on every layout change.
     private var enhancedUI: (on: Bool, at: DispatchTime)?
@@ -130,7 +132,10 @@ final class AXApp: WindowApp, @unchecked Sendable {
                 AXObserverAddNotification(observer, window, notification as CFString, refcon)
             }
         }
-        return WindowRecord(id: id, floating: floating, frame: AX.frame(window), title: AX.string(window, kAXTitleAttribute) ?? "")
+        let isFullscreen = AX.bool(window, "AXFullScreen") == true
+        if isFullscreen { fullscreen.insert(id) }
+        return WindowRecord(id: id, floating: floating, frame: AX.frame(window), title: AX.string(window, kAXTitleAttribute) ?? "",
+                            fullscreen: isFullscreen)
     }
 
     @MainActor
@@ -144,7 +149,10 @@ final class AXApp: WindowApp, @unchecked Sendable {
         case kAXFocusedWindowChangedNotification:
             events(.focusChanged)
         case kAXUIElementDestroyedNotification where id != 0:
-            queue.async { [self] in elements[id] = nil }
+            queue.async { [self] in
+                elements[id] = nil
+                fullscreen.remove(id)
+            }
             events(.destroyed(id))
         case kAXWindowMiniaturizedNotification where id != 0:
             events(.minimized(id, true))
@@ -152,6 +160,12 @@ final class AXApp: WindowApp, @unchecked Sendable {
             events(.minimized(id, false))
         case kAXWindowMovedNotification where id != 0, kAXWindowResizedNotification where id != 0:
             events(.moved(id))
+            // Entering or leaving macOS full screen resizes the window.
+            queue.async { [self] in
+                guard let window = elements[id], let on = AX.bool(window, "AXFullScreen"),
+                      on ? fullscreen.insert(id).inserted : fullscreen.remove(id) != nil else { return }
+                onMain { [weak self] in self?.events?(.nativeFullscreen(id, on)) }
+            }
         case kAXTitleChangedNotification where id != 0:
             queue.async { [self] in
                 let title = elements[id].flatMap { AX.string($0, kAXTitleAttribute) } ?? ""

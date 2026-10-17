@@ -393,6 +393,89 @@ struct WindowManagerTests {
         #expect(app.frames[2].map { $0.minX == narrowed?.maxX } == true)
     }
 
+    @Test func aWindowInMacOSFullScreenLeavesTheLayoutAndComesBack() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        defer { wm.stop() }
+        #expect(app.frames[1] == Self.left && app.frames[2] == Self.right)
+        app.send(.nativeFullscreen(1, true))
+        #expect(app.frames[2] == Self.full, "its tile closes")
+        let onItsSpace = CGRect(x: 0, y: 0, width: 1000, height: 600)
+        app.frames[1] = onItsSpace
+        // Not parked on a workspace switch, not put back in a tile.
+        #expect(wm.run("workspace 2") == nil)
+        #expect(app.frames[1] == onItsSpace)
+        #expect(wm.run("workspace 1") == nil)
+
+        app.send(.nativeFullscreen(1, false))
+        #expect(app.frames[1] == Self.left && app.frames[2] == Self.right)
+    }
+
+    @Test func focusOnAFullScreenSpaceKeepsTheWorkspace() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let system = FakeSystem(screens: [Self.main], apps: [app])
+        let wm = started(system)
+        defer { wm.stop() }
+        #expect(wm.run("move-node-to-workspace 3 --window-id 2") == nil)
+        app.send(.nativeFullscreen(1, true))
+        // Its Space shown: the app's other window must not take us to workspace 3.
+        app.focused = 1
+        system.send(.activated(10))
+        #expect(wm.focusedWorkspace == "1")
+    }
+
+    @Test func aWindowAlreadyInMacOSFullScreenIsNotTiled() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1),
+                                                            WindowRecord(id: 2, floating: false, frame: Self.full, title: "", fullscreen: true)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        defer { wm.stop() }
+        #expect(app.frames[1] == Self.full)
+        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "1")
+        app.send(.nativeFullscreen(2, false))
+        #expect(wm.run(words: ["list-windows", "--all", "--count"]).output == "2")
+    }
+
+    @Test func aFullscreenTileStaysFullscreenThroughAMinimize() {
+        let app = FakeApp(pid: 10, bundleID: "a", windows: [window(1), window(2)])
+        let wm = started(FakeSystem(screens: [Self.main], apps: [app]))
+        defer { wm.stop() }
+        #expect(wm.run("fullscreen on --window-id 1") == nil)
+        #expect(app.frames[1] == Self.full)
+        app.send(.minimized(1, true))
+        app.send(.minimized(1, false))
+        #expect(app.frames[1] == Self.full)
+        #expect(wm.run(words: ["list-windows", "--all", "--format", "%{window-id} %{window-is-fullscreen}"]).output.contains("1 true"))
+    }
+
+    @Test func aMinimizedWindowKeepsItsSpotAcrossARestart() {
+        let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
+        let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
+        let system = FakeSystem(screens: [Self.main], apps: [other, app])
+        let wm = started(system)
+        #expect(wm.run("move-node-to-workspace 7 --window-id 2") == nil)
+        app.send(.minimized(2, true))
+        wm.stop()
+
+        // Minimized windows aren't reported at launch: found later, when restored.
+        app.initial = []
+        let restarted = started(system)
+        defer { restarted.stop() }
+        app.create(2, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
+        #expect(restarted.run(words: ["list-windows", "--workspace", "7", "--format", "%{window-id}"]).output == "2")
+
+        // Not for another app's window with the same id (after a reboot).
+        app.send(.minimized(2, true))
+        restarted.stop()
+        let third = started(system)
+        defer { third.stop() }
+        #expect(third.setAside[2] != nil)
+        let stranger = FakeApp(pid: 12, bundleID: "stranger")
+        system.apps[12] = stranger
+        system.send(.launched(12))
+        stranger.create(2, frame: CGRect(x: 10, y: 10, width: 100, height: 100))
+        #expect(third.run(words: ["list-windows", "--workspace", "1", "--format", "%{window-id}"]).output.contains("2"))
+    }
+
     @Test func aMinimizedWindowDoesNotMakeAnAppReopened() {
         let other = FakeApp(pid: 10, bundleID: "other", windows: [window(1)])
         let app = FakeApp(pid: 11, bundleID: "app", windows: [window(2)])
