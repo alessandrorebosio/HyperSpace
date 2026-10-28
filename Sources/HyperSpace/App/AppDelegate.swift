@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var eventTap = EventTap(drag: DragController(windowManager: windowManager)) { [weak self] action in
         self?.runner.run(action)
     }
-    private lazy var remapWindow = RemapWindowController(remapper: remapper)
+    private lazy var settingsWindow = SettingsWindowController(remapper: remapper, eventTap: eventTap)
     private var statusMenu: StatusMenu!
     private var permissionTimer: Timer?
     private var trusted = false
@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenu(host: StatusMenu.Host(
-            openRemapper: { [unowned self] in remapWindow.show() },
+            openSettings: { [unowned self] in settingsWindow.show() },
             openConfig: { [unowned self] in store.openInEditor() },
             reloadConfig: { [unowned self] in store.reload() }
         ))

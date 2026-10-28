@@ -27,6 +27,7 @@ final class ActionRunner {
         case .shell(let command): shell(command)
         case .sendKey(let combo): KeyEmitter.post(combo)
         case .reload: reload()
+        case .none: break
         }
     }
 

@@ -237,6 +237,12 @@ struct Modifiers: OptionSet, Hashable {
         }
     }
 
+    /// Config text, e.g. "ctrl+alt".
+    var configText: String {
+        [(Modifiers.ctrl, "ctrl"), (.alt, "alt"), (.shift, "shift"), (.cmd, "cmd")]
+            .filter { contains($0.0) }.map(\.1).joined(separator: "+")
+    }
+
     /// ⌃⌥⇧⌘ in macOS menu order.
     var symbols: String {
         (contains(.ctrl) ? "⌃" : "") + (contains(.alt) ? "⌥" : "") + (contains(.shift) ? "⇧" : "") + (contains(.cmd) ? "⌘" : "")

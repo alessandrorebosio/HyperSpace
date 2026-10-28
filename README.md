@@ -64,7 +64,7 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 
 #### Rimappature (`remap`)
 
-Il modo più comodo è la finestra **Keyboard Mapping…** (menu bar, ⌘,): clicchi il campo, premi il tasto
+Il modo più comodo è **Settings… → Keyboard** (menu bar, ⌘,): clicchi il campo, premi il tasto
 fisico, poi scegli la destinazione con **Press Keys…** premendo quello che vuoi ottenere: un tasto,
 una combinazione con tasto (tieni ⌘ e premi Spazio → ⌘ Space) o solo modificatori (tieni ⇧⌃⌥ insieme e
 rilascia → ⌃⌥⇧). In alternativa c'è l'elenco di tutti i tasti. Infine scegli su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
@@ -126,11 +126,16 @@ firmware e non arriva al Mac. I tasti multimediali e `f21`–`f24` non generano 
 si possono rimappare ma non usare nelle `bindings`.
 
 ### Mouse
+
+Dalla finestra **Settings… → Mouse**: interruttore per invertire lo scroll della rotellina e mappatura dei tasti.
+**Add Button**, clicca il tasto del mouse sopra la finestra (tenendo premuti dei modificatori se vuoi che la
+mappatura valga solo con quelli), poi premi la combinazione che deve inviare (es. ⌘ e `[` insieme), oppure
+scegli **Disable Button**.
 | Chiave | Significato |
 |---|---|
 | `reverseScroll` | Inverte lo scroll **solo delle rotelline** (trackpad e Magic Mouse restano "naturali"). |
 | `dragModifier` | Modificatori + trascinamento sinistro = sposta finestra; + destro = ridimensiona. Su una finestra in tiling: rilasciarla su un'altra le scambia, il resize sposta la divisione master/stack. |
-| `buttons` | Tasto mouse (2 = centrale, 3 = indietro, 4 = avanti, …) con `modifiers` opzionali → azione. |
+| `buttons` | Tasto mouse (2 = centrale, 3 = indietro, 4 = avanti, …) con `modifiers` opzionali → azione (`none` lo disattiva). |
 
 ### Tiling
 Layout per schermo: `tall` (master a sinistra), `wide` (master in alto), `columns`, `monocle`.
@@ -153,6 +158,7 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 | `shell <comando>` | Esegue un comando con `/bin/sh -c` |
 | `key <combo>` | Invia una combinazione di tasti (es. `key cmd+shift+4`) |
 | `reload` | Ricarica la config |
+| `none` | Non fa nulla: disattiva il tasto o il pulsante a cui è legata |
 
 ## Architettura
 

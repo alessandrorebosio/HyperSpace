@@ -4,7 +4,7 @@ import ServiceManagement
 /// Menu bar item. The menu is rebuilt lazily only when it is opened.
 final class StatusMenu: NSObject, NSMenuDelegate {
     struct Host {
-        var openRemapper: () -> Void
+        var openSettings: () -> Void
         var openConfig: () -> Void
         var reloadConfig: () -> Void
     }
@@ -41,9 +41,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        let mapping = ClosureMenuItem("Keyboard Mapping…") { [host] in host.openRemapper() }
-        mapping.keyEquivalent = ","
-        menu.addItem(mapping)
+        let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
+        settings.keyEquivalent = ","
+        menu.addItem(settings)
         menu.addItem(ClosureMenuItem("Edit Config…") { [host] in host.openConfig() })
         menu.addItem(ClosureMenuItem("Reload Config") { [host] in host.reloadConfig() })
 

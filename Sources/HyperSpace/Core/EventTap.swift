@@ -25,6 +25,8 @@ final class EventTap {
     private var heldModifiers: Modifiers = []
     private var swallowedKeys = [Bool](repeating: false, count: 128)
     private var swallowedButtons = [Bool](repeating: false, count: 32)
+    /// Set while the settings window captures a mouse button: buttons reach the app unmapped.
+    private var buttonsSuspended = false
     private var dragMode: DragMode?
 
     init(drag: DragController, onAction: @escaping (Action) -> Void) {
@@ -55,6 +57,14 @@ final class EventTap {
             for i in swallowedButtons.indices { swallowedButtons[i] = false }
             let newMask = newConfig.eventMask
             if newMask != mask || (tap == nil && newMask != 0) { installTap(mask: newMask) }
+        }
+        CFRunLoopWakeUp(runLoop)
+    }
+
+    func setButtonsSuspended(_ suspended: Bool) {
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+            buttonsSuspended = suspended
+            for i in swallowedButtons.indices { swallowedButtons[i] = false }
         }
         CFRunLoopWakeUp(runLoop)
     }
@@ -179,7 +189,7 @@ final class EventTap {
 
     private func handleButton(_ event: CGEvent, down: Bool) -> Bool {
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
-        guard button < 32 else { return false }
+        guard button < 32, !buttonsSuspended else { return false }
         if down {
             let index = config.buttonTable[TapConfig.slot(button, modifiers(of: event))]
             guard index >= 0 else { return false }

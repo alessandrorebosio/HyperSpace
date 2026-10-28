@@ -25,6 +25,8 @@ enum Action {
     case shell(String)
     case sendKey(KeyCombo)
     case reload
+    /// Does nothing: binding it disables a mouse button or key.
+    case none
 
     static func parse(_ text: String) throws -> Action {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -61,6 +63,7 @@ enum Action {
         case "shell": return .shell(try nonEmpty())
         case "key": return .sendKey(try KeyCombo.parse(try nonEmpty()))
         case "reload": return .reload
+        case "none": return .none
         default: throw ConfigError("unknown action '\(text)'")
         }
     }
