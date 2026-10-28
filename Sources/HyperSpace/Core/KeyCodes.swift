@@ -31,11 +31,6 @@ struct KeyInfo {
 }
 
 enum KeyCodes {
-    /// F18 is the carrier for the hyper key: the hyper key is remapped to it at HID level,
-    /// then the event tap turns it into cmd+alt+ctrl+shift while held.
-    static let f18: UInt16 = 0x4F
-    static let f18HID: UInt64 = keyboard(0x6D)
-
     /// A name from the table, or a raw HID usage for anything else:
     /// "0x39" (keyboard page) or "0xC000000E2" (any page, `page << 32 | usage`).
     static func lookup(_ name: String) -> Key? {
@@ -229,6 +224,22 @@ struct Modifiers: OptionSet, Hashable {
         case "meh": return [.alt, .ctrl, .shift]
         default: return nil
         }
+    }
+
+    /// The modifier a physical modifier key produces ("left_shift" → .shift).
+    static func modifierKey(_ name: String) -> Modifiers? {
+        switch name.lowercased() {
+        case "left_command", "right_command", "left_cmd", "right_cmd": return .cmd
+        case "left_option", "right_option", "left_alt", "right_alt": return .alt
+        case "left_control", "right_control": return .ctrl
+        case "left_shift", "right_shift": return .shift
+        default: return nil
+        }
+    }
+
+    /// ⌃⌥⇧⌘ in macOS menu order.
+    var symbols: String {
+        (contains(.ctrl) ? "⌃" : "") + (contains(.alt) ? "⌥" : "") + (contains(.shift) ? "⇧" : "") + (contains(.cmd) ? "⌘" : "")
     }
 
     /// Parses a modifier-only list such as "ctrl+alt". Empty string means no modifiers.

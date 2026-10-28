@@ -4,13 +4,12 @@ import ServiceManagement
 /// Menu bar item. The menu is rebuilt lazily only when it is opened.
 final class StatusMenu: NSObject, NSMenuDelegate {
     struct Host {
-        var tilingEnabled: () -> Bool
-        var currentLayout: () -> LayoutKind
-        var perform: (Action) -> Void
-        var openConfig: () -> Void
         var openRemapper: () -> Void
+        var openConfig: () -> Void
+        var reloadConfig: () -> Void
     }
 
+    /// Shown at the top of the menu (missing permission, config error).
     var problem: String? {
         didSet { updateIcon() }
     }
@@ -38,37 +37,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         if let problem {
-            let warning = NSMenuItem(title: problem, action: nil, keyEquivalent: "")
-            warning.isEnabled = false
-            menu.addItem(warning)
+            menu.addItem(ClosureMenuItem("⚠︎ \(problem)") { Permissions.openSettings() })
             menu.addItem(.separator())
         }
 
-        let remap = ClosureMenuItem("Keyboard Remapping…") { [host] in host.openRemapper() }
-        remap.keyEquivalent = ","
-        menu.addItem(remap)
-        menu.addItem(.separator())
-
-        let tiling = ClosureMenuItem("Tiling") { [host] in host.perform(.toggleTiling) }
-        tiling.state = host.tilingEnabled() ? .on : .off
-        menu.addItem(tiling)
-
-        let layouts = NSMenu()
-        let current = host.currentLayout()
-        for kind in LayoutKind.allCases {
-            let entry = ClosureMenuItem(kind.rawValue.capitalized) { [host] in host.perform(.setLayout(kind)) }
-            entry.state = kind == current ? .on : .off
-            layouts.addItem(entry)
-        }
-        let layoutItem = NSMenuItem(title: "Layout", action: nil, keyEquivalent: "")
-        layoutItem.submenu = layouts
-        menu.addItem(layoutItem)
-        menu.addItem(ClosureMenuItem("Retile Now") { [host] in host.perform(.retile) })
-
-        menu.addItem(.separator())
+        let mapping = ClosureMenuItem("Keyboard Mapping…") { [host] in host.openRemapper() }
+        mapping.keyEquivalent = ","
+        menu.addItem(mapping)
         menu.addItem(ClosureMenuItem("Edit Config…") { [host] in host.openConfig() })
-        menu.addItem(ClosureMenuItem("Reload Config") { [host] in host.perform(.reload) })
-        menu.addItem(ClosureMenuItem("Accessibility Settings…") { Permissions.openSettings() })
+        menu.addItem(ClosureMenuItem("Reload Config") { [host] in host.reloadConfig() })
 
         let login = ClosureMenuItem("Launch at Login") { Self.toggleLaunchAtLogin() }
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off

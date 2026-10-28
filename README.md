@@ -18,14 +18,12 @@ make install    # copia in /Applications
 
 Al primo avvio macOS chiede il permesso di Accessibilità; HyperSpace parte da solo appena viene concesso.
 
-> **Firma stabile.** Con la firma ad-hoc (`-`) ogni rebuild cambia la firma e macOS invalida il permesso
-> di Accessibilità (va rimosso e riaggiunto in Impostazioni). Per lo sviluppo crea un certificato
-> self-signed "Code Signing" in *Accesso Portachiavi → Assistente Certificato → Crea un certificato*
-> (es. `HyperSpace Dev`) e builda con:
->
-> ```bash
-> make app SIGN_IDENTITY="HyperSpace Dev"
-> ```
+> **Firma stabile.** macOS lega il permesso di Accessibilità alla firma. Con la firma ad-hoc (`-`) la
+> firma è l'hash del binario e cambia a ogni rebuild, quindi il permesso va rimosso e riaggiunto ogni volta
+> (in Impostazioni la voce "HyperSpace" resta accesa ma si riferisce alla build vecchia).
+> Crea una volta un certificato self-signed: *Accesso Portachiavi → Assistente Certificato → Crea un
+> certificato*, nome `HyperSpace Dev`, tipo identità *Radice autofirmata*, tipo certificato *Firma codice*.
+> Da quel momento `make app` lo usa automaticamente e il permesso sopravvive ai rebuild.
 
 ## Configurazione
 
@@ -35,8 +33,10 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 ```json
 {
   "keyboard": {
-    "hyperKey": "caps_lock",
-    "remap": [ { "from": "right_option", "to": "escape" } ],
+    "remap": [
+      { "from": "caps_lock", "to": "hyper" },
+      { "from": "right_option", "to": "escape" }
+    ],
     "bindings": [
       { "keys": "hyper+h", "action": "focus left" },
       { "keys": "cmd+alt+t", "action": "launch Terminal" }
@@ -57,11 +57,14 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 ### Keyboard
 | Chiave | Significato |
 |---|---|
-| `hyperKey` | Tasto che diventa **hyper** (`cmd+alt+ctrl+shift`) finché è premuto, su tutte le tastiere. Le combinazioni hyper non legate arrivano comunque alle app. |
 | `remap` | Rimappature 1:1 di qualsiasi tasto, per tastiera (vedi sotto). |
 | `bindings` | Combinazione → azione. Modificatori: `cmd`, `alt`/`opt`, `ctrl`, `shift`, `hyper`, `meh` (alt+ctrl+shift). |
 
 #### Rimappature (`remap`)
+
+Il modo più comodo è la finestra **Keyboard Mapping…** (menu bar, ⌘,): clicchi il campo, premi il tasto
+fisico, scegli la destinazione (premendola, da un elenco di tutti i tasti, oppure come **combinazione**
+⌃⌥⇧⌘ + tasto) e su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
 
 ```json
 "remap": [
@@ -69,6 +72,8 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
   { "from": "left_command", "to": "left_option",  "keyboard": "external" },
   { "from": "left_option",  "to": "left_command", "keyboard": "external" },
   { "from": "fn",           "to": "left_control", "keyboard": "builtin" },
+  { "from": "caps_lock",    "to": "shift+ctrl+alt" },
+  { "from": "right_command","to": "cmd+space" },
   { "from": "right_option", "to": "none",         "keyboard": "Magic Keyboard" }
 ]
 ```
@@ -77,9 +82,18 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
   riceve da IOKit l'evento di nuova tastiera e la configura subito; al risveglio dallo stop ricontrolla tutto.
 - `keyboard` (facoltativo): `all` (default), `builtin`, `external`, oppure una parte del nome del prodotto
   (es. `"USB Receiver"`, `"Keychron"`). Se più regole rimappano lo stesso tasto su una tastiera vince la più
-  specifica: nome prodotto > builtin/external > all (vale anche per `hyperKey`).
+  specifica: nome prodotto > builtin/external > all.
 - Gli scambi (cmd ↔ option) funzionano: tutte le regole di una tastiera vengono applicate insieme.
 - `"to": "none"` disattiva il tasto.
+- **Combinazioni**: `to` può essere più tasti uniti da `+`, cioè modificatori (`ctrl`, `alt`, `shift`, `cmd`, anche
+  `left_shift` ecc.) più al massimo un tasto. `hyper` = ⌃⌥⇧⌘, `meh` = ⌃⌥⇧.
+  - Solo modificatori (`shift+ctrl+alt`): restano premuti finché tieni premuto il tasto, valgono per i tasti e i clic,
+    e funzionano nelle `bindings` (`hyper+h`, `meh+k`…).
+  - Con un tasto (`cmd+space`): premere il tasto equivale a premere la combinazione.
+  - Il layer HID fa solo 1:1, quindi il tasto viene rimappato su un tasto "portante" inutilizzato (F13–F20,
+    saltando quelli che usi) che l'event tap traduce nella combinazione. Massimo 8 combinazioni diverse; richiede
+    il permesso di Accessibilità.
+- `hyperKey: "caps_lock"` è ancora accettato come scorciatoia per `{ "from": "caps_lock", "to": "hyper" }`.
 - Le rimappature vivono nel layer HID del sistema (la proprietà `UserKeyMapping` di ogni tastiera, la stessa
   usata da `hidutil`): avvengono prima che qualunque app veda il tasto, costano zero CPU e **non richiedono
   alcun permesso**, quindi sono attive anche prima di concedere Accessibilità. All'uscita vengono rimosse.

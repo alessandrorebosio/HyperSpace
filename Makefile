@@ -1,8 +1,10 @@
 APP_NAME      := HyperSpace
 CONFIG        ?= release
 BUNDLE        := build/$(APP_NAME).app
-# "-" = ad-hoc. Use a stable identity (see README) so the Accessibility grant survives rebuilds.
-SIGN_IDENTITY ?= -
+# macOS ties the Accessibility grant to the signature. Ad-hoc ("-") signatures change on
+# every build, so the grant is lost each time: when a "HyperSpace Dev" code signing
+# certificate exists (see README) it is used automatically and the grant survives rebuilds.
+SIGN_IDENTITY ?= $(shell security find-identity -p codesigning 2>/dev/null | grep -q '"HyperSpace Dev"' && echo "HyperSpace Dev" || echo -)
 
 .PHONY: build app run install clean
 

@@ -20,7 +20,9 @@ final class EventTap {
     private var source: CFRunLoopSource?
     private var mask: CGEventMask = 0
     private var config = TapConfig()
-    private var hyperDown = false
+    private var carrierDown: [Bool] = []
+    /// Modifiers of the modifier-only combinations currently held (e.g. caps lock → ⌃⌥⇧).
+    private var heldModifiers: Modifiers = []
     private var swallowedKeys = [Bool](repeating: false, count: 128)
     private var swallowedButtons = [Bool](repeating: false, count: 32)
     private var dragMode: DragMode?
@@ -46,7 +48,8 @@ final class EventTap {
     func apply(_ newConfig: TapConfig) {
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
             config = newConfig
-            hyperDown = false
+            carrierDown = [Bool](repeating: false, count: newConfig.carriers.count)
+            heldModifiers = []
             dragMode = nil
             for i in swallowedKeys.indices { swallowedKeys[i] = false }
             for i in swallowedButtons.indices { swallowedButtons[i] = false }
@@ -95,6 +98,10 @@ final class EventTap {
             break
         }
         if event.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker { return pass }
+        if !heldModifiers.isEmpty {
+            // Unbound chords still reach apps with the combination's modifiers.
+            event.flags.formUnion(heldModifiers.cgFlags)
+        }
 
         switch type {
         case .keyDown, .keyUp:
@@ -121,23 +128,18 @@ final class EventTap {
     }
 
     private func modifiers(of event: CGEvent) -> Modifiers {
-        var mods = Modifiers(event.flags)
-        if hyperDown { mods.formUnion(.hyper) }
-        return mods
+        Modifiers(event.flags).union(heldModifiers)
     }
 
     /// Returns true when the event must be swallowed.
     private func handleKey(_ event: CGEvent, down: Bool) -> Bool {
         let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
-        if let hyper = config.hyperKeyCode, code == hyper {
-            hyperDown = down
-            return true
-        }
         guard code < 128 else { return false }
 
-        if hyperDown {
-            // Unbound hyper chords still reach apps as cmd+alt+ctrl+shift.
-            event.flags.formUnion([.maskCommand, .maskAlternate, .maskControl, .maskShift])
+        let carrierIndex = Int(config.carrierTable[code])
+        if carrierIndex >= 0 {
+            handleCarrier(carrierIndex, event, down: down)
+            return true
         }
         if down {
             let index = config.keyTable[TapConfig.slot(code, modifiers(of: event))]
@@ -151,6 +153,22 @@ final class EventTap {
             return true
         }
         return false
+    }
+
+    /// A carrier key stands for a combination: modifier-only combinations are held
+    /// while it is down; combinations with a key press that key with the modifiers.
+    private func handleCarrier(_ index: Int, _ event: CGEvent, down: Bool) {
+        let carrier = config.carriers[index]
+        if let keyCode = carrier.keyCode {
+            let flags = Modifiers(event.flags).union(carrier.modifiers).cgFlags
+            KeyEmitter.post(keyCode: keyCode, flags: flags, down: down)
+            return
+        }
+        guard carrierDown[index] != down else { return } // autorepeat
+        carrierDown[index] = down
+        var held: Modifiers = []
+        for (i, isDown) in carrierDown.enumerated() where isDown { held.formUnion(config.carriers[i].modifiers) }
+        heldModifiers = held
     }
 
     private func handleButton(_ event: CGEvent, down: Bool) -> Bool {

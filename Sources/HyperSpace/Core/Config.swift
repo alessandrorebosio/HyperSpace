@@ -57,7 +57,9 @@ struct TapConfig {
     var keyTable = [Int16](repeating: -1, count: keySlots)
     var buttonTable = [Int16](repeating: -1, count: buttonSlots)
     var actions: [Action] = []
-    var hyperKeyCode: UInt16?
+    /// Carrier key code → index in `carriers` (-1 when the key is not a carrier).
+    var carrierTable = [Int8](repeating: -1, count: 128)
+    var carriers: [Carrier] = []
     var reverseScroll = false
     var dragModifier: Modifiers?
 
@@ -75,13 +77,30 @@ struct TapConfig {
         buttonTable[Self.slot(button, mods)] = Int16(actions.count - 1)
     }
 
+    /// A key remapped (in HID) onto `keyCode` that the tap turns into a combination.
+    struct Carrier {
+        let modifiers: Modifiers
+        /// Pressed together with the modifiers; nil for modifier-only combinations (held instead).
+        let keyCode: UInt16?
+    }
+
+    mutating func addCarrier(keyCode: UInt16, _ carrier: Carrier) {
+        carriers.append(carrier)
+        carrierTable[Int(keyCode)] = Int8(carriers.count - 1)
+    }
+
     /// Only subscribe to the event types that are actually used: an unused
     /// feature costs nothing, and with an empty config no tap is installed at all.
     var eventMask: CGEventMask {
         var mask: CGEventMask = 0
         func add(_ type: CGEventType) { mask |= CGEventMask(1) << type.rawValue }
-        if hyperKeyCode != nil || keyTable.contains(where: { $0 >= 0 }) {
+        if !carriers.isEmpty || keyTable.contains(where: { $0 >= 0 }) {
             add(.keyDown); add(.keyUp)
+        }
+        if carriers.contains(where: { $0.keyCode == nil }) {
+            // Held combination modifiers also apply to clicks (e.g. ⌃⌥⇧-click).
+            add(.leftMouseDown); add(.leftMouseUp); add(.rightMouseDown); add(.rightMouseUp)
+            add(.otherMouseDown); add(.otherMouseUp)
         }
         if buttonTable.contains(where: { $0 >= 0 }) {
             add(.otherMouseDown); add(.otherMouseUp)
@@ -127,18 +146,36 @@ struct Config {
 
     init(_ raw: RawConfig) throws {
         let keyboard = raw.keyboard
+
+        // `hyperKey` is shorthand for a remap to "hyper" on every keyboard.
+        var rawRemaps = keyboard?.remap ?? []
         if let name = keyboard?.hyperKey, !name.isEmpty {
-            guard let hid = KeyCodes.lookup(name)?.hidUsage else { throw ConfigError("unknown hyperKey '\(name)'") }
-            remaps.append(RemapRule(from: hid, to: KeyCodes.f18HID, target: .all))
-            tap.hyperKeyCode = KeyCodes.f18
+            rawRemaps.insert(RawConfig.Remap(from: name, to: "hyper", keyboard: nil), at: 0)
         }
-        for remap in keyboard?.remap ?? [] {
+        let parsed = try rawRemaps.map { remap -> (from: UInt64, to: RemapTarget, target: KeyboardTarget) in
             guard let from = KeyCodes.lookup(remap.from)?.hidUsage else { throw ConfigError("unknown key '\(remap.from)' in remap") }
-            guard let to = KeyCodes.lookup(remap.to)?.hidUsage else { throw ConfigError("unknown key '\(remap.to)' in remap") }
-            remaps.append(RemapRule(from: from, to: to, target: KeyboardTarget(remap.keyboard)))
+            return (from, try RemapTarget.parse(remap.to), KeyboardTarget(remap.keyboard))
         }
+
+        var boundKeyCodes = Set<UInt16>()
         for binding in keyboard?.bindings ?? [] {
-            tap.bindKey(try KeyCombo.parse(binding.keys), try Action.parse(binding.action))
+            let combo = try KeyCombo.parse(binding.keys)
+            boundKeyCodes.insert(combo.keyCode)
+            tap.bindKey(combo, try Action.parse(binding.action))
+        }
+
+        var usedHID = Set(parsed.map(\.from))
+        for case let (_, .key(hid), _) in parsed { usedHID.insert(hid) }
+        var pool = CarrierPool(excludingHID: usedHID, keyCodes: boundKeyCodes)
+        for (from, to, target) in parsed {
+            switch to {
+            case .key(let hid):
+                remaps.append(RemapRule(from: from, to: hid, target: target))
+            case .combination(let mods, let keyCode, _):
+                let (carrier, isNew) = try pool.carrier(for: "\(mods.rawValue)-\(keyCode.map(String.init) ?? "")")
+                if isNew { tap.addCarrier(keyCode: carrier.keyCode!, .init(modifiers: mods, keyCode: keyCode)) }
+                remaps.append(RemapRule(from: from, to: carrier.hidUsage!, target: target))
+            }
         }
 
         if let mouse = raw.mouse {

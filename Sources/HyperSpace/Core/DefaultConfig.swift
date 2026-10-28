@@ -2,8 +2,9 @@ enum DefaultConfig {
     static let json = """
     {
       "keyboard": {
-        "hyperKey": "caps_lock",
-        "remap": [],
+        "remap": [
+          { "from": "caps_lock", "to": "hyper" }
+        ],
         "bindings": [
           { "keys": "hyper+h", "action": "focus left" },
           { "keys": "hyper+j", "action": "focus down" },

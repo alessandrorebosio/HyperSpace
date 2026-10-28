@@ -21,11 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenu(host: StatusMenu.Host(
-            tilingEnabled: { [unowned self] in windowManager.isEnabled },
-            currentLayout: { [unowned self] in windowManager.currentLayout },
-            perform: { [unowned self] in runner.run($0) },
+            openRemapper: { [unowned self] in remapWindow.show() },
             openConfig: { [unowned self] in store.openInEditor() },
-            openRemapper: { [unowned self] in remapWindow.show() }
+            reloadConfig: { [unowned self] in store.reload() }
         ))
         store.onChange = { [weak self] in self?.apply($0) }
 
@@ -41,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Accessibility is granted outside the app; poll cheaply until it shows up.
     private func waitForPermission() {
-        statusMenu.problem = "Accessibility permission required"
+        statusMenu.problem = "Accessibility not granted to this build (click to open Settings)"
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
             guard let self, Permissions.isTrusted(prompt: false) else { return }
             timer.invalidate()

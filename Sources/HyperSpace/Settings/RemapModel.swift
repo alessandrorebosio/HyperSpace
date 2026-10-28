@@ -14,16 +14,15 @@ final class RemapModel: ObservableObject {
     }
 
     enum Field: Equatable {
-        case hyper
         case from(UUID)
         case to(UUID)
     }
 
     @Published var rules: [Rule] = []
-    @Published var hyperKey = ""
     @Published private(set) var keyboards: [KeyboardRemapper.Keyboard] = []
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
+    @Published var combinationDraft: CombinationDraft?
 
     private let remapper: KeyboardRemapper
     private var monitor: Any?
@@ -65,9 +64,18 @@ final class RemapModel: ObservableObject {
         save()
     }
 
-    func clearHyperKey() {
-        hyperKey = ""
-        save()
+    func setCombination(_ mods: Modifiers, key: String?, for id: UUID) {
+        setTarget(RemapTarget.text(mods, key: key), for: id)
+    }
+
+    func editCombination(for rule: Rule) {
+        combinationDraft = CombinationDraft(ruleID: rule.id, initial: rule.to)
+    }
+
+    func applyCombination() {
+        guard let draft = combinationDraft, draft.isValid else { return }
+        setTarget(draft.text, for: draft.ruleID)
+        combinationDraft = nil
     }
 
     /// Keyboard choices for a rule: the generic targets, every connected keyboard,
@@ -91,9 +99,7 @@ final class RemapModel: ObservableObject {
     func warning(for rule: Rule) -> String? {
         guard rule.isComplete else { return nil }
         let duplicate = rules.contains { $0.id != rule.id && $0.isComplete && $0.from == rule.from && $0.keyboard == rule.keyboard }
-        if duplicate { return "Another remap uses the same key on the same keyboards" }
-        if rule.from == hyperKey { return "This key is also the hyper key; this remap wins where it applies" }
-        return nil
+        return duplicate ? "Another remap uses the same key on the same keyboards" : nil
     }
 
     // MARK: - Key capture
@@ -126,8 +132,6 @@ final class RemapModel: ObservableObject {
 
     private func finishCapture(_ name: String) {
         switch capturing {
-        case .hyper:
-            hyperKey = name
         case .from(let id):
             if let index = rules.firstIndex(where: { $0.id == id }) { rules[index].from = name }
         case .to(let id):
@@ -156,9 +160,12 @@ final class RemapModel: ObservableObject {
 
     private func load() {
         let keyboard = ConfigWriter.read()["keyboard"] as? [String: Any]
-        hyperKey = keyboard?["hyperKey"] as? String ?? ""
         rules = (keyboard?["remap"] as? [[String: Any]] ?? []).map {
             Rule(from: $0["from"] as? String ?? "", to: $0["to"] as? String ?? "", keyboard: $0["keyboard"] as? String ?? "all")
+        }
+        // The editor shows the hyper key as an ordinary remap to "hyper"; it is saved that way too.
+        if let hyper = keyboard?["hyperKey"] as? String, !hyper.isEmpty {
+            rules.insert(Rule(from: hyper, to: "hyper", keyboard: "all"), at: 0)
         }
     }
 
@@ -171,7 +178,7 @@ final class RemapModel: ObservableObject {
         do {
             try ConfigWriter.update { root in
                 var keyboard = root["keyboard"] as? [String: Any] ?? [:]
-                keyboard["hyperKey"] = hyperKey.isEmpty ? nil : hyperKey
+                keyboard["hyperKey"] = nil
                 keyboard["remap"] = complete.map { rule -> [String: Any] in
                     var entry: [String: Any] = ["from": rule.from, "to": rule.to]
                     if rule.keyboard != "all" { entry["keyboard"] = rule.keyboard }
@@ -184,4 +191,43 @@ final class RemapModel: ObservableObject {
             saveError = error.localizedDescription
         }
     }
+}
+
+/// The combination being edited in the popover.
+final class CombinationDraft: ObservableObject {
+    let ruleID: UUID
+    @Published var control: Bool
+    @Published var option: Bool
+    @Published var shift: Bool
+    @Published var command: Bool
+    @Published var key: String?
+
+    init(ruleID: UUID, initial: String) {
+        self.ruleID = ruleID
+        var mods: Modifiers = []
+        if case .combination(let parsed, _, let keyName)? = try? RemapTarget.parse(initial) {
+            mods = parsed
+            key = keyName
+        }
+        control = mods.contains(.ctrl)
+        option = mods.contains(.alt)
+        shift = mods.contains(.shift)
+        command = mods.contains(.cmd)
+    }
+
+    var modifiers: Modifiers {
+        var mods: Modifiers = []
+        if control { mods.insert(.ctrl) }
+        if option { mods.insert(.alt) }
+        if shift { mods.insert(.shift) }
+        if command { mods.insert(.cmd) }
+        return mods
+    }
+
+    /// At least two parts; one alone is just a plain key.
+    var isValid: Bool {
+        modifiers.rawValue.nonzeroBitCount + (key == nil ? 0 : 1) >= 2
+    }
+
+    var text: String { RemapTarget.text(modifiers, key: key) }
 }
