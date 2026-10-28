@@ -5,7 +5,7 @@ let log = Logger(subsystem: "com.alessandrorebosio.HyperSpace", category: "app")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ConfigStore()
-    private let remapper = HIDKeyRemapper()
+    private let remapper = KeyboardRemapper()
     private let windowManager = WindowManager()
     private lazy var runner = ActionRunner(windowManager: windowManager) { [weak self] in
         self?.store.reload()
@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var statusMenu: StatusMenu!
     private var permissionTimer: Timer?
+    private var trusted = false
+    private var config: Config?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenu(host: StatusMenu.Host(
@@ -25,11 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         store.onChange = { [weak self] in self?.apply($0) }
 
-        if Permissions.isTrusted(prompt: true) {
-            start()
-        } else {
-            waitForPermission()
-        }
+        trusted = Permissions.isTrusted(prompt: true)
+        if !trusted { waitForPermission() }
+        // Key remapping lives in the HID layer and needs no permission, so it starts right away.
+        store.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -40,30 +41,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func waitForPermission() {
         statusMenu.problem = "Accessibility permission required"
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-            guard Permissions.isTrusted(prompt: false) else { return }
+            guard let self, Permissions.isTrusted(prompt: false) else { return }
             timer.invalidate()
-            self?.permissionTimer = nil
-            self?.statusMenu.problem = nil
-            self?.start()
+            permissionTimer = nil
+            trusted = true
+            statusMenu.problem = nil
+            if let config { applyTrusted(config) }
         }
-    }
-
-    private func start() {
-        _ = eventTap
-        store.start()
     }
 
     private func apply(_ result: Result<Config, Error>) {
         switch result {
         case .success(let config):
-            remapper.apply(config.hidRemaps)
-            eventTap.apply(config.tap)
-            windowManager.apply(config.tiling)
-            statusMenu.problem = nil
+            self.config = config
+            remapper.apply(config.remaps)
+            if trusted {
+                applyTrusted(config)
+                statusMenu.problem = nil
+            }
             log.info("config applied")
         case .failure(let error):
             statusMenu.problem = "Config error: \(error.localizedDescription)"
             log.error("config error: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// The parts that need Accessibility: the event tap and window control.
+    private func applyTrusted(_ config: Config) {
+        eventTap.apply(config.tap)
+        windowManager.apply(config.tiling)
     }
 }

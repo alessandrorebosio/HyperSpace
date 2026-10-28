@@ -17,6 +17,8 @@ struct RawConfig: Decodable {
     struct Remap: Decodable {
         var from: String
         var to: String
+        /// "all" (default), "builtin", "external" or part of a keyboard's product name.
+        var keyboard: String?
     }
     struct Binding: Decodable {
         var keys: String
@@ -44,11 +46,6 @@ struct RawConfig: Decodable {
     var keyboard: Keyboard?
     var mouse: Mouse?
     var tiling: Tiling?
-}
-
-struct HIDRemap: Equatable {
-    let from: UInt16
-    let to: UInt16
 }
 
 /// Lookup tables consumed by the event tap. Indexed by `slot(code, mods)`,
@@ -111,7 +108,7 @@ struct TilingConfig {
 
 /// Validated, compiled configuration.
 struct Config {
-    var hidRemaps: [HIDRemap] = []
+    var remaps: [RemapRule] = []
     var tap = TapConfig()
     var tiling = TilingConfig()
 
@@ -132,13 +129,13 @@ struct Config {
         let keyboard = raw.keyboard
         if let name = keyboard?.hyperKey, !name.isEmpty {
             guard let hid = KeyCodes.lookup(name)?.hidUsage else { throw ConfigError("unknown hyperKey '\(name)'") }
-            hidRemaps.append(HIDRemap(from: hid, to: KeyCodes.f18HID))
+            remaps.append(RemapRule(from: hid, to: KeyCodes.f18HID, target: .all))
             tap.hyperKeyCode = KeyCodes.f18
         }
         for remap in keyboard?.remap ?? [] {
             guard let from = KeyCodes.lookup(remap.from)?.hidUsage else { throw ConfigError("unknown key '\(remap.from)' in remap") }
             guard let to = KeyCodes.lookup(remap.to)?.hidUsage else { throw ConfigError("unknown key '\(remap.to)' in remap") }
-            hidRemaps.append(HIDRemap(from: from, to: to))
+            remaps.append(RemapRule(from: from, to: to, target: KeyboardTarget(remap.keyboard)))
         }
         for binding in keyboard?.bindings ?? [] {
             tap.bindKey(try KeyCombo.parse(binding.keys), try Action.parse(binding.action))

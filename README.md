@@ -57,14 +57,53 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 ### Keyboard
 | Chiave | Significato |
 |---|---|
-| `hyperKey` | Tasto che diventa **hyper** (`cmd+alt+ctrl+shift`) finché è premuto. Le combinazioni hyper non legate arrivano comunque alle app. |
-| `remap` | Rimappature 1:1 tra tasti singoli, applicate dal driver HID (`hidutil`): costo zero a runtime. Ripristinate all'uscita. |
+| `hyperKey` | Tasto che diventa **hyper** (`cmd+alt+ctrl+shift`) finché è premuto, su tutte le tastiere. Le combinazioni hyper non legate arrivano comunque alle app. |
+| `remap` | Rimappature 1:1 di qualsiasi tasto, per tastiera (vedi sotto). |
 | `bindings` | Combinazione → azione. Modificatori: `cmd`, `alt`/`opt`, `ctrl`, `shift`, `hyper`, `meh` (alt+ctrl+shift). |
 
-Nomi tasti: `a`–`z`, `0`–`9`, `f1`–`f20`, `return`, `escape`, `tab`, `space`, `delete`, `forward_delete`,
-`left`/`right`/`up`/`down`, `home`, `end`, `page_up`, `page_down`, `minus`, `equal`, `left_bracket`,
-`right_bracket`, `backslash`, `semicolon`, `quote`, `grave`, `comma`, `period`, `slash`, `section`,
-`caps_lock`, `left_/right_` + `command`/`option`/`control`/`shift`.
+#### Rimappature (`remap`)
+
+```json
+"remap": [
+  { "from": "caps_lock",    "to": "escape" },
+  { "from": "left_command", "to": "left_option",  "keyboard": "external" },
+  { "from": "left_option",  "to": "left_command", "keyboard": "external" },
+  { "from": "fn",           "to": "left_control", "keyboard": "builtin" },
+  { "from": "right_option", "to": "none",         "keyboard": "Magic Keyboard" }
+]
+```
+
+- **Ogni tastiera**: integrata, USB, Bluetooth, anche collegate dopo l'avvio o dopo lo stop. HyperSpace
+  riceve da IOKit l'evento di nuova tastiera e la configura subito; al risveglio dallo stop ricontrolla tutto.
+- `keyboard` (facoltativo): `all` (default), `builtin`, `external`, oppure una parte del nome del prodotto
+  (es. `"USB Receiver"`, `"Keychron"`). Se più regole rimappano lo stesso tasto su una tastiera vince la più
+  specifica: nome prodotto > builtin/external > all (vale anche per `hyperKey`).
+- Gli scambi (cmd ↔ option) funzionano: tutte le regole di una tastiera vengono applicate insieme.
+- `"to": "none"` disattiva il tasto.
+- Le rimappature vivono nel layer HID del sistema (la proprietà `UserKeyMapping` di ogni tastiera, la stessa
+  usata da `hidutil`): avvengono prima che qualunque app veda il tasto, costano zero CPU e **non richiedono
+  alcun permesso**, quindi sono attive anche prima di concedere Accessibilità. All'uscita vengono rimosse.
+- HyperSpace gestisce l'intera `UserKeyMapping`: eventuali mappature impostate a mano con `hidutil` vengono sostituite.
+
+#### Nomi dei tasti
+
+| Gruppo | Nomi |
+|---|---|
+| Lettere, numeri | `a`–`z`, `0`–`9` |
+| Funzione | `f1`–`f24` (`f21`–`f24` solo come destinazione/sorgente di remap) |
+| Modificatori | `left_command` `right_command` `left_option` `right_option` `left_control` `right_control` `left_shift` `right_shift` `caps_lock` `fn` (alias `globe`) |
+| Editing | `return` `escape` `tab` `space` `delete` `forward_delete` `insert` `application` |
+| Navigazione | `left` `right` `up` `down` `home` `end` `page_up` `page_down` |
+| Punteggiatura | `minus` `equal` `left_bracket` `right_bracket` `backslash` `semicolon` `quote` `grave` `comma` `period` `slash` `section` `non_us_pound` (anche come simboli: `-` `=` `[` `]` `;` `'` `` ` `` `,` `.` `/` `\` `§`) |
+| Tastiere PC | `print_screen` `scroll_lock` `pause` |
+| Tastierino | `keypad_0`–`keypad_9` `keypad_period` `keypad_enter` `keypad_plus` `keypad_minus` `keypad_multiply` `keypad_divide` `keypad_equal` `keypad_comma` `keypad_clear` |
+| Internazionali | `international1` `international3` `lang1` (kana) `lang2` (eisu) |
+| Multimediali (solo remap) | `mute` `volume_up` `volume_down` `play_pause` `next_track` `previous_track` `eject` `brightness_up` `brightness_down` |
+| Qualsiasi altro tasto | codice HID esadecimale: `0x39` (pagina tastiera) oppure `0xC000000E2` (`pagina << 32 \| usage`) |
+
+Note: `fn` è rimappabile sulle tastiere Apple; sulla maggior parte delle tastiere PC il tasto fn è gestito dal
+firmware e non arriva al Mac. I tasti multimediali e `f21`–`f24` non generano eventi tasto in macOS, quindi
+si possono rimappare ma non usare nelle `bindings`.
 
 ### Mouse
 | Chiave | Significato |
@@ -101,7 +140,7 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permesso), StatusMenu (menu bar)
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
-├── Keyboard/   HIDKeyRemapper (hidutil), KeyEmitter (eventi sintetici)
+├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
 ├── Mouse/      DragController (ponte tap → window manager)
 └── Tiling/     WindowManager, AppWatcher (AXObserver), Layout, AX helpers
 ```
@@ -115,7 +154,7 @@ Scelte fatte per prestazioni e permessi minimi:
   `reverseScroll` è attivo; con una config vuota il tap non viene proprio installato.
 - **Hot path senza allocazioni né lock**: le binding sono compilate in tabelle `[Int16]` indicizzate da
   `keyCode << 4 | modificatori`; la config passa al thread del tap con `CFRunLoopPerformBlock`.
-- **Remap semplici e hyper key nel driver HID** via `hidutil`: zero CPU, nessun permesso.
+- **Remap e hyper key nel layer HID**, per singola tastiera via `IOHIDServiceClient` (niente processi `hidutil`): zero CPU, nessun permesso; nuove tastiere rilevate con notifiche IOKit.
 - **Tiling event-driven**: `AXObserver` per app + notifiche `NSWorkspace`, nessun polling. Le raffiche di
   eventi vengono accorpate in un solo retile; visibilità e posizione delle finestre arrivano da una sola
   chiamata `CGWindowListCopyWindowInfo` (senza titoli → niente Screen Recording) e le finestre vengono
@@ -129,4 +168,4 @@ Scelte fatte per prestazioni e permessi minimi:
 - Usa la funzione privata (ma stabile da anni) `_AXUIElementGetWindow`, come yabai/Amethyst/Rectangle:
   l'app non può essere sandboxed né andare sul Mac App Store (vale per qualsiasi window manager via AX).
 - Gli Spaces non vengono creati/gestiti: si affiancano le finestre dello Space visibile su ciascun monitor.
-- `remap` sovrascrive eventuali `UserKeyMapping` impostati a mano con `hidutil`.
+
