@@ -56,6 +56,12 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 }
 ```
 
+### Menu bar e finestra
+
+Il menu nella barra in alto ha solo **Settings…** (⌘,) e **Quit**. La finestra ha una barra laterale:
+**Keyboard**, **Mouse** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
+stato del permesso di Accessibilità, Quit).
+
 ### Keyboard
 | Chiave | Significato |
 |---|---|
@@ -64,7 +70,7 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 
 #### Rimappature (`remap`)
 
-Il modo più comodo è **Settings… → Keyboard** (menu bar, ⌘,): clicchi il campo, premi il tasto
+Il modo più comodo è **Settings… → Keyboard** (menu bar, ⌘,; la finestra ha una barra laterale con Keyboard, Mouse e Settings): clicchi il campo, premi il tasto
 fisico, poi scegli la destinazione con **Press Keys…** premendo quello che vuoi ottenere: un tasto,
 una combinazione con tasto (tieni ⌘ e premi Spazio → ⌘ Space) o solo modificatori (tieni ⇧⌃⌥ insieme e
 rilascia → ⌃⌥⇧). In alternativa c'è l'elenco di tutti i tasti. Infine scegli su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
@@ -179,7 +185,7 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 ```
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permesso), StatusMenu (menu bar)
-├── Settings/   finestra Impostazioni (schede Keyboard/Mouse, SwiftUI caricato solo quando aperta)
+├── Settings/   finestra con barra laterale Keyboard/Mouse/Settings (SwiftUI, creata solo quando aperta)
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
 ├── Mouse/      DragController (ponte tap → window manager)

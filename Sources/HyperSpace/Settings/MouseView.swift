@@ -38,7 +38,6 @@ struct MouseView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 640, height: 460)
     }
 }
 

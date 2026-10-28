@@ -88,21 +88,18 @@ struct WarningBadge: View {
     }
 }
 
-/// Section footer: a hint (or the last save error) and a link to the config file.
+/// Section footer: a hint, or the last save error.
 struct SettingsFooter: View {
     let hint: String
     let error: String?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        Group {
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
             } else {
                 Text(hint).foregroundStyle(.secondary)
             }
-            Spacer()
-            Button("Open config.json") { NSWorkspace.shared.open(ConfigStore.url) }
-                .buttonStyle(.link)
         }
         .font(.caption)
     }

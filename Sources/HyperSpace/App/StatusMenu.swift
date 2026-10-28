@@ -1,12 +1,9 @@
 import AppKit
-import ServiceManagement
 
 /// Menu bar item. The menu is rebuilt lazily only when it is opened.
 final class StatusMenu: NSObject, NSMenuDelegate {
     struct Host {
         var openSettings: () -> Void
-        var openConfig: () -> Void
-        var reloadConfig: () -> Void
     }
 
     /// Shown at the top of the menu (missing permission, config error).
@@ -44,28 +41,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
-        menu.addItem(ClosureMenuItem("Edit Config…") { [host] in host.openConfig() })
-        menu.addItem(ClosureMenuItem("Reload Config") { [host] in host.reloadConfig() })
-
-        let login = ClosureMenuItem("Launch at Login") { Self.toggleLaunchAtLogin() }
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
-
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit HyperSpace", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-    }
-
-    private static func toggleLaunchAtLogin() {
-        let service = SMAppService.mainApp
-        do {
-            if service.status == .enabled {
-                try service.unregister()
-            } else {
-                try service.register()
-            }
-        } catch {
-            log.error("launch at login: \(error.localizedDescription, privacy: .public)")
-        }
     }
 }
 

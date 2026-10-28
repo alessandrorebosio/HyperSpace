@@ -13,7 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var eventTap = EventTap(drag: DragController(windowManager: windowManager)) { [weak self] action in
         self?.runner.run(action)
     }
-    private lazy var settingsWindow = SettingsWindowController(remapper: remapper, eventTap: eventTap)
+    private lazy var settingsWindow = SettingsWindowController(
+        remapper: remapper, eventTap: eventTap,
+        actions: GeneralModel.Actions(
+            openConfig: { [unowned self] in store.openInEditor() },
+            reloadConfig: { [unowned self] in store.reload() },
+            problem: { [unowned self] in statusMenu.problem }
+        )
+    )
     private var statusMenu: StatusMenu!
     private var permissionTimer: Timer?
     private var trusted = false
@@ -21,9 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenu(host: StatusMenu.Host(
-            openSettings: { [unowned self] in settingsWindow.show() },
-            openConfig: { [unowned self] in store.openInEditor() },
-            reloadConfig: { [unowned self] in store.reload() }
+            openSettings: { [unowned self] in settingsWindow.show() }
         ))
         store.onChange = { [weak self] in self?.apply($0) }
 
