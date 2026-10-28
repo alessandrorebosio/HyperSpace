@@ -63,7 +63,7 @@ struct RemapView: View {
             if let error = model.saveError {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
             } else {
-                Text("Click a key field and press the key on any keyboard. A key can also become a combination (e.g. ⌃⌥⇧). Changes apply instantly.")
+                Text("Click a field and press keys on any keyboard. For a combination hold the keys together (e.g. ⇧⌃⌥) and release. Changes apply instantly.")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -110,8 +110,7 @@ private struct RuleRow: View {
     /// from every known key (including ones no keyboard has: media, F21–F24, None).
     private var targetMenu: some View {
         Menu {
-            Button("Press a Key…") { model.startCapture(.to(rule.id)) }
-            Button("Combination…") { model.editCombination(for: rule) }
+            Button("Press Keys…") { model.startCapture(.to(rule.id)) }
             Divider()
             Button("Hyper  ⌃⌥⇧⌘") { model.setCombination(.hyper, key: nil, for: rule.id) }
             Button("Meh  ⌃⌥⇧") { model.setCombination([.ctrl, .alt, .shift], key: nil, for: rule.id) }
@@ -124,72 +123,11 @@ private struct RuleRow: View {
                 }
             }
         } label: {
-            Text(model.capturing == .to(rule.id) ? "Press a key…" : (rule.to.isEmpty ? "Target" : RemapTarget.label(rule.to)))
+            Text(model.capturing == .to(rule.id)
+                 ? (model.capturePreview.isEmpty ? "Press keys…" : "\(model.capturePreview) …")
+                 : (rule.to.isEmpty ? "Target" : RemapTarget.label(rule.to)))
         }
         .frame(width: 190)
-        .popover(isPresented: Binding(
-            get: { model.combinationDraft?.ruleID == rule.id },
-            set: { if !$0 { model.combinationDraft = nil } }
-        ), arrowEdge: .bottom) {
-            if let draft = model.combinationDraft {
-                CombinationEditor(draft: draft) {
-                    model.applyCombination()
-                } cancel: {
-                    model.combinationDraft = nil
-                }
-            }
-        }
-    }
-}
-
-/// Builds a combination: any set of ⌃⌥⇧⌘ plus an optional key.
-private struct CombinationEditor: View {
-    @ObservedObject var draft: CombinationDraft
-    let apply: () -> Void
-    let cancel: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Combination").font(.headline)
-            HStack(spacing: 14) {
-                Toggle("⌃ Control", isOn: $draft.control)
-                Toggle("⌥ Option", isOn: $draft.option)
-                Toggle("⇧ Shift", isOn: $draft.shift)
-                Toggle("⌘ Command", isOn: $draft.command)
-            }
-            .toggleStyle(.checkbox)
-            HStack {
-                Text("Plus key")
-                Menu {
-                    Button("No key (hold the modifiers)") { draft.key = nil }
-                    Divider()
-                    ForEach(KeyCodes.groups, id: \.title) { group in
-                        let keys = group.keys.filter { $0.keyCode != nil && Modifiers.modifierKey($0.name) == nil }
-                        if !keys.isEmpty {
-                            Menu(group.title) {
-                                ForEach(keys, id: \.name) { info in
-                                    Button(info.label) { draft.key = info.name }
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Text(draft.key.map { KeyInfo.label(for: $0) } ?? "None")
-                }
-                .frame(width: 180)
-            }
-            Text(draft.isValid ? "Result: \(RemapTarget.label(draft.text))" : "Choose at least two parts")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Spacer()
-                Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
-                Button("Apply", action: apply)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!draft.isValid)
-            }
-        }
-        .padding(16)
-        .frame(width: 440)
     }
 }
 

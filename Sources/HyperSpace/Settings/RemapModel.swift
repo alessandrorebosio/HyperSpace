@@ -22,10 +22,15 @@ final class RemapModel: ObservableObject {
     @Published private(set) var keyboards: [KeyboardRemapper.Keyboard] = []
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
-    @Published var combinationDraft: CombinationDraft?
+    /// Modifiers held so far while capturing a target, shown live ("⌃⌥⇧…").
+    @Published private(set) var capturePreview = ""
 
     private let remapper: KeyboardRemapper
     private var monitor: Any?
+    // Target capture: the most modifiers held at once, and the physical key when only one was pressed.
+    private var peakModifiers: Modifiers = []
+    private var modifierPresses = 0
+    private var soleModifierKey: UInt16?
 
     init(remapper: KeyboardRemapper) {
         self.remapper = remapper
@@ -68,16 +73,6 @@ final class RemapModel: ObservableObject {
         setTarget(RemapTarget.text(mods, key: key), for: id)
     }
 
-    func editCombination(for rule: Rule) {
-        combinationDraft = CombinationDraft(ruleID: rule.id, initial: rule.to)
-    }
-
-    func applyCombination() {
-        guard let draft = combinationDraft, draft.isValid else { return }
-        setTarget(draft.text, for: draft.ruleID)
-        combinationDraft = nil
-    }
-
     /// Keyboard choices for a rule: the generic targets, every connected keyboard,
     /// and the rule's own target even if that keyboard is unplugged right now.
     func keyboardOptions(for rule: Rule) -> [String] {
@@ -104,21 +99,61 @@ final class RemapModel: ObservableObject {
 
     // MARK: - Key capture
 
-    /// Listens for the next key press. Remapping is suspended meanwhile so the
-    /// physical key is captured, not what it is currently mapped to.
+    /// Listens for keys. Remapping is suspended meanwhile so the physical keys are
+    /// captured, not what they are currently mapped to.
+    ///
+    /// - Source: the first key pressed.
+    /// - Target: what you press, as a whole: a key, modifiers + a key (⌘ Space), or
+    ///   modifiers alone (hold ⇧⌃⌥, release → ⌃⌥⇧). A single modifier released on its
+    ///   own is that physical key (e.g. Right Option).
     func startCapture(_ field: Field) {
         stopCapture()
         capturing = field
+        peakModifiers = []
+        modifierPresses = 0
+        soleModifierKey = nil
+        capturePreview = ""
         remapper.suspend()
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
-            if event.type == .flagsChanged && !Self.isPress(event) { return nil }
-            if let name = KeyCodes.name(forKeyCode: event.keyCode) {
-                finishCapture(name)
+            if case .to = capturing {
+                captureTarget(event)
             } else {
-                NSSound.beep()
+                captureSource(event)
             }
             return nil
+        }
+    }
+
+    private func captureSource(_ event: NSEvent) {
+        if event.type == .flagsChanged && !Self.isPress(event) { return }
+        guard let name = KeyCodes.name(forKeyCode: event.keyCode) else { return NSSound.beep() }
+        finishCapture(name)
+    }
+
+    private func captureTarget(_ event: NSEvent) {
+        guard let name = KeyCodes.name(forKeyCode: event.keyCode) else { return NSSound.beep() }
+        let held = Modifiers(event.modifierFlags)
+
+        if event.type == .keyDown {
+            finishCapture(held.isEmpty ? name : RemapTarget.text(held, key: name))
+            return
+        }
+        // Caps lock and fn are plain keys here, not part of a combination.
+        guard Modifiers.modifierKey(name) != nil else { return finishCapture(name) }
+
+        if Self.isPress(event) {
+            modifierPresses += 1
+            soleModifierKey = modifierPresses == 1 ? event.keyCode : nil
+            peakModifiers.formUnion(held)
+            capturePreview = peakModifiers.symbols
+            return
+        }
+        guard held.isEmpty, !peakModifiers.isEmpty else { return }
+        if let sole = soleModifierKey, let single = KeyCodes.name(forKeyCode: sole) {
+            finishCapture(single)
+        } else {
+            finishCapture(RemapTarget.text(peakModifiers, key: nil))
         }
     }
 
@@ -127,6 +162,7 @@ final class RemapModel: ObservableObject {
         monitor = nil
         guard capturing != nil else { return }
         capturing = nil
+        capturePreview = ""
         remapper.resume()
     }
 
@@ -193,41 +229,13 @@ final class RemapModel: ObservableObject {
     }
 }
 
-/// The combination being edited in the popover.
-final class CombinationDraft: ObservableObject {
-    let ruleID: UUID
-    @Published var control: Bool
-    @Published var option: Bool
-    @Published var shift: Bool
-    @Published var command: Bool
-    @Published var key: String?
-
-    init(ruleID: UUID, initial: String) {
-        self.ruleID = ruleID
+extension Modifiers {
+    init(_ flags: NSEvent.ModifierFlags) {
         var mods: Modifiers = []
-        if case .combination(let parsed, _, let keyName)? = try? RemapTarget.parse(initial) {
-            mods = parsed
-            key = keyName
-        }
-        control = mods.contains(.ctrl)
-        option = mods.contains(.alt)
-        shift = mods.contains(.shift)
-        command = mods.contains(.cmd)
+        if flags.contains(.command) { mods.insert(.cmd) }
+        if flags.contains(.option) { mods.insert(.alt) }
+        if flags.contains(.control) { mods.insert(.ctrl) }
+        if flags.contains(.shift) { mods.insert(.shift) }
+        self = mods
     }
-
-    var modifiers: Modifiers {
-        var mods: Modifiers = []
-        if control { mods.insert(.ctrl) }
-        if option { mods.insert(.alt) }
-        if shift { mods.insert(.shift) }
-        if command { mods.insert(.cmd) }
-        return mods
-    }
-
-    /// At least two parts; one alone is just a plain key.
-    var isValid: Bool {
-        modifiers.rawValue.nonzeroBitCount + (key == nil ? 0 : 1) >= 2
-    }
-
-    var text: String { RemapTarget.text(modifiers, key: key) }
 }

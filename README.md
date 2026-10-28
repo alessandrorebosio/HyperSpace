@@ -65,8 +65,9 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 #### Rimappature (`remap`)
 
 Il modo più comodo è la finestra **Keyboard Mapping…** (menu bar, ⌘,): clicchi il campo, premi il tasto
-fisico, scegli la destinazione (premendola, da un elenco di tutti i tasti, oppure come **combinazione**
-⌃⌥⇧⌘ + tasto) e su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
+fisico, poi scegli la destinazione con **Press Keys…** premendo quello che vuoi ottenere: un tasto,
+una combinazione con tasto (tieni ⌘ e premi Spazio → ⌘ Space) o solo modificatori (tieni ⇧⌃⌥ insieme e
+rilascia → ⌃⌥⇧). In alternativa c'è l'elenco di tutti i tasti e i preset Hyper/Meh. Infine scegli su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
 
 ```json
 "remap": [
