@@ -27,6 +27,9 @@ final class EventTap {
     private var swallowedButtons = [Bool](repeating: false, count: 32)
     /// Set while the settings window captures a mouse button: buttons reach the app unmapped.
     private var buttonsSuspended = false
+    /// Set while the settings window captures a shortcut: key bindings are ignored
+    /// (combination keys still work, so caps lock → ⌃⌥⇧ can be part of the shortcut).
+    private var keyBindingsSuspended = false
     private var dragMode: DragMode?
 
     init(drag: DragController, onAction: @escaping (Action) -> Void) {
@@ -65,6 +68,14 @@ final class EventTap {
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
             buttonsSuspended = suspended
             for i in swallowedButtons.indices { swallowedButtons[i] = false }
+        }
+        CFRunLoopWakeUp(runLoop)
+    }
+
+    func setKeyBindingsSuspended(_ suspended: Bool) {
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+            keyBindingsSuspended = suspended
+            for i in swallowedKeys.indices { swallowedKeys[i] = false }
         }
         CFRunLoopWakeUp(runLoop)
     }
@@ -157,6 +168,7 @@ final class EventTap {
             handleCarrier(carrierIndex, event, down: down)
             return true
         }
+        if keyBindingsSuspended { return false }
         if down {
             let index = config.keyTable[TapConfig.slot(code, modifiers(of: event))]
             guard index >= 0 else { return false }

@@ -4,7 +4,7 @@ import SwiftUI
 /// Which page of the settings window is shown.
 final class SettingsNavigation: ObservableObject {
     enum Page: Hashable {
-        case keyboard, mouse, settings
+        case keyboard, mouse, tiling, settings
     }
 
     @Published var page: Page? = .keyboard {
@@ -18,6 +18,7 @@ struct SettingsRoot: View {
     @ObservedObject var navigation: SettingsNavigation
     let keyboard: RemapModel
     let mouse: MouseModel
+    let tiling: TilingModel
     let general: GeneralModel
 
     var body: some View {
@@ -25,6 +26,7 @@ struct SettingsRoot: View {
             List(selection: $navigation.page) {
                 Label("Keyboard", systemImage: "keyboard").tag(SettingsNavigation.Page.keyboard)
                 Label("Mouse", systemImage: "computermouse").tag(SettingsNavigation.Page.mouse)
+                Label("Tiling", systemImage: "rectangle.split.3x1").tag(SettingsNavigation.Page.tiling)
                 Section {
                     Label("Settings", systemImage: "gearshape").tag(SettingsNavigation.Page.settings)
                 }
@@ -34,10 +36,11 @@ struct SettingsRoot: View {
             switch navigation.page ?? .keyboard {
             case .keyboard: RemapView(model: keyboard).navigationTitle("Keyboard")
             case .mouse: MouseView(model: mouse).navigationTitle("Mouse")
+            case .tiling: TilingView(model: tiling).navigationTitle("Tiling")
             case .settings: GeneralView(model: general).navigationTitle("Settings")
             }
         }
-        .frame(minWidth: 820, minHeight: 500)
+        .frame(minWidth: 820, minHeight: 560)
     }
 }
 
@@ -50,6 +53,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var keyboard: RemapModel?
     private var mouse: MouseModel?
+    private var tiling: TilingModel?
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
         self.remapper = remapper
@@ -61,12 +65,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let keyboard = RemapModel(remapper: remapper)
             let mouse = MouseModel(eventTap: eventTap)
+            let tiling = TilingModel(eventTap: eventTap)
             let navigation = SettingsNavigation()
-            navigation.onSwitch = { [weak keyboard, weak mouse] in
+            navigation.onSwitch = { [weak keyboard, weak mouse, weak tiling] in
                 keyboard?.stopCapture()
                 mouse?.stopCapture()
+                tiling?.stopCapture()
             }
-            let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse,
+            let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling,
                                     general: GeneralModel(actions: actions))
             let controller = NSHostingController(rootView: root)
             controller.sizingOptions = [.preferredContentSize]
@@ -82,6 +88,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.window = window
             self.keyboard = keyboard
             self.mouse = mouse
+            self.tiling = tiling
         }
         if #available(macOS 14, *) {
             NSApp.activate()
@@ -94,9 +101,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         keyboard?.stopCapture()
         mouse?.stopCapture()
+        tiling?.stopCapture()
         remapper.onKeyboardsChanged = nil
         window = nil
         keyboard = nil
         mouse = nil
+        tiling = nil
     }
 }

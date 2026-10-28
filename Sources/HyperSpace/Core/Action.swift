@@ -21,6 +21,14 @@ enum Action {
     case toggleTiling
     case retile
     case moveToNextDisplay
+    case focusNextDisplay
+    /// 0-based workspace index.
+    case workspace(Int)
+    /// Back to the previously active workspace.
+    case workspaceBackAndForth
+    case moveToWorkspace(Int)
+    /// Grow (positive) or shrink the focused window by points.
+    case resize(width: Bool, delta: CGFloat)
     case launch(String)
     case shell(String)
     case sendKey(KeyCombo)
@@ -46,6 +54,10 @@ enum Action {
             }
             return dir
         }
+        func workspaceIndex() throws -> Int {
+            guard let number = Int(arg), number >= 1 else { throw ConfigError("expected a workspace number in '\(text)'") }
+            return number - 1
+        }
         func nonEmpty() throws -> String {
             guard !arg.isEmpty else { throw ConfigError("missing argument in '\(text)'") }
             return arg
@@ -65,6 +77,17 @@ enum Action {
         case "tiling": return .toggleTiling
         case "retile": return .retile
         case "display": return .moveToNextDisplay
+        case "focus-display": return .focusNextDisplay
+        case "workspace":
+            if arg.lowercased() == "back-and-forth" { return .workspaceBackAndForth }
+            return .workspace(try workspaceIndex())
+        case "move-to-workspace": return .moveToWorkspace(try workspaceIndex())
+        case "resize":
+            let parts = arg.lowercased().split(separator: " ")
+            guard parts.count == 2, parts[0] == "width" || parts[0] == "height", let delta = Double(parts[1]) else {
+                throw ConfigError("expected 'resize width|height <points>' in '\(text)'")
+            }
+            return .resize(width: parts[0] == "width", delta: CGFloat(delta))
         case "launch": return .launch(try nonEmpty())
         case "shell": return .shell(try nonEmpty())
         case "key": return .sendKey(try KeyCombo.parse(try nonEmpty()))

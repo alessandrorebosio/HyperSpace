@@ -261,6 +261,21 @@ struct Modifiers: OptionSet, Hashable {
 }
 
 struct KeyCombo: Equatable {
+    /// Config text for a shortcut: "meh+1", "hyper+h", "ctrl+alt+left".
+    static func text(_ mods: Modifiers, key: String) -> String {
+        if mods == .hyper { return "hyper+\(key)" }
+        if mods == [.ctrl, .alt, .shift] { return "meh+\(key)" }
+        return mods.isEmpty ? key : "\(mods.configText)+\(key)"
+    }
+
+    /// "⌃⌥⇧ 1" for display.
+    static func label(_ text: String) -> String {
+        let tokens = text.split(separator: "+").map(String.init)
+        guard let key = tokens.last else { return text }
+        let mods = tokens.dropLast().reduce(into: Modifiers()) { $0.formUnion(Modifiers.token($1) ?? []) }
+        return [mods.symbols, KeyInfo.label(for: key)].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     let keyCode: UInt16
     let modifiers: Modifiers
 

@@ -11,7 +11,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         didSet { updateIcon() }
     }
 
-    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    /// Active workspace name shown next to the icon (nil hides it).
+    var workspace: String? {
+        didSet { item.button?.title = workspace.map { " \($0)" } ?? "" }
+    }
+
+    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let host: Host
 
     init(host: Host) {
@@ -28,6 +33,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
         image?.isTemplate = true
         item.button?.image = image
+        item.button?.imagePosition = .imageLeading
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

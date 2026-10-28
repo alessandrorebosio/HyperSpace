@@ -59,7 +59,7 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 ### Menu bar e finestra
 
 Il menu nella barra in alto ha solo **Settings…** (⌘,) e **Quit**. La finestra ha una barra laterale:
-**Keyboard**, **Mouse** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
+**Keyboard**, **Mouse**, **Tiling** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
 stato del permesso di Accessibilità, Quit).
 
 ### Keyboard
@@ -154,6 +154,25 @@ oppure **Disable Button**. Azioni pronte:
 | `buttons` | Tasto mouse (2 = centrale, 3 = indietro, 4 = avanti, …) con `modifiers` opzionali → azione (`none` lo disattiva). |
 
 ### Tiling
+
+Dalla pagina **Tiling**: attivazione, layout, spazi; **workspace** (nome, scorciatoia per mostrarlo,
+scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, spostamento, ridimensionamento.
+
+```json
+"tiling": {
+  "workspaces": [
+    { "name": "1", "switch": "meh+1", "move": "hyper+1" },
+    { "name": "2", "switch": "meh+2", "move": "hyper+2" }
+  ]
+}
+```
+
+**Workspace virtuali.** macOS non ha API pubbliche per gestire gli Spaces, quindi i workspace sono di
+HyperSpace: ogni finestra appartiene a un workspace e quelle dei workspace non attivi vengono parcheggiate
+nell'angolo in basso a destra dello schermo (come fa AeroSpace). Tornano al loro posto quando cambi
+workspace, quando esci da HyperSpace o spegni il tiling, e al lancio successivo dopo un crash. Se con ⌘Tab
+(o un clic) attivi una finestra di un altro workspace, HyperSpace passa a quel workspace. Il numero del
+workspace attivo compare accanto all'icona nella barra dei menu.
 Layout per schermo: `tall` (master a sinistra), `wide` (master in alto), `columns`, `monocle`.
 Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati.
 `floating` elenca i bundle ID da non affiancare.
@@ -170,6 +189,10 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 | `tiling` | Attiva/disattiva il tiling |
 | `retile` | Ricalcola subito il layout |
 | `display next` | Sposta la finestra sul monitor successivo |
+| `focus-display` | Focus su una finestra del monitor successivo |
+| `workspace <n>` / `workspace back-and-forth` | Mostra il workspace n / torna al precedente |
+| `move-to-workspace <n>` | Sposta la finestra attiva nel workspace n |
+| `resize width\|height <punti>` | Allarga/restringe la finestra (es. `resize width +50`): nel tiling sposta la divisione master/colonna o cambia la quota della finestra nella colonna |
 | `launch <Nome App o bundle id>` | Apre/attiva un'app |
 | `shell <comando>` | Esegue un comando con `/bin/sh -c` |
 | `key <combo>` | Invia una combinazione di tasti (es. `key cmd+shift+4`). I simboli (`-`, `=`, `,`…) usano il tasto che li scrive nel layout attivo; simboli che il layout scrive solo con ⌥ (es. `[` sulla tastiera italiana) non sono affidabili come scorciatoia |

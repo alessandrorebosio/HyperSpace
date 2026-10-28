@@ -23,7 +23,8 @@ final class AppWatcher {
         guard AXObserverCreate(pid, axCallback, &created) == .success, let created else { return nil }
         observer = created
 
-        let notifications = [kAXWindowCreatedNotification, kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification]
+        let notifications = [kAXWindowCreatedNotification, kAXWindowMiniaturizedNotification,
+                             kAXWindowDeminiaturizedNotification, kAXFocusedWindowChangedNotification]
         var registered = false
         for name in notifications where AXObserverAddNotification(observer, element, name as CFString, refcon) == .success {
             registered = true

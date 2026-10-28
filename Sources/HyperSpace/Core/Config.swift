@@ -41,6 +41,19 @@ struct RawConfig: Decodable {
         var padding: Double?
         var masterRatio: Double?
         var floating: [String]?
+        var workspaces: [Workspace]?
+    }
+    struct Workspace: Decodable {
+        var name: String?
+        /// Shortcut that shows the workspace.
+        var switchKeys: String?
+        /// Shortcut that moves the focused window there.
+        var move: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name, move
+            case switchKeys = "switch"
+        }
     }
 
     var keyboard: Keyboard?
@@ -128,6 +141,8 @@ struct TilingConfig {
     var padding: CGFloat = 8
     var masterRatio: CGFloat = 0.55
     var floating: Set<String> = []
+    /// Workspace names; empty means a single implicit workspace.
+    var workspaces: [String] = []
 }
 
 /// Validated, compiled configuration.
@@ -208,6 +223,11 @@ struct Config {
             self.tiling.padding = CGFloat(max(0, tiling.padding ?? 8))
             self.tiling.masterRatio = CGFloat(min(0.9, max(0.1, tiling.masterRatio ?? 0.55)))
             self.tiling.floating = Set(tiling.floating ?? [])
+            for (index, workspace) in (tiling.workspaces ?? []).enumerated() {
+                self.tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
+                if let keys = workspace.switchKeys, !keys.isEmpty { tap.bindKey(try KeyCombo.parse(keys), .workspace(index)) }
+                if let keys = workspace.move, !keys.isEmpty { tap.bindKey(try KeyCombo.parse(keys), .moveToWorkspace(index)) }
+            }
         }
     }
 }

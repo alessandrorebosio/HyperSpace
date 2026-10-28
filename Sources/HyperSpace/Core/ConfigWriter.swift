@@ -21,7 +21,8 @@ enum ConfigWriter {
         "hyperKey", "remap", "bindings",
         "keys", "from", "to", "button", "modifiers", "action",
         "reverseScroll", "dragModifier", "buttons",
-        "enabled", "layout", "gap", "padding", "masterRatio", "floating",
+        "enabled", "layout", "gap", "padding", "masterRatio", "floating", "workspaces",
+        "name", "switch", "move",
     ]
 
     private static func rank(_ key: String, depth: Int) -> Int {

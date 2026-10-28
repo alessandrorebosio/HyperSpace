@@ -2,13 +2,16 @@ import AppKit
 
 /// Pure layout math. All rects are in global top-left ("AX") coordinates.
 enum Layout {
-    static func frames(_ kind: LayoutKind, count: Int, in area: CGRect, gap: CGFloat, ratio: CGFloat) -> [CGRect] {
+    /// One frame per weight. Weights size the windows that share a split (the stack,
+    /// or all columns); the master's size comes from `ratio`.
+    static func frames(_ kind: LayoutKind, weights: [CGFloat], in area: CGRect, gap: CGFloat, ratio: CGFloat) -> [CGRect] {
+        let count = weights.count
         guard count > 0 else { return [] }
         switch kind {
         case .monocle:
             return Array(repeating: area, count: count)
         case .columns:
-            return split(area, into: count, horizontally: true, gap: gap)
+            return split(area, weights: weights, horizontally: true, gap: gap)
         case .tall, .wide:
             guard count > 1 else { return [area] }
             let horizontal = kind == .tall
@@ -18,17 +21,19 @@ enum Layout {
             let stack = horizontal
                 ? CGRect(x: rest.minX + gap, y: rest.minY, width: rest.width - gap, height: rest.height)
                 : CGRect(x: rest.minX, y: rest.minY + gap, width: rest.width, height: rest.height - gap)
-            return [masterRect] + split(stack, into: count - 1, horizontally: !horizontal, gap: gap)
+            return [masterRect] + split(stack, weights: Array(weights.dropFirst()), horizontally: !horizontal, gap: gap)
         }
     }
 
-    private static func split(_ rect: CGRect, into count: Int, horizontally: Bool, gap: CGFloat) -> [CGRect] {
+    private static func split(_ rect: CGRect, weights: [CGFloat], horizontally: Bool, gap: CGFloat) -> [CGRect] {
         let length = horizontally ? rect.width : rect.height
-        let size = ((length - gap * CGFloat(count - 1)) / CGFloat(count)).rounded(.down)
-        return (0..<count).map { i in
-            let offset = CGFloat(i) * (size + gap)
+        let usable = length - gap * CGFloat(weights.count - 1)
+        let total = weights.reduce(0, +)
+        var offset: CGFloat = 0
+        return weights.enumerated().map { i, weight in
             // The last tile absorbs rounding so the edge stays flush.
-            let extent = i == count - 1 ? length - offset : size
+            let extent = i == weights.count - 1 ? length - offset : (usable * weight / total).rounded(.down)
+            defer { offset += extent + gap }
             return horizontally
                 ? CGRect(x: rect.minX + offset, y: rect.minY, width: extent, height: rect.height)
                 : CGRect(x: rect.minX, y: rect.minY + offset, width: rect.width, height: extent)
