@@ -23,6 +23,22 @@ final class ManagedWindow {
     }
 }
 
+/// What the menu bar shows for a workspace.
+struct WorkspaceSummary {
+    struct Window {
+        let id: CGWindowID
+        let app: String
+        let title: String?
+        let icon: NSImage?
+    }
+
+    let index: Int
+    let name: String
+    /// 1-based display (left to right) showing it, if any.
+    let display: Int?
+    let windows: [Window]
+}
+
 private struct ScreenState {
     var layout: LayoutKind
     var ratio: CGFloat
@@ -488,6 +504,42 @@ final class WindowManager {
         let names = screens.map { displayed[$0.id].map(name(of:)) ?? "–" }
         let focusedID = focusedScreen()?.id
         onWorkspaceChange?((names, screens.firstIndex { $0.id == focusedID } ?? 0))
+    }
+
+    // MARK: - Menu
+
+    /// Every workspace with its windows in tiling order. Reads window titles, so it is
+    /// meant for when the menu opens, not for hot paths.
+    func summaries() -> [WorkspaceSummary] {
+        guard running, config.enabled, config.workspaces.count > 1 else { return [] }
+        syncDisplays()
+        let screens = ScreenInfo.current()
+        var apps: [pid_t: NSRunningApplication] = [:]
+        return (0..<workspaceCount).map { index in
+            let members = order.compactMap { windows[$0] }.filter { $0.workspace == index }
+            let entries = members.map { window -> WorkspaceSummary.Window in
+                let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
+                apps[window.pid] = app
+                let title = AX.string(window.element, kAXTitleAttribute).flatMap { $0.isEmpty ? nil : $0 }
+                return WorkspaceSummary.Window(id: window.id, app: app?.localizedName ?? window.bundleID ?? "App",
+                                               title: title, icon: app?.icon)
+            }
+            let display = display(showing: index).flatMap { id in screens.firstIndex { $0.id == id } }.map { $0 + 1 }
+            return WorkspaceSummary(index: index, name: name(of: index), display: display, windows: entries)
+        }
+    }
+
+    /// Brings a window to the front, showing its workspace first if needed.
+    func focusWindow(_ id: CGWindowID) {
+        guard let window = windows[id] else { return }
+        if display(showing: window.workspace) == nil {
+            lastFocused[window.workspace] = id
+            switchWorkspace(window.workspace)
+        } else {
+            followFocusAfter = Date().addingTimeInterval(0.6)
+            AX.focus(window.element, pid: window.pid)
+            notifyWorkspace()
+        }
     }
 
     // MARK: - Commands

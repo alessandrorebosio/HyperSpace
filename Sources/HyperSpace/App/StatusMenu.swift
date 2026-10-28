@@ -4,6 +4,9 @@ import AppKit
 final class StatusMenu: NSObject, NSMenuDelegate {
     struct Host {
         var openSettings: () -> Void
+        var workspaces: () -> [WorkspaceSummary]
+        var showWorkspace: (Int) -> Void
+        var focusWindow: (CGWindowID) -> Void
     }
 
     /// Shown at the top of the menu (missing permission, config error).
@@ -60,12 +63,56 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        addWorkspaces(to: menu)
+
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit HyperSpace", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
+}
+
+extension StatusMenu {
+    /// Workspaces with their windows (app icon, app name, window title). A click on a
+    /// workspace shows it, on a window brings it to the front.
+    private func addWorkspaces(to menu: NSMenu) {
+        let workspaces = host.workspaces()
+        guard !workspaces.isEmpty else { return }
+        let iconSize = NSSize(width: 16, height: 16)
+        for workspace in workspaces {
+            let header = ClosureMenuItem(workspace.name) { [host] in host.showWorkspace(workspace.index) }
+            let title = NSMutableAttributedString(string: workspace.name, attributes: [.font: NSFont.menuFont(ofSize: 0).bold])
+            if let display = workspace.display {
+                title.append(NSAttributedString(string: workspaces.contains { $0.display == 2 } ? "   display \(display)" : "   visible",
+                                                attributes: [.font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+                                                             .foregroundColor: NSColor.secondaryLabelColor]))
+            }
+            header.attributedTitle = title
+            header.state = workspace.display == nil ? .off : .on
+            menu.addItem(header)
+
+            for window in workspace.windows {
+                let label = window.title.map { "\(window.app) — \(Self.truncated($0))" } ?? window.app
+                let item = ClosureMenuItem(label) { [host] in host.focusWindow(window.id) }
+                item.indentationLevel = 1
+                if let icon = window.icon?.copy() as? NSImage {
+                    icon.size = iconSize
+                    item.image = icon
+                }
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+    }
+
+    private static func truncated(_ text: String) -> String {
+        text.count > 48 ? String(text.prefix(47)) + "…" : text
+    }
+}
+
+private extension NSFont {
+    var bold: NSFont { NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask) }
 }
 
 private final class ClosureMenuItem: NSMenuItem {

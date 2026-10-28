@@ -58,7 +58,7 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 
 ### Menu bar e finestra
 
-Il menu nella barra in alto ha solo **Settings…** (⌘,) e **Quit**. La finestra ha una barra laterale:
+Il menu nella barra in alto elenca i workspace con le loro finestre (icona, app, titolo; ✓ su quelli visibili): un clic su un workspace lo mostra, su una finestra la porta in primo piano. Sotto, **Settings…** (⌘,) e **Quit**. La finestra ha una barra laterale:
 **Keyboard**, **Mouse**, **Tiling** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
 stato del permesso di Accessibilità, Quit).
 

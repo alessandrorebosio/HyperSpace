@@ -28,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenu(host: StatusMenu.Host(
-            openSettings: { [unowned self] in settingsWindow.show() }
+            openSettings: { [unowned self] in settingsWindow.show() },
+            workspaces: { [unowned self] in windowManager.summaries() },
+            showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
+            focusWindow: { [unowned self] in windowManager.focusWindow($0) }
         ))
         store.onChange = { [weak self] in self?.apply($0) }
         windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspaces = $0 }
