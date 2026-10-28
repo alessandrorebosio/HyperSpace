@@ -136,7 +136,7 @@ struct TapConfig {
 
 struct TilingConfig {
     var enabled = true
-    var layout = LayoutKind.tall
+    var layout = LayoutKind.columns
     var gap: CGFloat = 8
     var padding: CGFloat = 8
     var masterRatio: CGFloat = 0.55

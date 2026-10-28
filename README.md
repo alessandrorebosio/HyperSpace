@@ -50,7 +50,7 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
     "buttons": [ { "button": 3, "action": "key cmd+[" } ]
   },
   "tiling": {
-    "enabled": true, "layout": "tall", "gap": 8, "padding": 8, "masterRatio": 0.55,
+    "enabled": true, "layout": "columns", "gap": 8, "padding": 8, "masterRatio": 0.55,
     "floating": ["com.apple.finder"]
   }
 }

@@ -49,10 +49,12 @@ final class TilingModel: ObservableObject {
     ]
 
     @Published private(set) var enabled = true
-    @Published private(set) var layout = LayoutKind.tall
+    @Published private(set) var layout = LayoutKind.columns
     @Published private(set) var gap = 8
     @Published private(set) var padding = 8
     @Published var workspaces: [Workspace] = []
+    /// Bundle identifiers of apps whose windows are never tiled.
+    @Published private(set) var floating: [String] = []
     @Published private(set) var shortcuts: [Shortcut] = []
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
@@ -88,6 +90,35 @@ final class TilingModel: ObservableObject {
         stopCapture()
         workspaces.removeAll { $0.id == id }
         save()
+    }
+
+    func addFloating(_ bundleID: String) {
+        guard !floating.contains(bundleID) else { return }
+        floating.append(bundleID)
+        save()
+    }
+
+    func removeFloating(_ bundleID: String) {
+        floating.removeAll { $0 == bundleID }
+        save()
+    }
+
+    /// Running apps that could be made floating, by name.
+    var floatingCandidates: [(name: String, bundleID: String)] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
+            .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? $0, $0) } }
+            .filter { !floating.contains($0.1) }
+            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+    }
+
+    static func appName(_ bundleID: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
+        return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+    }
+
+    static func appIcon(_ bundleID: String) -> NSImage? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map { NSWorkspace.shared.icon(forFile: $0.path) }
     }
 
     /// Typing a name saves shortly after the last keystroke.
@@ -157,9 +188,10 @@ final class TilingModel: ObservableObject {
         let root = ConfigWriter.read()
         let tiling = root["tiling"] as? [String: Any] ?? [:]
         enabled = tiling["enabled"] as? Bool ?? true
-        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? .tall
+        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? .columns
         gap = (tiling["gap"] as? NSNumber)?.intValue ?? 8
         padding = (tiling["padding"] as? NSNumber)?.intValue ?? 8
+        floating = tiling["floating"] as? [String] ?? []
         workspaces = (tiling["workspaces"] as? [[String: Any]] ?? []).enumerated().map { index, entry in
             Workspace(name: entry["name"] as? String ?? "\(index + 1)",
                       switchKeys: entry["switch"] as? String ?? "",
@@ -183,6 +215,7 @@ final class TilingModel: ObservableObject {
                 tiling["layout"] = layout.rawValue
                 tiling["gap"] = gap
                 tiling["padding"] = padding
+                tiling["floating"] = floating
                 tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
                     var entry: [String: Any] = ["name": workspace.name]
                     if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }

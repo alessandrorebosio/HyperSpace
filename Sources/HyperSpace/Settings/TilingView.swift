@@ -50,6 +50,38 @@ struct TilingView: View {
                 )
             }
 
+            Section {
+                if model.floating.isEmpty {
+                    Text("Every app is tiled").foregroundStyle(.secondary)
+                }
+                ForEach(model.floating, id: \.self) { bundleID in
+                    HStack {
+                        if let icon = TilingModel.appIcon(bundleID) {
+                            Image(nsImage: icon).resizable().frame(width: 18, height: 18)
+                        }
+                        Text(TilingModel.appName(bundleID))
+                        Text(bundleID).font(.caption).foregroundStyle(.tertiary)
+                        Spacer()
+                        RemoveButton { model.removeFloating(bundleID) }
+                    }
+                }
+                Menu {
+                    ForEach(model.floatingCandidates, id: \.bundleID) { app in
+                        Button(app.name) { model.addFloating(app.bundleID) }
+                    }
+                } label: {
+                    Label("Add App", systemImage: "plus.circle.fill").foregroundStyle(Color.accentColor)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            } header: {
+                Text("Floating Apps")
+            } footer: {
+                Text("Windows of these apps are never tiled: they keep their own size and position.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             ForEach(TilingModel.shortcutActions, id: \.group) { group in
                 Section {
                     ForEach(group.items, id: \.action) { item in

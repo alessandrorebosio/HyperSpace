@@ -35,15 +35,14 @@ enum DefaultConfig {
       },
       "tiling": {
         "enabled": true,
-        "layout": "tall",
+        "layout": "columns",
         "gap": 8,
         "padding": 8,
         "masterRatio": 0.55,
         "floating": [
           "com.apple.systempreferences",
           "com.apple.calculator",
-          "com.apple.ActivityMonitor",
-          "com.apple.finder"
+          "com.apple.ActivityMonitor"
         ]
       }
     }
