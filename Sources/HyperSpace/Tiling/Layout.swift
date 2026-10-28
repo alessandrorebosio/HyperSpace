@@ -68,6 +68,7 @@ struct ScreenInfo {
     let frame: CGRect
     let visible: CGRect
 
+    /// Screens ordered left to right (then top to bottom): the first is the leftmost.
     /// NSScreen uses bottom-left coordinates; AX and CGWindowList use top-left.
     static func current() -> [ScreenInfo] {
         let screens = NSScreen.screens
@@ -78,6 +79,7 @@ struct ScreenInfo {
             let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
             return ScreenInfo(id: id, frame: flip(screen.frame), visible: flip(screen.visibleFrame))
         }
+        .sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
     }
 }
 

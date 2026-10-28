@@ -44,14 +44,16 @@ private struct DragSession {
 ///   no Screen Recording permission as long as window titles are not requested.
 /// - Frames are only written when they differ from the target, so a retile with
 ///   nothing to do costs a single window-server query.
-/// - Workspaces are virtual (macOS offers no public API to drive Spaces): every window
-///   belongs to one, and the windows of inactive workspaces are parked in the bottom
-///   right corner of their screen. They are always brought back on quit, when tiling is
-///   turned off, and on the next launch after a crash.
+/// - Workspaces are virtual (macOS offers no public API to drive Spaces) and, as in i3,
+///   each display shows one of them. Every window belongs to a workspace; windows of
+///   workspaces not shown anywhere are parked in the bottom-right corner of their screen.
+///   They are always brought back on quit, when tiling is turned off, and on the next
+///   launch after a crash.
 final class WindowManager {
     private(set) var config = TilingConfig()
-    /// Called with the active workspace name, or nil when no workspaces are configured.
-    var onWorkspaceChange: ((String?) -> Void)?
+    /// Called with the workspace shown on each display (left to right) and the index of
+    /// the focused display, or nil when workspaces are not in use.
+    var onWorkspaceChange: (((names: [String], focused: Int)?) -> Void)?
 
     private var running = false
     private var apps: [pid_t: AppWatcher] = [:]
@@ -65,13 +67,19 @@ final class WindowManager {
     private var drag: DragSession?
     private lazy var refcon = Unmanaged.passUnretained(self).toOpaque()
 
-    private var activeWorkspace = 0
+    /// The workspace each display shows.
+    private var displayed: [CGDirectDisplayID: Int] = [:]
     private var previousWorkspace: Int?
     private var lastFocused: [Int: CGWindowID] = [:]
     /// Focus changes we cause ourselves must not switch workspace back.
     private var followFocusAfter = Date.distantPast
 
-    private var workspaceCount: Int { max(1, config.workspaces.count) }
+    /// At least one workspace per display, even when fewer are configured.
+    private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
+
+    private func name(of workspace: Int) -> String {
+        workspace < config.workspaces.count ? config.workspaces[workspace] : "\(workspace + 1)"
+    }
 
     // MARK: - Lifecycle
 
@@ -83,13 +91,10 @@ final class WindowManager {
         for window in windows.values where !window.userOverride {
             window.isFloating = config.floating.contains(window.bundleID ?? "")
         }
-        // Fewer workspaces than before: their windows join the active one.
-        if activeWorkspace >= workspaceCount {
-            activeWorkspace = 0
-            previousWorkspace = nil
-        }
-        for window in windows.values where window.workspace >= workspaceCount { window.workspace = activeWorkspace }
-        for window in windows.values where window.workspace == activeWorkspace { show(window) }
+        // Fewer workspaces than before: their windows join the first one.
+        displayed = displayed.filter { $0.value < workspaceCount }
+        if let previous = previousWorkspace, previous >= workspaceCount { previousWorkspace = nil }
+        for window in windows.values where window.workspace >= workspaceCount { window.workspace = 0 }
         config.enabled ? start() : stop()
         notifyWorkspace()
         scheduleRetile()
@@ -135,14 +140,20 @@ final class WindowManager {
                 addApp(app)
             }
             followFocus()
+            notifyWorkspace()
         }
         observe(NSWorkspace.didHideApplicationNotification) { [weak self] _ in self?.scheduleRetile() }
         observe(NSWorkspace.didUnhideApplicationNotification) { [weak self] _ in self?.scheduleRetile() }
         observe(NSWorkspace.activeSpaceDidChangeNotification) { [weak self] _ in self?.rescan() }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.scheduleRetile() }
+        ) { [weak self] _ in
+            self?.syncDisplays()
+            self?.scheduleRetile()
+            self?.notifyWorkspace()
+        }
 
+        syncDisplays()
         for app in NSWorkspace.shared.runningApplications { addApp(app) }
         rescueStrandedWindows()
         scheduleRetile()
@@ -161,6 +172,7 @@ final class WindowManager {
         windows.removeAll()
         order.removeAll()
         lastFocused.removeAll()
+        displayed.removeAll()
     }
 
     /// After a crash windows can be left parked off-screen: bring them back.
@@ -207,13 +219,25 @@ final class WindowManager {
     }
 
     private func track(_ element: AXUIElement, in watcher: AppWatcher) -> Bool {
-        guard let id = AX.windowID(element), windows[id] == nil, AX.isStandardWindow(element) else { return false }
+        guard let id = AX.windowID(element), windows[id] == nil else { return false }
+        guard AX.isStandardWindow(element) else {
+            log.debug("skip window of \(watcher.bundleID ?? "?", privacy: .public): role \(AX.string(element, kAXRoleAttribute) ?? "-", privacy: .public) subrole \(AX.string(element, kAXSubroleAttribute) ?? "-", privacy: .public)")
+            return false
+        }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
         window.isFloating = config.floating.contains(watcher.bundleID ?? "")
-        window.workspace = activeWorkspace
+        // A window joins the workspace shown where it appears.
+        let screens = ScreenInfo.current()
+        if let origin = AX.position(element), let size = AX.size(element), !screens.isEmpty {
+            let screen = screens[screens.index(for: CGRect(origin: origin, size: size))]
+            window.workspace = displayed[screen.id] ?? 0
+        } else {
+            window.workspace = focusedScreen().flatMap { displayed[$0.id] } ?? 0
+        }
         windows[id] = window
         order.append(id)
         watcher.watchDestroyed(element)
+        log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)")
         return true
     }
 
@@ -248,6 +272,7 @@ final class WindowManager {
             scheduleRetile()
         case kAXFocusedWindowChangedNotification:
             followFocus()
+            notifyWorkspace()
         default:
             scheduleRetile()
         }
@@ -271,24 +296,30 @@ final class WindowManager {
 
     private func retile() {
         guard running, config.enabled, drag == nil else { return }
+        syncDisplays()
         let screens = ScreenInfo.current()
         guard !screens.isEmpty else { return }
         let bounds = onScreenBounds()
+        let shown = Set(displayed.values)
 
-        var buckets = [[ManagedWindow]](repeating: [], count: screens.count)
-        for id in order {
-            guard let window = windows[id], window.workspace == activeWorkspace, !window.isFloating,
-                  let frame = bounds[id] else { continue }
-            // A window coming back from a hidden workspace returns to its own screen.
-            let index = screens.index(for: window.hiddenFrame ?? frame)
-            // A native full-screen window covers the whole display, menu bar included.
-            if window.hiddenFrame == nil && frame.isClose(to: screens[index].frame) { continue }
-            buckets[index].append(window)
+        for window in windows.values {
+            if !shown.contains(window.workspace) {
+                if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame) }
+            } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
+                show(window, on: screen)
+            }
         }
 
-        for (index, tiled) in buckets.enumerated() where !tiled.isEmpty {
-            let screen = screens[index]
+        for screen in screens {
+            guard let workspace = displayed[screen.id] else { continue }
+            let tiled = order.compactMap { windows[$0] }.filter { window in
+                guard window.workspace == workspace, !window.isFloating, let frame = bounds[window.id] else { return false }
+                // A native full-screen window covers the whole display, menu bar included.
+                return window.hiddenFrame != nil || !screens.contains { frame.isClose(to: $0.frame) }
+            }
+            guard !tiled.isEmpty else { continue }
             let state = state(for: screen.id)
+            log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map { $0.bundleID ?? "?" }, privacy: .public)")
             let frames = Layout.frames(state.layout, weights: tiled.map(\.weight), in: area(of: screen),
                                        gap: config.gap, ratio: state.ratio)
             for (window, frame) in zip(tiled, frames) {
@@ -336,7 +367,7 @@ final class WindowManager {
     }
 
     private func updateActiveScreen(_ change: (inout ScreenState) -> Void) {
-        guard let id = activeScreen()?.id else { return }
+        guard let id = focusedScreen()?.id else { return }
         var state = state(for: id)
         change(&state)
         screenStates[id] = state
@@ -345,17 +376,35 @@ final class WindowManager {
 
     // MARK: - Workspaces
 
-    func switchWorkspace(_ index: Int) {
-        guard running, (0..<workspaceCount).contains(index), index != activeWorkspace else { return }
-        let bounds = onScreenBounds()
-        if let current = focused(), current.workspace == activeWorkspace { lastFocused[activeWorkspace] = current.id }
-
-        for window in windows.values where window.workspace == activeWorkspace {
-            if let frame = bounds[window.id] { hide(window, from: frame) }
+    /// Every display shows a workspace; new displays take the first free one.
+    private func syncDisplays() {
+        let screens = ScreenInfo.current()
+        let ids = Set(screens.map(\.id))
+        displayed = displayed.filter { ids.contains($0.key) }
+        for screen in screens where displayed[screen.id] == nil {
+            let used = Set(displayed.values)
+            displayed[screen.id] = (0..<workspaceCount).first { !used.contains($0) } ?? 0
         }
-        previousWorkspace = activeWorkspace
-        activeWorkspace = index
-        for window in windows.values where window.workspace == index { show(window) }
+    }
+
+    private func display(showing workspace: Int) -> CGDirectDisplayID? {
+        displayed.first { $0.value == workspace }?.key
+    }
+
+    /// Shows a workspace. Already on a display: focus moves there (as in i3); otherwise
+    /// it replaces the workspace of the focused display.
+    func switchWorkspace(_ index: Int) {
+        guard running, (0..<workspaceCount).contains(index) else { return }
+        syncDisplays()
+        if display(showing: index) != nil {
+            focusWindow(in: index)
+            notifyWorkspace()
+            return
+        }
+        guard let screen = focusedScreen(), let current = displayed[screen.id] else { return }
+        if let window = focused(), window.workspace == current { lastFocused[current] = window.id }
+        displayed[screen.id] = index
+        previousWorkspace = current
         retile()
         focusWindow(in: index)
         notifyWorkspace()
@@ -367,14 +416,10 @@ final class WindowManager {
 
     func moveFocusedWindow(toWorkspace index: Int) {
         guard running, (0..<workspaceCount).contains(index), let window = focused(), window.workspace != index else { return }
+        let source = window.workspace
         window.workspace = index
-        if index != activeWorkspace, let frame = onScreenBounds()[window.id] {
-            hide(window, from: frame)
-            retile()
-            focusWindow(in: activeWorkspace)
-        } else {
-            scheduleRetile()
-        }
+        retile()
+        if display(showing: index) == nil { focusWindow(in: source) }
     }
 
     /// Parks a window in the bottom-right corner of its screen, nearly all of it off-screen.
@@ -387,9 +432,13 @@ final class WindowManager {
         AX.setPosition(window.element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1))
     }
 
-    /// Floating windows return to their frame now; tiled ones are placed by the next retile.
-    private func show(_ window: ManagedWindow) {
-        guard let frame = window.hiddenFrame, window.isFloating || !config.enabled else { return }
+    /// A floating window returns to its frame, on the display now showing its workspace;
+    /// tiled ones are placed by the retile.
+    private func show(_ window: ManagedWindow, on screen: ScreenInfo) {
+        guard var frame = window.hiddenFrame else { return }
+        if !screen.frame.contains(frame.center) {
+            frame.origin = CGPoint(x: screen.visible.midX - frame.width / 2, y: screen.visible.midY - frame.height / 2)
+        }
         setFrame(window, frame)
         window.hiddenFrame = nil
     }
@@ -402,15 +451,22 @@ final class WindowManager {
         if let target { AX.focus(target.element, pid: target.pid) }
     }
 
-    /// ⌘Tab or a click on a window of another workspace shows that workspace.
+    /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
     private func followFocus() {
-        guard Date() > followFocusAfter, config.workspaces.count > 1,
-              let window = focused(), window.workspace != activeWorkspace else { return }
+        guard running, Date() > followFocusAfter, let window = focused(),
+              display(showing: window.workspace) == nil else { return }
         switchWorkspace(window.workspace)
     }
 
     private func notifyWorkspace() {
-        onWorkspaceChange?(config.enabled && config.workspaces.count > 1 ? config.workspaces[activeWorkspace] : nil)
+        guard running, config.enabled, config.workspaces.count > 1 else {
+            onWorkspaceChange?(nil)
+            return
+        }
+        let screens = ScreenInfo.current()
+        let names = screens.map { displayed[$0.id].map(name(of:)) ?? "–" }
+        let focusedID = focusedScreen()?.id
+        onWorkspaceChange?((names, screens.firstIndex { $0.id == focusedID } ?? 0))
     }
 
     // MARK: - Commands
@@ -422,18 +478,24 @@ final class WindowManager {
         return windows[id]
     }
 
-    private func activeScreen() -> ScreenInfo? {
+    /// The display with the focused window, or under the pointer when nothing is focused.
+    private func focusedScreen() -> ScreenInfo? {
         let screens = ScreenInfo.current()
-        if let window = focused(), let frame = onScreenBounds()[window.id] {
+        guard !screens.isEmpty else { return nil }
+        if let window = focused(), window.hiddenFrame == nil, let frame = onScreenBounds()[window.id] {
             return screens[screens.index(for: frame)]
         }
-        return screens.first
+        let mouse = NSEvent.mouseLocation
+        let height = NSScreen.screens.first?.frame.height ?? 0
+        let point = CGPoint(x: mouse.x, y: height - mouse.y)
+        return screens.first { $0.frame.contains(point) } ?? screens.first
     }
 
-    /// Windows of the active workspace that are on screen, with their frames.
+    /// Windows of the displayed workspaces that are on screen, with their frames.
     private func visible(_ bounds: [CGWindowID: CGRect], tiledOnly: Bool = false) -> [(ManagedWindow, CGRect)] {
-        windows.values.compactMap { window in
-            guard window.workspace == activeWorkspace, !(tiledOnly && window.isFloating) else { return nil }
+        let shown = Set(displayed.values)
+        return windows.values.compactMap { window in
+            guard shown.contains(window.workspace), window.hiddenFrame == nil, !(tiledOnly && window.isFloating) else { return nil }
             return bounds[window.id].map { (window, $0) }
         }
     }
@@ -454,6 +516,7 @@ final class WindowManager {
         guard let target = Layout.neighbor(of: origin, direction, among: candidates), let targetFrame = bounds[target.id] else { return }
         swapOrder(current.id, target.id)
         Swift.swap(&current.weight, &target.weight)
+        Swift.swap(&current.workspace, &target.workspace)
         // Exchanging frames also carries the windows across displays.
         setFrame(current, targetFrame)
         setFrame(target, origin)
@@ -466,7 +529,7 @@ final class WindowManager {
         guard let current = focused(), !current.isFloating, let frame = bounds[current.id] else { return }
         let screen = screens.index(for: frame)
         let master = order.first { id in
-            guard let w = windows[id], w.workspace == activeWorkspace, !w.isFloating, let f = bounds[id] else { return false }
+            guard let w = windows[id], w.workspace == current.workspace, !w.isFloating, let f = bounds[id] else { return false }
             return screens.index(for: f) == screen
         }
         guard let master, master != current.id else { return }
@@ -511,7 +574,7 @@ final class WindowManager {
         let screenIndex = screens.index(for: frame)
         let screen = screens[screenIndex]
         let tiled = order.compactMap { windows[$0] }.filter { w in
-            w.workspace == activeWorkspace && !w.isFloating && bounds[w.id].map { screens.index(for: $0) == screenIndex } == true
+            w.workspace == window.workspace && !w.isFloating && bounds[w.id] != nil
         }
         guard let position = tiled.firstIndex(where: { $0.id == window.id }), tiled.count > 1 else { return }
         let area = area(of: screen)
@@ -558,28 +621,31 @@ final class WindowManager {
         scheduleRetile()
     }
 
+    /// Moves the focused window into the workspace shown on the next display.
     func moveToNextDisplay() {
         let screens = ScreenInfo.current()
         guard screens.count > 1, let window = focused(), let frame = onScreenBounds()[window.id] else { return }
-        let next = screens[(screens.index(for: frame) + 1) % screens.count].visible
-        let size = CGSize(width: min(frame.width, next.width), height: min(frame.height, next.height))
-        let origin = CGPoint(x: next.midX - size.width / 2, y: next.midY - size.height / 2)
-        setFrame(window, CGRect(origin: origin, size: size))
+        syncDisplays()
+        let next = screens[(screens.index(for: frame) + 1) % screens.count]
+        if let workspace = displayed[next.id] { window.workspace = workspace }
+        if window.isFloating || !running {
+            let size = CGSize(width: min(frame.width, next.visible.width), height: min(frame.height, next.visible.height))
+            setFrame(window, CGRect(x: next.visible.midX - size.width / 2, y: next.visible.midY - size.height / 2,
+                                    width: size.width, height: size.height))
+        }
+        retile()
+        followFocusAfter = Date().addingTimeInterval(0.6)
         AX.focus(window.element, pid: window.pid)
-        scheduleRetile()
+        notifyWorkspace()
     }
 
-    /// Focuses a window of the active workspace on the next display.
+    /// Focuses the workspace shown on the next display.
     func focusNextDisplay() {
         let screens = ScreenInfo.current()
-        guard screens.count > 1 else { return }
-        let bounds = onScreenBounds()
-        let current = focused().flatMap { bounds[$0.id] }.map { screens.index(for: $0) } ?? 0
-        let next = (current + 1) % screens.count
-        let target = order.compactMap { windows[$0] }.first { w in
-            w.workspace == activeWorkspace && bounds[w.id].map { screens.index(for: $0) == next } == true
-        }
-        if let target { AX.focus(target.element, pid: target.pid) }
+        guard screens.count > 1, let current = focusedScreen(),
+              let index = screens.firstIndex(where: { $0.id == current.id }) else { return }
+        if let workspace = displayed[screens[(index + 1) % screens.count].id] { focusWindow(in: workspace) }
+        notifyWorkspace()
     }
 
     // MARK: - Mouse drag (modifier + left drag moves, modifier + right drag resizes)
@@ -612,9 +678,14 @@ final class WindowManager {
         let bounds = onScreenBounds()
         switch session.mode {
         case .move:
-            // Dropping a tiled window onto another one swaps them.
+            // Dropping a tiled window onto another one swaps them; dropping it on another
+            // display moves it into the workspace shown there.
             if let target = visible(bounds, tiledOnly: true).first(where: { $0.0.id != id && $0.1.contains(point) }) {
                 swapOrder(id, target.0.id)
+                window.workspace = target.0.workspace
+            } else if let screen = ScreenInfo.current().first(where: { $0.frame.contains(point) }),
+                      let workspace = displayed[screen.id] {
+                window.workspace = workspace
             }
         case .resize:
             // Resizing a tiled window drags the master/stack split instead.
@@ -623,7 +694,7 @@ final class WindowManager {
             let screen = screens[screens.index(for: frame)]
             var state = state(for: screen.id)
             let isMaster = order.first { other in
-                guard let w = windows[other], w.workspace == activeWorkspace, !w.isFloating, let f = bounds[other] else { return false }
+                guard let w = windows[other], w.workspace == window.workspace, !w.isFloating, let f = bounds[other] else { return false }
                 return screens.index(for: f) == screens.index(for: frame)
             } == id
             let delta: CGFloat

@@ -11,9 +11,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         didSet { updateIcon() }
     }
 
-    /// Active workspace name shown next to the icon (nil hides it).
-    var workspace: String? {
-        didSet { item.button?.title = workspace.map { " \($0)" } ?? "" }
+    /// i3-style: the workspace shown on each display, left to right, instead of the icon.
+    var workspaces: (names: [String], focused: Int)? {
+        didSet { updateIcon() }
     }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -29,11 +29,27 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private func updateIcon() {
-        let symbol = problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
-        image?.isTemplate = true
-        item.button?.image = image
-        item.button?.imagePosition = .imageLeading
+        guard let button = item.button else { return }
+        guard let workspaces else {
+            let symbol = problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
+            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
+            image?.isTemplate = true
+            button.image = image
+            button.attributedTitle = NSAttributedString()
+            return
+        }
+        button.image = nil
+        let size = NSFont.systemFontSize
+        let regular: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)]
+        let bold: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)]
+        let title = NSMutableAttributedString(string: problem == nil ? "" : "⚠︎ ", attributes: regular)
+        for (index, name) in workspaces.names.enumerated() {
+            if index > 0 { title.append(NSAttributedString(string: " | ", attributes: regular)) }
+            // With several displays the focused one is bold.
+            let focused = workspaces.names.count > 1 && index == workspaces.focused
+            title.append(NSAttributedString(string: name, attributes: focused ? bold : regular))
+        }
+        button.attributedTitle = title
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

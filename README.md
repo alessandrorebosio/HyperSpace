@@ -167,12 +167,14 @@ scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, sposta
 }
 ```
 
-**Workspace virtuali.** macOS non ha API pubbliche per gestire gli Spaces, quindi i workspace sono di
-HyperSpace: ogni finestra appartiene a un workspace e quelle dei workspace non attivi vengono parcheggiate
-nell'angolo in basso a destra dello schermo (come fa AeroSpace). Tornano al loro posto quando cambi
+**Workspace virtuali, uno per monitor (come i3).** macOS non ha API pubbliche per gestire gli Spaces, quindi i
+workspace sono di HyperSpace: ogni monitor mostra un workspace, ogni finestra appartiene a un workspace e quelle
+dei workspace non mostrati vengono parcheggiate nell'angolo in basso a destra dello schermo (come fa AeroSpace).
+Mostrare un workspace già visibile su un altro monitor sposta il focus lì; altrimenti prende il posto di quello
+del monitor attivo. All'avvio il monitor più a sinistra mostra il workspace 1, il successivo il 2, e così via. Tornano al loro posto quando cambi
 workspace, quando esci da HyperSpace o spegni il tiling, e al lancio successivo dopo un crash. Se con ⌘Tab
-(o un clic) attivi una finestra di un altro workspace, HyperSpace passa a quel workspace. Il numero del
-workspace attivo compare accanto all'icona nella barra dei menu.
+(o un clic) attivi una finestra di un altro workspace, HyperSpace passa a quel workspace. Nella barra dei menu,
+al posto dell'icona, compare il workspace di ogni monitor da sinistra a destra (`1 | 3`), quello col focus in grassetto.
 Layout per schermo: `tall` (master a sinistra), `wide` (master in alto), `columns`, `monocle`.
 Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati.
 `floating` elenca i bundle ID da non affiancare.

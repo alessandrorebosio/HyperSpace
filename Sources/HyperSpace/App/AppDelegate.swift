@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings: { [unowned self] in settingsWindow.show() }
         ))
         store.onChange = { [weak self] in self?.apply($0) }
-        windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspace = $0 }
+        windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspaces = $0 }
 
         trusted = Permissions.isTrusted(prompt: true)
         if !trusted { waitForPermission() }
