@@ -175,7 +175,13 @@ del monitor attivo. All'avvio il monitor più a sinistra mostra il workspace 1, 
 workspace, quando esci da HyperSpace o spegni il tiling, e al lancio successivo dopo un crash. Se con ⌘Tab
 (o un clic) attivi una finestra di un altro workspace, HyperSpace passa a quel workspace. Nella barra dei menu,
 al posto dell'icona, compare il workspace di ogni monitor da sinistra a destra (`1 | 3`), quello col focus in grassetto.
-Layout per schermo: `tall` (master a sinistra), `wide` (master in alto), `columns`, `monocle`.
+Layout per schermo: `columns` (default, come i3: colonne affiancate, ognuna può contenere più finestre una
+sopra l'altra), `tall` (master a sinistra), `wide` (master in alto), `monocle`.
+
+In `columns`, spostando una finestra (`swap`): **giù/su** la scambia con quella sotto/sopra nella colonna,
+oppure, se è da sola, la impila nella colonna accanto; **sinistra/destra** la fa uscire dalla colonna in una
+nuova colonna da quel lato, oppure, se è da sola, scambia la colonna con la vicina. `resize width` cambia la
+larghezza della colonna, `resize height` l'altezza della finestra nella colonna.
 Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati.
 `floating` elenca i bundle ID da non affiancare.
 

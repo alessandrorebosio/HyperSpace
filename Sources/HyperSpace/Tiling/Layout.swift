@@ -25,7 +25,7 @@ enum Layout {
         }
     }
 
-    private static func split(_ rect: CGRect, weights: [CGFloat], horizontally: Bool, gap: CGFloat) -> [CGRect] {
+    static func split(_ rect: CGRect, weights: [CGFloat], horizontally: Bool, gap: CGFloat) -> [CGRect] {
         let length = horizontally ? rect.width : rect.height
         let usable = length - gap * CGFloat(weights.count - 1)
         let total = weights.reduce(0, +)

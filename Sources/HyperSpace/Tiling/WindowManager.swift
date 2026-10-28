@@ -69,6 +69,8 @@ final class WindowManager {
 
     /// The workspace each display shows.
     private var displayed: [CGDirectDisplayID: Int] = [:]
+    /// Column arrangement of each workspace (columns layout).
+    private var columns: [Int: ColumnLayout] = [:]
     private var previousWorkspace: Int?
     private var lastFocused: [Int: CGWindowID] = [:]
     /// Focus changes we cause ourselves must not switch workspace back.
@@ -320,9 +322,19 @@ final class WindowManager {
             guard !tiled.isEmpty else { continue }
             let state = state(for: screen.id)
             log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map { $0.bundleID ?? "?" }, privacy: .public)")
-            let frames = Layout.frames(state.layout, weights: tiled.map(\.weight), in: area(of: screen),
-                                       gap: config.gap, ratio: state.ratio)
-            for (window, frame) in zip(tiled, frames) {
+            let frames: [CGWindowID: CGRect]
+            if state.layout == .columns {
+                var layout = columns[workspace] ?? ColumnLayout()
+                layout.sync(with: tiled.map(\.id))
+                columns[workspace] = layout
+                frames = layout.frames(in: area(of: screen), gap: config.gap) { windows[$0]?.weight ?? 1 }
+            } else {
+                let list = Layout.frames(state.layout, weights: tiled.map(\.weight), in: area(of: screen),
+                                         gap: config.gap, ratio: state.ratio)
+                frames = Dictionary(uniqueKeysWithValues: zip(tiled.map(\.id), list))
+            }
+            for window in tiled {
+                guard let frame = frames[window.id] else { continue }
                 window.hiddenFrame = nil
                 if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame) }
             }
@@ -509,9 +521,21 @@ final class WindowManager {
         }
     }
 
+    /// The layout of the display showing a workspace.
+    private func layout(of workspace: Int) -> LayoutKind {
+        state(for: display(showing: workspace)).layout
+    }
+
     func swap(_ direction: Direction) {
         let bounds = onScreenBounds()
         guard let current = focused(), !current.isFloating, let origin = bounds[current.id] else { return }
+        if layout(of: current.workspace) == .columns, columns[current.workspace]?.locate(current.id) != nil {
+            // Columns: stack, unstack and reorder (see ColumnLayout.move); new arrangement, even shares.
+            columns[current.workspace]?.move(current.id, direction)
+            current.weight = 1
+            retile()
+            return
+        }
         let candidates = visible(bounds, tiledOnly: true).filter { $0.0.id != current.id }
         guard let target = Layout.neighbor(of: origin, direction, among: candidates), let targetFrame = bounds[target.id] else { return }
         swapOrder(current.id, target.id)
@@ -594,8 +618,17 @@ final class WindowManager {
                 resize(window, among: Array(tiled.dropFirst()), by: delta, length: splitIsHorizontal ? area.height : area.width)
             }
         case .columns:
-            guard isWidth else { return }
-            resize(window, among: tiled, by: delta, length: area.width)
+            guard var layout = columns[window.workspace], let (c, r) = layout.locate(window.id) else { return }
+            if isWidth {
+                let weights = layout.columns.map(\.weight)
+                guard weights.count > 1 else { return }
+                layout.setColumnWeight(c, Self.weight(at: c, of: weights, growingBy: delta, length: area.width, gap: config.gap))
+                columns[window.workspace] = layout
+            } else {
+                let stack = layout.columns[c].windows.compactMap { windows[$0] }
+                guard stack.count > 1 else { return }
+                window.weight = Self.weight(at: r, of: stack.map(\.weight), growingBy: delta, length: area.height, gap: config.gap)
+            }
         case .monocle:
             return
         }
@@ -604,13 +637,20 @@ final class WindowManager {
 
     /// Changes the window's weight so it gains `delta` points, the others sharing the difference.
     private func resize(_ window: ManagedWindow, among group: [ManagedWindow], by delta: CGFloat, length: CGFloat) {
-        let usable = length - config.gap * CGFloat(group.count - 1)
-        let total = group.reduce(0) { $0 + $1.weight }
-        let others = total - window.weight
+        guard let index = group.firstIndex(where: { $0 === window }) else { return }
+        window.weight = Self.weight(at: index, of: group.map(\.weight), growingBy: delta, length: length, gap: config.gap)
+    }
+
+    /// The new weight for item `index` so that it gains `delta` points along `length`,
+    /// with the other items keeping their weights (and sharing the difference).
+    static func weight(at index: Int, of weights: [CGFloat], growingBy delta: CGFloat, length: CGFloat, gap: CGFloat) -> CGFloat {
+        let usable = length - gap * CGFloat(weights.count - 1)
+        let total = weights.reduce(0, +)
+        let others = total - weights[index]
         let minimum: CGFloat = 80
-        let current = usable * window.weight / total
-        let target = min(usable - minimum * CGFloat(group.count - 1), max(minimum, current + delta))
-        window.weight = max(0.05, target * others / (usable - target))
+        let current = usable * weights[index] / total
+        let target = min(usable - minimum * CGFloat(weights.count - 1), max(minimum, current + delta))
+        return max(0.05, target * others / (usable - target))
     }
 
     func toggleFloat() {
@@ -682,6 +722,9 @@ final class WindowManager {
             // display moves it into the workspace shown there.
             if let target = visible(bounds, tiledOnly: true).first(where: { $0.0.id != id && $0.1.contains(point) }) {
                 swapOrder(id, target.0.id)
+                if window.workspace == target.0.workspace {
+                    columns[window.workspace]?.swap(id, target.0.id)
+                }
                 window.workspace = target.0.workspace
             } else if let screen = ScreenInfo.current().first(where: { $0.frame.contains(point) }),
                       let workspace = displayed[screen.id] {
