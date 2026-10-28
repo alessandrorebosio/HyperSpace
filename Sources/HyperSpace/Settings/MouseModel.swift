@@ -54,6 +54,66 @@ final class MouseModel: ObservableObject {
         setAction("none", for: id)
     }
 
+    func choose(_ action: String, for id: UUID) {
+        setAction(action, for: id)
+    }
+
+    /// Ready-made actions for mouse buttons, grouped for the menu.
+    static let presets: [(group: String, items: [(name: String, action: String)])] = [
+        ("Navigation", [
+            ("Back", "navigate back"),
+            ("Forward", "navigate forward"),
+        ]),
+        ("Browser", [
+            ("Open Link in New Tab", "click cmd"),
+            ("Reload Page", "key cmd+r"),
+            ("New Tab", "key cmd+t"),
+            ("Close Tab", "key cmd+w"),
+            ("Reopen Closed Tab", "key shift+cmd+t"),
+            ("Next Tab", "key ctrl+tab"),
+            ("Previous Tab", "key ctrl+shift+tab"),
+        ]),
+        ("Edit", [
+            ("Copy", "key cmd+c"),
+            ("Paste", "key cmd+v"),
+            ("Cut", "key cmd+x"),
+            ("Undo", "key cmd+z"),
+            ("Redo", "key shift+cmd+z"),
+            ("Zoom In", "key cmd+="),
+            ("Zoom Out", "key cmd+-"),
+        ]),
+        ("System", [
+            ("Mission Control", "system mission_control"),
+            ("App Windows", "system app_windows"),
+            ("Show Desktop", "system show_desktop"),
+            ("Spotlight", "key cmd+space"),
+            ("Screenshot", "key shift+cmd+5"),
+            ("Toggle Full Screen", "key ctrl+cmd+f"),
+            ("Lock Screen", "key ctrl+cmd+q"),
+        ]),
+        ("Media", [
+            ("Play / Pause", "media play_pause"),
+            ("Next Track", "media next"),
+            ("Previous Track", "media previous"),
+            ("Volume Up", "media volume_up"),
+            ("Volume Down", "media volume_down"),
+            ("Mute", "media mute"),
+        ]),
+    ]
+
+    /// The preset name for an action, matching key shortcuts by meaning ("cmd+[" == "cmd+left_bracket").
+    private static func presetName(_ action: String) -> String? {
+        let combo = action.hasPrefix("key ") ? try? KeyCombo.parse(String(action.dropFirst(4))) : nil
+        for (_, items) in presets {
+            for item in items {
+                if item.action == action { return item.name }
+                if let combo, item.action.hasPrefix("key "),
+                   (try? KeyCombo.parse(String(item.action.dropFirst(4)))) == combo { return item.name }
+            }
+        }
+        return nil
+    }
+
     func setReverseScroll(_ on: Bool) {
         reverseScroll = on
         save()
@@ -81,6 +141,7 @@ final class MouseModel: ObservableObject {
 
     static func actionLabel(_ action: String) -> String {
         if action == "none" { return "Disabled" }
+        if let name = presetName(action) { return name }
         if action.hasPrefix("key ") { return RemapTarget.label(String(action.dropFirst(4))) }
         return action
     }

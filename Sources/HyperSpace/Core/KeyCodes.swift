@@ -260,7 +260,7 @@ struct Modifiers: OptionSet, Hashable {
     }
 }
 
-struct KeyCombo {
+struct KeyCombo: Equatable {
     let keyCode: UInt16
     let modifiers: Modifiers
 

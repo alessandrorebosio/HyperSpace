@@ -27,6 +27,12 @@ enum Action {
     case reload
     /// Does nothing: binding it disables a mouse button or key.
     case none
+    /// History back/forward with the shortcut of the frontmost app.
+    case navigate(back: Bool)
+    case system(SystemAction)
+    case media(MediaKey)
+    /// A left click at the pointer with modifiers (e.g. ⌘-click opens a link in a new tab).
+    case click(Modifiers)
 
     static func parse(_ text: String) throws -> Action {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -64,6 +70,19 @@ enum Action {
         case "key": return .sendKey(try KeyCombo.parse(try nonEmpty()))
         case "reload": return .reload
         case "none": return .none
+        case "navigate":
+            switch arg.lowercased() {
+            case "back": return .navigate(back: true)
+            case "forward": return .navigate(back: false)
+            default: throw ConfigError("expected back/forward in '\(text)'")
+            }
+        case "system":
+            guard let action = SystemAction(rawValue: arg.lowercased()) else { throw ConfigError("unknown system action in '\(text)'") }
+            return .system(action)
+        case "media":
+            guard let key = MediaKey(rawValue: arg.lowercased()) else { throw ConfigError("unknown media key in '\(text)'") }
+            return .media(key)
+        case "click": return .click(try Modifiers.parse(arg))
         default: throw ConfigError("unknown action '\(text)'")
         }
     }

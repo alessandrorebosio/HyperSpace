@@ -28,6 +28,10 @@ final class ActionRunner {
         case .sendKey(let combo): KeyEmitter.post(combo)
         case .reload: reload()
         case .none: break
+        case .navigate(let back): Navigation.perform(back: back)
+        case .system(let action): action.perform()
+        case .media(let key): key.post()
+        case .click(let mods): Pointer.click(mods)
         }
     }
 

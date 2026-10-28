@@ -129,8 +129,15 @@ si possono rimappare ma non usare nelle `bindings`.
 
 Dalla finestra **Settings… → Mouse**: interruttore per invertire lo scroll della rotellina e mappatura dei tasti.
 **Add Button**, clicca il tasto del mouse sopra la finestra (tenendo premuti dei modificatori se vuoi che la
-mappatura valga solo con quelli), poi premi la combinazione che deve inviare (es. ⌘ e `[` insieme), oppure
-scegli **Disable Button**.
+mappatura valga solo con quelli), poi premi la combinazione che deve inviare, scegli un'azione pronta
+oppure **Disable Button**. Azioni pronte:
+
+- **Navigation**: Back / Forward universali: usano la scorciatoia dell'app in primo piano (⌘[ / ⌘] in
+  browser, Finder e quasi tutte le app; ⌃- / ⌃⇧- in VS Code, Cursor, Windsurf, Zed; ⌃⌘← / ⌃⌘→ in Xcode).
+- **Browser**: apri link in nuova scheda (⌘-clic sotto il puntatore), ricarica, nuova/chiudi/riapri scheda, scheda successiva/precedente.
+- **Edit**: copia, incolla, taglia, annulla, ripristina, zoom.
+- **System**: Mission Control, finestre dell'app, mostra Scrivania, Spotlight, screenshot, schermo intero, blocca schermo.
+- **Media**: play/pausa, brano successivo/precedente, volume, muto.
 | Chiave | Significato |
 |---|---|
 | `reverseScroll` | Inverte lo scroll **solo delle rotelline** (trackpad e Magic Mouse restano "naturali"). |
@@ -159,6 +166,10 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 | `key <combo>` | Invia una combinazione di tasti (es. `key cmd+shift+4`) |
 | `reload` | Ricarica la config |
 | `none` | Non fa nulla: disattiva il tasto o il pulsante a cui è legata |
+| `navigate back\|forward` | Indietro/avanti con la scorciatoia dell'app in primo piano |
+| `system mission_control\|app_windows\|show_desktop` | Mission Control, finestre dell'app, mostra Scrivania (via Dock) |
+| `media play_pause\|next\|previous\|volume_up\|volume_down\|mute` | Tasti multimediali |
+| `click <modificatori>` | Clic sinistro sotto il puntatore con modificatori (es. `click cmd`) |
 
 ## Architettura
 

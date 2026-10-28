@@ -29,8 +29,8 @@ enum DefaultConfig {
         "reverseScroll": false,
         "dragModifier": "ctrl+alt",
         "buttons": [
-          { "button": 3, "action": "key cmd+[" },
-          { "button": 4, "action": "key cmd+]" }
+          { "button": 3, "action": "navigate back" },
+          { "button": 4, "action": "navigate forward" }
         ]
       },
       "tiling": {

@@ -93,6 +93,15 @@ private struct MouseRuleRow: View {
 
             Menu {
                 Button("Press Keys…") { model.startCapture(.action(rule.id)) }
+                Divider()
+                ForEach(MouseModel.presets, id: \.group) { group in
+                    Menu(group.group) {
+                        ForEach(group.items, id: \.action) { item in
+                            Button(item.name) { model.choose(item.action, for: rule.id) }
+                        }
+                    }
+                }
+                Divider()
                 Button("Disable Button") { model.disable(rule.id) }
             } label: {
                 Text(model.capturing == .action(rule.id) ? "Press keys…" : (rule.action.isEmpty ? "Action" : MouseModel.actionLabel(rule.action)))
