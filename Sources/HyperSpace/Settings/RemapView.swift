@@ -112,9 +112,6 @@ private struct RuleRow: View {
         Menu {
             Button("Press Keys…") { model.startCapture(.to(rule.id)) }
             Divider()
-            Button("Hyper  ⌃⌥⇧⌘") { model.setCombination(.hyper, key: nil, for: rule.id) }
-            Button("Meh  ⌃⌥⇧") { model.setCombination([.ctrl, .alt, .shift], key: nil, for: rule.id) }
-            Divider()
             ForEach(KeyCodes.groups, id: \.title) { group in
                 Menu(group.title) {
                     ForEach(group.keys, id: \.name) { key in

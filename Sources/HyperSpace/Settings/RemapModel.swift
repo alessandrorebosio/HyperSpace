@@ -69,10 +69,6 @@ final class RemapModel: ObservableObject {
         save()
     }
 
-    func setCombination(_ mods: Modifiers, key: String?, for id: UUID) {
-        setTarget(RemapTarget.text(mods, key: key), for: id)
-    }
-
     /// Keyboard choices for a rule: the generic targets, every connected keyboard,
     /// and the rule's own target even if that keyboard is unplugged right now.
     func keyboardOptions(for rule: Rule) -> [String] {
