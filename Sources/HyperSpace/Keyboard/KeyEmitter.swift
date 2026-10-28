@@ -5,9 +5,11 @@ enum KeyEmitter {
     /// A private source so physically held keys don't leak into the stroke.
     private static let source = CGEventSource(stateID: .privateState)
 
+    /// Main thread: symbol keys are translated to the current keyboard layout.
     static func post(_ combo: KeyCombo) {
-        post(keyCode: combo.keyCode, flags: combo.modifiers.cgFlags, down: true)
-        post(keyCode: combo.keyCode, flags: combo.modifiers.cgFlags, down: false)
+        let keyCode = KeyboardLayout.keyCode(for: combo.keyCode)
+        post(keyCode: keyCode, flags: combo.modifiers.cgFlags, down: true)
+        post(keyCode: keyCode, flags: combo.modifiers.cgFlags, down: false)
     }
 
     /// Safe to call from the event tap thread.

@@ -1,29 +1,80 @@
 import AppKit
 import ApplicationServices
 
-/// Back/forward that works across apps: most use ⌘[ / ⌘], a few have their own shortcut.
+/// Back/forward that works in every app, whatever the keyboard layout or language.
+///
+/// 1. Xcode: ⌃⌘← / ⌃⌘→ (arrow keys do not depend on the layout).
+/// 2. Press the app's own menu item whose shortcut is ⌘[ / ⌘] (Safari, Finder, Chrome, Mail…)
+///    or ⌃- / ⌃⇧- (VS Code-like editors), found through Accessibility by its shortcut, not
+///    its title. Sending ⌘[ as a key stroke would fail on layouts where [ is not a plain key.
+/// 3. Otherwise a native back/forward mouse button, handled by Chrome, Firefox, Electron
+///    and JetBrains apps on their own.
 enum Navigation {
-    private static let back = try! KeyCombo.parse("cmd+[")
-    private static let forward = try! KeyCombo.parse("cmd+]")
+    private struct Shortcut {
+        let char: String
+        /// kAXMenuItemModifier* bits: 1 shift, 2 option, 4 control, 8 no command.
+        let modifiers: Int
+    }
 
-    /// Bundle id prefix → (back, forward).
-    private static let overrides: [(prefix: String, back: KeyCombo, forward: KeyCombo)] = {
-        let editor = (try! KeyCombo.parse("ctrl+-"), try! KeyCombo.parse("ctrl+shift+-"))
-        let xcode = (try! KeyCombo.parse("ctrl+cmd+left"), try! KeyCombo.parse("ctrl+cmd+right"))
-        return [
-            ("com.microsoft.VSCode", editor.0, editor.1),
-            ("com.vscodium", editor.0, editor.1),
-            ("com.todesktop.230313mzl4w4u92", editor.0, editor.1), // Cursor
-            ("com.exafunction.windsurf", editor.0, editor.1),
-            ("dev.zed.Zed", editor.0, editor.1),
-            ("com.apple.dt.Xcode", xcode.0, xcode.1),
-        ]
-    }()
+    private static let backShortcuts = [Shortcut(char: "[", modifiers: 0), Shortcut(char: "-", modifiers: 4 | 8)]
+    private static let forwardShortcuts = [Shortcut(char: "]", modifiers: 0), Shortcut(char: "-", modifiers: 1 | 4 | 8)]
+    private static let xcode = (back: try! KeyCombo.parse("ctrl+cmd+left"), forward: try! KeyCombo.parse("ctrl+cmd+right"))
 
-    static func perform(back isBack: Bool) {
-        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-        let match = overrides.first { bundleID.hasPrefix($0.prefix) }
-        KeyEmitter.post(isBack ? (match?.back ?? back) : (match?.forward ?? forward))
+    /// Menu items found per app, so the menu bar is searched once.
+    private static var cache: [pid_t: [Bool: AXUIElement]] = [:]
+    private static var lastPruned = Date.distantPast
+
+    static func perform(back: Bool) {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return }
+        if app.bundleIdentifier == "com.apple.dt.Xcode" {
+            KeyEmitter.post(back ? xcode.back : xcode.forward)
+            return
+        }
+        if pressMenuItem(of: app.processIdentifier, back: back) { return }
+        Pointer.navigationButton(back: back)
+    }
+
+    private static func pressMenuItem(of pid: pid_t, back: Bool) -> Bool {
+        pruneCache()
+        if let item = cache[pid]?[back] {
+            let result = AXUIElementPerformAction(item, kAXPressAction as CFString)
+            if result != .invalidUIElement && result != .cannotComplete { return true }
+            cache[pid]?[back] = nil // the app rebuilt its menus
+        }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.3)
+        guard let menuBar = AX.element(app, kAXMenuBarAttribute),
+              let item = find(back ? backShortcuts : forwardShortcuts, under: menuBar, depth: 5) else { return false }
+        cache[pid, default: [:]][back] = item
+        AXUIElementPerformAction(item, kAXPressAction as CFString)
+        return true
+    }
+
+    /// Depth-first through menu bar items, menus, items and submenus. Each element costs
+    /// a single AX round trip: shortcut and children are fetched together.
+    private static func find(_ shortcuts: [Shortcut], under element: AXUIElement, depth: Int) -> AXUIElement? {
+        let attributes = [kAXMenuItemCmdCharAttribute, kAXMenuItemCmdModifiersAttribute, kAXChildrenAttribute] as CFArray
+        for child in AX.elements(element, kAXChildrenAttribute) {
+            var values: CFArray?
+            guard AXUIElementCopyMultipleAttributeValues(child, attributes, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
+                  let list = values as? [Any], list.count == 3 else { continue }
+            if let char = list[0] as? String, let modifiers = (list[1] as? NSNumber)?.intValue,
+               shortcuts.contains(where: { $0.char == char && $0.modifiers == modifiers }) {
+                return child
+            }
+            if depth > 0, let children = list[2] as? [AXUIElement], !children.isEmpty,
+               let found = find(shortcuts, under: child, depth: depth - 1) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func pruneCache() {
+        guard Date().timeIntervalSince(lastPruned) > 300 else { return }
+        lastPruned = Date()
+        let running = Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier))
+        cache = cache.filter { running.contains($0.key) }
     }
 }
 
@@ -83,6 +134,18 @@ enum MediaKey: String {
 }
 
 enum Pointer {
+    /// A native "back" (button 3) or "forward" (button 4) mouse click at the pointer.
+    static func navigationButton(back: Bool) {
+        guard let location = CGEvent(source: nil)?.location else { return }
+        let number: Int64 = back ? 3 : 4
+        for type in [CGEventType.otherMouseDown, .otherMouseUp] {
+            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: .center) else { return }
+            event.setIntegerValueField(.mouseEventButtonNumber, value: number)
+            event.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
     /// Left click at the current pointer position with modifiers held.
     static func click(_ mods: Modifiers) {
         guard let location = CGEvent(source: nil)?.location else { return }

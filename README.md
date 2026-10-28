@@ -132,8 +132,11 @@ Dalla finestra **Settings… → Mouse**: interruttore per invertire lo scroll d
 mappatura valga solo con quelli), poi premi la combinazione che deve inviare, scegli un'azione pronta
 oppure **Disable Button**. Azioni pronte:
 
-- **Navigation**: Back / Forward universali: usano la scorciatoia dell'app in primo piano (⌘[ / ⌘] in
-  browser, Finder e quasi tutte le app; ⌃- / ⌃⇧- in VS Code, Cursor, Windsurf, Zed; ⌃⌘← / ⌃⌘→ in Xcode).
+- **Navigation**: Back / Forward universali, indipendenti da lingua e layout di tastiera. HyperSpace preme la
+  voce di menu dell'app in primo piano che ha come scorciatoia ⌘[ / ⌘] (Safari, Finder, Chrome, Mail…) o
+  ⌃- / ⌃⇧- (VS Code e simili), trovandola dalla scorciatoia e non dal nome (la ricerca è memorizzata per app).
+  Se l'app non ha quella voce invia un vero tasto mouse indietro/avanti (Chrome, Firefox, Electron, JetBrains);
+  in Xcode usa ⌃⌘← / ⌃⌘→.
 - **Browser**: apri link in nuova scheda (⌘-clic sotto il puntatore), ricarica, nuova/chiudi/riapri scheda, scheda successiva/precedente.
 - **Edit**: copia, incolla, taglia, annulla, ripristina, zoom.
 - **System**: Mission Control, finestre dell'app, mostra Scrivania, Spotlight, screenshot, schermo intero, blocca schermo.
@@ -163,7 +166,7 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 | `display next` | Sposta la finestra sul monitor successivo |
 | `launch <Nome App o bundle id>` | Apre/attiva un'app |
 | `shell <comando>` | Esegue un comando con `/bin/sh -c` |
-| `key <combo>` | Invia una combinazione di tasti (es. `key cmd+shift+4`) |
+| `key <combo>` | Invia una combinazione di tasti (es. `key cmd+shift+4`). I simboli (`-`, `=`, `,`…) usano il tasto che li scrive nel layout attivo; simboli che il layout scrive solo con ⌥ (es. `[` sulla tastiera italiana) non sono affidabili come scorciatoia |
 | `reload` | Ricarica la config |
 | `none` | Non fa nulla: disattiva il tasto o il pulsante a cui è legata |
 | `navigate back\|forward` | Indietro/avanti con la scorciatoia dell'app in primo piano |
