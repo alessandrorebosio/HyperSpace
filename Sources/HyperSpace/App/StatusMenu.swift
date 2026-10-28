@@ -74,40 +74,39 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 }
 
 extension StatusMenu {
-    /// Workspaces with their windows (app icon, app name, window title). A click on a
-    /// workspace shows it, on a window brings it to the front.
+    /// Workspaces that have open windows, one per line: name, then the icons of their
+    /// apps. A checkmark marks the ones on screen; a click shows the workspace.
     private func addWorkspaces(to menu: NSMenu) {
-        let workspaces = host.workspaces()
+        let workspaces = host.workspaces().filter { !$0.windows.isEmpty }
         guard !workspaces.isEmpty else { return }
-        let iconSize = NSSize(width: 16, height: 16)
-        for workspace in workspaces {
-            let header = ClosureMenuItem(workspace.name) { [host] in host.showWorkspace(workspace.index) }
-            let title = NSMutableAttributedString(string: workspace.name, attributes: [.font: NSFont.menuFont(ofSize: 0).bold])
-            if let display = workspace.display {
-                title.append(NSAttributedString(string: workspaces.contains { $0.display == 2 } ? "   display \(display)" : "   visible",
-                                                attributes: [.font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
-                                                             .foregroundColor: NSColor.secondaryLabelColor]))
-            }
-            header.attributedTitle = title
-            header.state = workspace.display == nil ? .off : .on
-            menu.addItem(header)
+        let font = NSFont.menuFont(ofSize: 0)
+        let nameWidth = workspaces.map { ($0.name as NSString).size(withAttributes: [.font: font.bold]).width }.max() ?? 0
+        let tabs = NSMutableParagraphStyle()
+        tabs.tabStops = [NSTextTab(textAlignment: .left, location: nameWidth + 16)]
 
-            for window in workspace.windows {
-                let label = window.title.map { "\(window.app) — \(Self.truncated($0))" } ?? window.app
-                let item = ClosureMenuItem(label) { [host] in host.focusWindow(window.id) }
-                item.indentationLevel = 1
-                if let icon = window.icon?.copy() as? NSImage {
-                    icon.size = iconSize
-                    item.image = icon
-                }
-                menu.addItem(item)
+        for workspace in workspaces {
+            let item = ClosureMenuItem(workspace.name) { [host] in host.showWorkspace(workspace.index) }
+            let title = NSMutableAttributedString(string: workspace.name + "\t",
+                                                  attributes: [.font: font.bold, .paragraphStyle: tabs])
+            // One icon per app, in tiling order.
+            var seen = Set<String>()
+            for window in workspace.windows where seen.insert(window.app).inserted {
+                guard let icon = window.icon?.copy() as? NSImage else { continue }
+                icon.size = NSSize(width: 18, height: 18)
+                let attachment = NSTextAttachment()
+                attachment.image = icon
+                attachment.bounds = CGRect(x: 0, y: -4, width: 18, height: 18)
+                title.append(NSAttributedString(attachment: attachment))
+                title.append(NSAttributedString(string: " ", attributes: [.font: font]))
             }
+            item.attributedTitle = title
+            item.toolTip = workspace.windows.map { window in
+                window.title.map { "\(window.app) — \($0)" } ?? window.app
+            }.joined(separator: "\n")
+            item.state = workspace.display == nil ? .off : .on
+            menu.addItem(item)
         }
         menu.addItem(.separator())
-    }
-
-    private static func truncated(_ text: String) -> String {
-        text.count > 48 ? String(text.prefix(47)) + "…" : text
     }
 }
 

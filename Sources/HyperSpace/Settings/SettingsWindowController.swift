@@ -75,7 +75,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling,
                                     general: GeneralModel(actions: actions))
             let controller = NSHostingController(rootView: root)
-            controller.sizingOptions = [.preferredContentSize]
+            // Only a minimum size: the preferred size would pin the window and block resizing.
+            controller.sizingOptions = [.minSize]
 
             let window = NSWindow(contentViewController: controller)
             window.title = "HyperSpace"
@@ -84,6 +85,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
             window.delegate = self
+            window.setContentSize(NSSize(width: 900, height: 640))
+            window.setFrameAutosaveName("HyperSpaceSettings")
             window.center()
             self.window = window
             self.keyboard = keyboard
