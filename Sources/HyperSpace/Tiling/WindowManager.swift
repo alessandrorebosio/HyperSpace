@@ -228,9 +228,11 @@ final class WindowManager {
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
         window.isFloating = config.floating.contains(watcher.bundleID ?? "")
-        // A window joins the workspace shown where it appears.
+        // A window joins its app's assigned workspace, or the one shown where it appears.
         let screens = ScreenInfo.current()
-        if let origin = AX.position(element), let size = AX.size(element), !screens.isEmpty {
+        if let assigned = watcher.bundleID.flatMap({ config.assignments[$0] }), assigned < workspaceCount {
+            window.workspace = assigned
+        } else if let origin = AX.position(element), let size = AX.size(element), !screens.isEmpty {
             let screen = screens[screens.index(for: CGRect(origin: origin, size: size))]
             window.workspace = displayed[screen.id] ?? 0
         } else {
@@ -265,6 +267,13 @@ final class WindowManager {
         switch notification {
         case kAXWindowCreatedNotification:
             guard let watcher = apps[pid], track(element, in: watcher) else { return }
+            // An app you just opened shows its assigned workspace, so its window is visible.
+            if let id = AX.windowID(element), let window = windows[id], display(showing: window.workspace) == nil,
+               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+                lastFocused[window.workspace] = id
+                switchWorkspace(window.workspace)
+                return
+            }
             scheduleRetile()
             // Some apps put the window on screen a moment after announcing it.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }

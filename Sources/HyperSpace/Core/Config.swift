@@ -42,6 +42,12 @@ struct RawConfig: Decodable {
         var masterRatio: Double?
         var floating: [String]?
         var workspaces: [Workspace]?
+        var assign: [Assignment]?
+    }
+    /// Windows of `app` (bundle id) open in workspace `workspace` (name or number).
+    struct Assignment: Decodable {
+        var app: String
+        var workspace: String
     }
     struct Workspace: Decodable {
         var name: String?
@@ -143,6 +149,8 @@ struct TilingConfig {
     var floating: Set<String> = []
     /// Workspace names; empty means a single implicit workspace.
     var workspaces: [String] = []
+    /// Bundle id → workspace index for windows to open in.
+    var assignments: [String: Int] = [:]
 }
 
 /// Validated, compiled configuration.
@@ -227,6 +235,14 @@ struct Config {
                 self.tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
                 if let keys = workspace.switchKeys, !keys.isEmpty { tap.bindKey(try KeyCombo.parse(keys), .workspace(index)) }
                 if let keys = workspace.move, !keys.isEmpty { tap.bindKey(try KeyCombo.parse(keys), .moveToWorkspace(index)) }
+            }
+            for rule in tiling.assign ?? [] {
+                let names = self.tiling.workspaces
+                guard let index = names.firstIndex(of: rule.workspace)
+                        ?? Int(rule.workspace).map({ $0 - 1 }).flatMap({ names.indices.contains($0) ? $0 : nil }) else {
+                    throw ConfigError("app rule for \(rule.app): no workspace named '\(rule.workspace)'")
+                }
+                self.tiling.assignments[rule.app] = index
             }
         }
     }

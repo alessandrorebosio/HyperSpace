@@ -167,6 +167,18 @@ scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, sposta
 }
 ```
 
+**Regole per app.** Le finestre di un'app si aprono direttamente nel suo workspace; se l'app è in primo piano
+(l'hai appena aperta) HyperSpace passa a quel workspace. Dalla pagina Tiling → App Rules, oppure:
+
+```json
+"assign": [
+  { "app": "com.autodesk.fusion360", "workspace": "cad" },
+  { "app": "com.spotify.client", "workspace": "music" }
+]
+```
+
+`workspace` è il nome (o il numero) del workspace; rinominandolo dalla pagina Tiling le regole lo seguono.
+
 **Workspace virtuali, uno per monitor (come i3).** macOS non ha API pubbliche per gestire gli Spaces, quindi i
 workspace sono di HyperSpace: ogni monitor mostra un workspace, ogni finestra appartiene a un workspace e quelle
 dei workspace non mostrati vengono parcheggiate nell'angolo in basso a destra dello schermo (come fa AeroSpace).

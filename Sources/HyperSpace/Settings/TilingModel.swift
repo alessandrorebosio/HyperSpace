@@ -55,6 +55,14 @@ final class TilingModel: ObservableObject {
     @Published var workspaces: [Workspace] = []
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
+    /// Apps whose windows open in a given workspace (by name).
+    @Published private(set) var assignments: [Assignment] = []
+
+    struct Assignment: Identifiable, Equatable {
+        let id = UUID()
+        var app: String
+        var workspace: String
+    }
     @Published private(set) var shortcuts: [Shortcut] = []
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
@@ -105,11 +113,46 @@ final class TilingModel: ObservableObject {
 
     /// Running apps that could be made floating, by name.
     var floatingCandidates: [(name: String, bundleID: String)] {
+        Self.runningApps.filter { !floating.contains($0.bundleID) }
+    }
+
+    var assignmentCandidates: [(name: String, bundleID: String)] {
+        Self.runningApps.filter { app in !assignments.contains { $0.app == app.bundleID } }
+    }
+
+    private static var runningApps: [(name: String, bundleID: String)] {
         NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
             .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? $0, $0) } }
-            .filter { !floating.contains($0.1) }
             .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+    }
+
+    func addAssignment(_ bundleID: String) {
+        guard !assignments.contains(where: { $0.app == bundleID }), let first = workspaces.first else { return }
+        assignments.append(Assignment(app: bundleID, workspace: first.name))
+        save()
+    }
+
+    /// Picks any installed app, running or not.
+    func chooseAppForAssignment() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Assign"
+        guard panel.runModal() == .OK, let url = panel.url,
+              let bundleID = Bundle(url: url)?.bundleIdentifier else { return }
+        addAssignment(bundleID)
+    }
+
+    func setAssignment(_ id: UUID, workspace: String) {
+        guard let index = assignments.firstIndex(where: { $0.id == id }) else { return }
+        assignments[index].workspace = workspace
+        save()
+    }
+
+    func removeAssignment(_ id: UUID) {
+        assignments.removeAll { $0.id == id }
+        save()
     }
 
     static func appName(_ bundleID: String) -> String {
@@ -124,6 +167,9 @@ final class TilingModel: ObservableObject {
     /// Typing a name saves shortly after the last keystroke.
     func rename(_ id: UUID, to name: String) {
         guard let index = workspaces.firstIndex(where: { $0.id == id }) else { return }
+        // App rules follow their workspace's new name.
+        let old = workspaces[index].name
+        for i in assignments.indices where assignments[i].workspace == old { assignments[i].workspace = name }
         workspaces[index].name = name
         pendingSave?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.save() }
@@ -192,6 +238,10 @@ final class TilingModel: ObservableObject {
         gap = (tiling["gap"] as? NSNumber)?.intValue ?? 8
         padding = (tiling["padding"] as? NSNumber)?.intValue ?? 8
         floating = tiling["floating"] as? [String] ?? []
+        assignments = (tiling["assign"] as? [[String: Any]] ?? []).compactMap { entry in
+            guard let app = entry["app"] as? String, let workspace = entry["workspace"] as? String else { return nil }
+            return Assignment(app: app, workspace: workspace)
+        }
         workspaces = (tiling["workspaces"] as? [[String: Any]] ?? []).enumerated().map { index, entry in
             Workspace(name: entry["name"] as? String ?? "\(index + 1)",
                       switchKeys: entry["switch"] as? String ?? "",
@@ -216,6 +266,10 @@ final class TilingModel: ObservableObject {
                 tiling["gap"] = gap
                 tiling["padding"] = padding
                 tiling["floating"] = floating
+                // Rules pointing at a workspace that no longer exists are dropped.
+                let names = Set(workspaces.map(\.name))
+                let rules = assignments.filter { names.contains($0.workspace) }
+                tiling["assign"] = rules.isEmpty ? nil : rules.map { ["app": $0.app, "workspace": $0.workspace] }
                 tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
                     var entry: [String: Any] = ["name": workspace.name]
                     if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }

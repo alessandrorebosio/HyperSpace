@@ -51,16 +51,50 @@ struct TilingView: View {
             }
 
             Section {
+                if model.assignments.isEmpty {
+                    Text("Apps open wherever you are").foregroundStyle(.secondary)
+                }
+                ForEach(model.assignments) { rule in
+                    HStack {
+                        AppLabel(bundleID: rule.app)
+                        Spacer()
+                        Picker("Workspace", selection: Binding(get: { rule.workspace }, set: { model.setAssignment(rule.id, workspace: $0) })) {
+                            ForEach(model.workspaces.map(\.name), id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        RemoveButton { model.removeAssignment(rule.id) }
+                    }
+                }
+                Menu {
+                    ForEach(model.assignmentCandidates, id: \.bundleID) { app in
+                        Button(app.name) { model.addAssignment(app.bundleID) }
+                    }
+                    Divider()
+                    Button("Other App…") { model.chooseAppForAssignment() }
+                } label: {
+                    Label("Add App", systemImage: "plus.circle.fill").foregroundStyle(Color.accentColor)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(model.workspaces.isEmpty)
+            } header: {
+                Text("App Rules")
+            } footer: {
+                Text("New windows of these apps open in their workspace; opening the app takes you there.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
                 if model.floating.isEmpty {
                     Text("Every app is tiled").foregroundStyle(.secondary)
                 }
                 ForEach(model.floating, id: \.self) { bundleID in
                     HStack {
-                        if let icon = TilingModel.appIcon(bundleID) {
-                            Image(nsImage: icon).resizable().frame(width: 18, height: 18)
-                        }
-                        Text(TilingModel.appName(bundleID))
-                        Text(bundleID).font(.caption).foregroundStyle(.tertiary)
+                        AppLabel(bundleID: bundleID)
                         Spacer()
                         RemoveButton { model.removeFloating(bundleID) }
                     }
@@ -100,6 +134,21 @@ struct TilingView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// App icon, name and bundle id.
+private struct AppLabel: View {
+    let bundleID: String
+
+    var body: some View {
+        HStack {
+            if let icon = TilingModel.appIcon(bundleID) {
+                Image(nsImage: icon).resizable().frame(width: 18, height: 18)
+            }
+            Text(TilingModel.appName(bundleID))
+            Text(bundleID).font(.caption).foregroundStyle(.tertiary)
+        }
     }
 }
 
