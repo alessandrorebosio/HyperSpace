@@ -59,6 +59,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private static func tab<V: View>(_ view: V, title: String, symbol: String) -> NSTabViewItem {
         let controller = NSHostingController(rootView: view)
+        // The tab controller sizes the window from each tab's preferred content size.
+        controller.sizingOptions = [.preferredContentSize]
         controller.title = title
         let item = NSTabViewItem(viewController: controller)
         item.label = title
