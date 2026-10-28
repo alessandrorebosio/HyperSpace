@@ -131,7 +131,7 @@ final class KeyboardRemapper {
         }
     }
 
-    static func mapping(_ rules: [RemapRule], product: String, builtIn: Bool) -> NSArray {
+    private static func mapping(_ rules: [RemapRule], product: String, builtIn: Bool) -> NSArray {
         var bySource: [UInt64: (specificity: Int, to: UInt64)] = [:]
         for rule in rules where rule.target.matches(product: product, builtIn: builtIn) {
             if let existing = bySource[rule.from], existing.specificity > rule.target.specificity { continue }

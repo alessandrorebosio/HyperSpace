@@ -179,6 +179,7 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 ```
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permesso), StatusMenu (menu bar)
+├── Settings/   finestra Impostazioni (schede Keyboard/Mouse, SwiftUI caricato solo quando aperta)
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
 ├── Mouse/      DragController (ponte tap → window manager)

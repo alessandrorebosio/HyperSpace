@@ -4,72 +4,48 @@ struct RemapView: View {
     @ObservedObject var model: RemapModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            keyboardsSection
-            remapSection
-            footer
-        }
-        .padding(20)
-        .frame(minWidth: 680, minHeight: 440, alignment: .topLeading)
-    }
-
-    private var keyboardsSection: some View {
-        GroupBox {
-            HStack(spacing: 16) {
+        Form {
+            Section {
                 if model.keyboards.isEmpty {
                     Text("No keyboards found").foregroundStyle(.secondary)
                 }
                 ForEach(model.keyboards, id: \.self) { keyboard in
-                    Label(keyboard.product.isEmpty ? "Keyboard" : keyboard.product,
-                          systemImage: keyboard.builtIn ? "laptopcomputer" : "keyboard")
-                }
-                Spacer()
-            }
-            .padding(6)
-        } label: {
-            Text("Connected keyboards")
-        }
-    }
-
-    private var remapSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                if model.rules.isEmpty {
-                    Text("No remaps yet. Add one and press the key you want to change.")
-                        .foregroundStyle(.secondary)
-                }
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(model.rules) { rule in
-                            RuleRow(model: model, rule: rule)
-                        }
+                    LabeledContent {
+                        Text(keyboard.builtIn ? "Built-in" : "External").foregroundStyle(.secondary)
+                    } label: {
+                        Label(keyboard.product.isEmpty ? "Keyboard" : keyboard.product,
+                              systemImage: keyboard.builtIn ? "laptopcomputer" : "keyboard")
                     }
+                }
+            } header: {
+                Text("Connected Keyboards")
+            }
+
+            Section {
+                if model.rules.isEmpty {
+                    Text("No remaps yet").foregroundStyle(.secondary)
+                }
+                ForEach(model.rules) { rule in
+                    RuleRow(model: model, rule: rule)
                 }
                 Button {
                     model.addRule()
                 } label: {
-                    Label("Add Remap", systemImage: "plus")
+                    Label("Add Remap", systemImage: "plus.circle.fill")
+                        .foregroundStyle(Color.accentColor)
                 }
+                .buttonStyle(.borderless)
+            } header: {
+                Text("Remaps")
+            } footer: {
+                SettingsFooter(
+                    hint: "Click a key and press it on any keyboard. For a combination hold the keys together (e.g. ⇧⌃⌥) and release.",
+                    error: model.saveError
+                )
             }
-            .padding(6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Text("Remaps")
         }
-    }
-
-    private var footer: some View {
-        HStack {
-            if let error = model.saveError {
-                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-            } else {
-                Text("Click a field and press keys on any keyboard. For a combination hold the keys together (e.g. ⇧⌃⌥) and release. Changes apply instantly.")
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Open config.json") { NSWorkspace.shared.open(ConfigStore.url) }
-        }
-        .font(.caption)
+        .formStyle(.grouped)
+        .frame(width: 640, height: 460)
     }
 }
 
@@ -79,68 +55,48 @@ private struct RuleRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            KeyField(name: rule.from.isEmpty ? "" : KeyInfo.label(for: rule.from), placeholder: "Key",
-                     capturing: model.capturing == .from(rule.id)) {
-                model.capturing == .from(rule.id) ? model.stopCapture() : model.startCapture(.from(rule.id))
+            KeyCap(text: sourceText, width: 150, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
+                toggle(.from(rule.id))
             }
-            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-            targetMenu
-            Picker("", selection: Binding(get: { rule.keyboard }, set: { model.setKeyboard($0, for: rule.id) })) {
+            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+            KeyCap(text: targetText, width: 150, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
+                toggle(.to(rule.id))
+            }
+            ChoiceMenu(help: "Choose from all keys") {
+                ForEach(KeyCodes.groups, id: \.title) { group in
+                    Menu(group.title) {
+                        ForEach(group.keys, id: \.name) { key in
+                            Button(key.label) { model.setTarget(key.name, for: rule.id) }
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 12)
+            Picker("Keyboards", selection: Binding(get: { rule.keyboard }, set: { model.setKeyboard($0, for: rule.id) })) {
                 ForEach(model.keyboardOptions(for: rule), id: \.self) { option in
                     Text(model.keyboardLabel(option)).tag(option)
                 }
             }
             .labelsHidden()
-            .frame(width: 160)
-            Spacer()
-            if let warning = model.warning(for: rule) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(warning)
-            }
-            Button {
-                model.remove(rule.id)
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
-            .help("Remove")
+            .fixedSize()
+            WarningBadge(text: model.warning(for: rule))
+            RemoveButton { model.remove(rule.id) }
         }
     }
 
-    /// The target is captured from the keyboard, built as a combination, or picked
-    /// from every known key (including ones no keyboard has: media, F21–F24, None).
-    private var targetMenu: some View {
-        Menu {
-            Button("Press Keys…") { model.startCapture(.to(rule.id)) }
-            Divider()
-            ForEach(KeyCodes.groups, id: \.title) { group in
-                Menu(group.title) {
-                    ForEach(group.keys, id: \.name) { key in
-                        Button(key.label) { model.setTarget(key.name, for: rule.id) }
-                    }
-                }
-            }
-        } label: {
-            Text(model.capturing == .to(rule.id)
-                 ? (model.capturePreview.isEmpty ? "Press keys…" : "\(model.capturePreview) …")
-                 : (rule.to.isEmpty ? "Target" : RemapTarget.label(rule.to)))
-        }
-        .frame(width: 190)
+    private var sourceText: String {
+        if model.capturing == .from(rule.id) { return "Press a key…" }
+        return rule.from.isEmpty ? "Key" : KeyInfo.label(for: rule.from)
     }
-}
 
-/// A button showing a key name; while capturing it invites a key press.
-private struct KeyField: View {
-    let name: String
-    let placeholder: String
-    let capturing: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(capturing ? "Press a key…" : (name.isEmpty ? placeholder : name))
-                .frame(minWidth: 130)
-                .foregroundStyle(capturing ? Color.accentColor : (name.isEmpty ? .secondary : .primary))
+    private var targetText: String {
+        if model.capturing == .to(rule.id) {
+            return model.capturePreview.isEmpty ? "Press keys…" : "\(model.capturePreview) …"
         }
-        .buttonStyle(.bordered)
+        return rule.to.isEmpty ? "Becomes" : RemapTarget.label(rule.to)
+    }
+
+    private func toggle(_ field: RemapModel.Field) {
+        model.capturing == field ? model.stopCapture() : model.startCapture(field)
     }
 }

@@ -216,6 +216,7 @@ final class MouseModel: ObservableObject {
                  modifiers: (try? Modifiers.parse($0["modifiers"] as? String ?? "")) ?? [],
                  action: $0["action"] as? String ?? "")
         }
+        .sorted { ($0.button ?? .max, $0.modifiers.rawValue) < ($1.button ?? .max, $1.modifiers.rawValue) }
     }
 
     private func save() {

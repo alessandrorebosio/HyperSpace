@@ -224,14 +224,3 @@ final class RemapModel: ObservableObject {
         }
     }
 }
-
-extension Modifiers {
-    init(_ flags: NSEvent.ModifierFlags) {
-        var mods: Modifiers = []
-        if flags.contains(.command) { mods.insert(.cmd) }
-        if flags.contains(.option) { mods.insert(.alt) }
-        if flags.contains(.control) { mods.insert(.ctrl) }
-        if flags.contains(.shift) { mods.insert(.shift) }
-        self = mods
-    }
-}

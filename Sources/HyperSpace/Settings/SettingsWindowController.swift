@@ -1,23 +1,9 @@
 import AppKit
 import SwiftUI
 
-struct SettingsView: View {
-    @ObservedObject var keyboard: RemapModel
-    @ObservedObject var mouse: MouseModel
-
-    var body: some View {
-        TabView {
-            RemapView(model: keyboard)
-                .tabItem { Label("Keyboard", systemImage: "keyboard") }
-            MouseView(model: mouse)
-                .tabItem { Label("Mouse", systemImage: "computermouse") }
-        }
-        .padding(.top, 8)
-    }
-}
-
-/// Owns the settings window. It is built on demand and torn down on close,
-/// so it costs nothing while it is not open.
+/// Owns the settings window: a native preferences window with Keyboard and Mouse
+/// toolbar tabs. It is built on demand and torn down on close, so it costs nothing
+/// while it is not open.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
@@ -34,12 +20,21 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let keyboard = RemapModel(remapper: remapper)
             let mouse = MouseModel(eventTap: eventTap)
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(keyboard: keyboard, mouse: mouse)))
-            window.title = "HyperSpace Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            let tabs = SettingsTabs()
+            tabs.tabStyle = .toolbar
+            tabs.addTabViewItem(Self.tab(RemapView(model: keyboard), title: "Keyboard", symbol: "keyboard"))
+            tabs.addTabViewItem(Self.tab(MouseView(model: mouse), title: "Mouse", symbol: "computermouse"))
+            // A key press or click meant for one tab must not be captured by the other.
+            tabs.onSwitch = { [weak keyboard, weak mouse] in
+                keyboard?.stopCapture()
+                mouse?.stopCapture()
+            }
+
+            let window = NSWindow(contentViewController: tabs)
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
             window.delegate = self
-            window.setContentSize(NSSize(width: 720, height: 520))
             window.center()
             self.window = window
             self.keyboard = keyboard
@@ -60,5 +55,23 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window = nil
         keyboard = nil
         mouse = nil
+    }
+
+    private static func tab<V: View>(_ view: V, title: String, symbol: String) -> NSTabViewItem {
+        let controller = NSHostingController(rootView: view)
+        controller.title = title
+        let item = NSTabViewItem(viewController: controller)
+        item.label = title
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        return item
+    }
+}
+
+private final class SettingsTabs: NSTabViewController {
+    var onSwitch: (() -> Void)?
+
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        onSwitch?()
     }
 }

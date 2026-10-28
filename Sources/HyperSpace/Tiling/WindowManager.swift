@@ -53,11 +53,6 @@ final class WindowManager {
     private var drag: DragSession?
     private lazy var refcon = Unmanaged.passUnretained(self).toOpaque()
 
-    var isEnabled: Bool { config.enabled }
-
-    var currentLayout: LayoutKind {
-        state(for: activeScreen()?.id).layout
-    }
 
     // MARK: - Lifecycle
 
