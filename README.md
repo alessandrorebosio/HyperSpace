@@ -18,12 +18,14 @@ make install    # copia in /Applications
 
 Al primo avvio macOS chiede il permesso di Accessibilità; HyperSpace parte da solo appena viene concesso.
 
-> **Firma stabile.** macOS lega il permesso di Accessibilità alla firma. Con la firma ad-hoc (`-`) la
-> firma è l'hash del binario e cambia a ogni rebuild, quindi il permesso va rimosso e riaggiunto ogni volta
-> (in Impostazioni la voce "HyperSpace" resta accesa ma si riferisce alla build vecchia).
-> Crea una volta un certificato self-signed: *Accesso Portachiavi → Assistente Certificato → Crea un
-> certificato*, nome `HyperSpace Dev`, tipo identità *Radice autofirmata*, tipo certificato *Firma codice*.
-> Da quel momento `make app` lo usa automaticamente e il permesso sopravvive ai rebuild.
+> **Firma e permesso.** macOS lega il permesso di Accessibilità al *designated requirement* della firma.
+> Una firma ad-hoc normale lo basa sull'hash del binario, che cambia a ogni rebuild: il permesso si perde
+> anche se in Impostazioni l'interruttore resta acceso. Per questo `make app` firma ad-hoc fissando il
+> requisito al bundle id (`identifier "com.alessandrorebosio.HyperSpace"`), così il permesso sopravvive ai rebuild.
+> È una scelta comoda per lo sviluppo, ma più debole: qualunque app firmata con quel bundle id
+> erediterebbe il permesso. Per un legame forte crea un certificato self-signed (*Accesso Portachiavi →
+> Assistente Certificato → Crea un certificato*, nome `HyperSpace Dev`, *Radice autofirmata*, *Firma codice*):
+> se esiste, `make app` lo usa automaticamente e il permesso resta legato al certificato.
 
 ## Configurazione
 
@@ -85,6 +87,9 @@ fisico, scegli la destinazione (premendola, da un elenco di tutti i tasti, oppur
   specifica: nome prodotto > builtin/external > all.
 - Gli scambi (cmd ↔ option) funzionano: tutte le regole di una tastiera vengono applicate insieme.
 - `"to": "none"` disattiva il tasto.
+- **Caps Lock rimappato non attiva più il maiuscolo.** Su macOS recenti il layer HID continua ad alternare il
+  blocco maiuscole anche se il tasto è rimappato; quando una regola parte da `caps_lock`, HyperSpace toglie il
+  flag maiuscolo dagli eventi e spegne subito il blocco (serve Accessibilità). Vale per tutte le tastiere.
 - **Combinazioni**: `to` può essere più tasti uniti da `+`, cioè modificatori (`ctrl`, `alt`, `shift`, `cmd`, anche
   `left_shift` ecc.) più al massimo un tasto. `hyper` = ⌃⌥⇧⌘, `meh` = ⌃⌥⇧.
   - Solo modificatori (`shift+ctrl+alt`): restano premuti finché tieni premuto il tasto, valgono per i tasti e i clic,

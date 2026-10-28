@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .success(let config):
             self.config = config
             remapper.apply(config.remaps)
+            if config.tap.suppressCapsLock { CapsLock.turnOff() }
             if trusted {
                 applyTrusted(config)
                 statusMenu.problem = nil

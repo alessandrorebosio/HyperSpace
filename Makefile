@@ -1,10 +1,16 @@
 APP_NAME      := HyperSpace
 CONFIG        ?= release
 BUNDLE        := build/$(APP_NAME).app
-# macOS ties the Accessibility grant to the signature. Ad-hoc ("-") signatures change on
-# every build, so the grant is lost each time: when a "HyperSpace Dev" code signing
-# certificate exists (see README) it is used automatically and the grant survives rebuilds.
+BUNDLE_ID     := com.alessandrorebosio.HyperSpace
+# macOS ties the Accessibility grant to the app's designated requirement. When a
+# "HyperSpace Dev" code signing certificate exists (see README) it is used: the grant is
+# bound to that certificate. Otherwise the app is signed ad-hoc, whose default requirement
+# is the binary's hash and changes on every build; we pin it to the bundle identifier
+# instead so the grant survives rebuilds.
 SIGN_IDENTITY ?= $(shell security find-identity -p codesigning 2>/dev/null | grep -q '"HyperSpace Dev"' && echo "HyperSpace Dev" || echo -)
+ifeq ($(SIGN_IDENTITY),-)
+SIGN_REQUIREMENT := -r='designated => identifier "$(BUNDLE_ID)"'
+endif
 
 .PHONY: build app run install clean
 
@@ -17,7 +23,7 @@ app: build
 	cp "$$(swift build -c $(CONFIG) --show-bin-path)/$(APP_NAME)" $(BUNDLE)/Contents/MacOS/
 	cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
 	strip -x $(BUNDLE)/Contents/MacOS/$(APP_NAME)
-	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(BUNDLE)
+	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(SIGN_REQUIREMENT) $(BUNDLE)
 
 run: app
 	open $(BUNDLE)

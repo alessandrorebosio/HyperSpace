@@ -62,6 +62,8 @@ struct TapConfig {
     var carriers: [Carrier] = []
     var reverseScroll = false
     var dragModifier: Modifiers?
+    /// Caps lock is remapped: keep the caps lock state off (see `CapsLock`).
+    var suppressCapsLock = false
 
     static func slot(_ code: Int, _ mods: Modifiers) -> Int {
         code << 4 | Int(mods.rawValue)
@@ -94,8 +96,11 @@ struct TapConfig {
     var eventMask: CGEventMask {
         var mask: CGEventMask = 0
         func add(_ type: CGEventType) { mask |= CGEventMask(1) << type.rawValue }
-        if !carriers.isEmpty || keyTable.contains(where: { $0 >= 0 }) {
+        if !carriers.isEmpty || suppressCapsLock || keyTable.contains(where: { $0 >= 0 }) {
             add(.keyDown); add(.keyUp)
+        }
+        if suppressCapsLock {
+            add(.flagsChanged)
         }
         if carriers.contains(where: { $0.keyCode == nil }) {
             // Held combination modifiers also apply to clicks (e.g. ⌃⌥⇧-click).
@@ -177,6 +182,7 @@ struct Config {
                 remaps.append(RemapRule(from: from, to: carrier.hidUsage!, target: target))
             }
         }
+        tap.suppressCapsLock = remaps.contains { $0.from == KeyCodes.lookup("caps_lock")?.hidUsage }
 
         if let mouse = raw.mouse {
             tap.reverseScroll = mouse.reverseScroll ?? false

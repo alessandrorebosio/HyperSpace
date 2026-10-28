@@ -98,6 +98,12 @@ final class EventTap {
             break
         }
         if event.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker { return pass }
+        if config.suppressCapsLock, event.flags.contains(.maskAlphaShift) {
+            // A remapped caps lock must not engage caps lock: drop the flag right away
+            // and switch the lock state off (the reset arrives as another flagsChanged).
+            event.flags.remove(.maskAlphaShift)
+            if type == .flagsChanged { DispatchQueue.main.async { CapsLock.turnOff() } }
+        }
         if !heldModifiers.isEmpty {
             // Unbound chords still reach apps with the combination's modifiers.
             event.flags.formUnion(heldModifiers.cgFlags)
