@@ -8,6 +8,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var currentLayout: () -> LayoutKind
         var perform: (Action) -> Void
         var openConfig: () -> Void
+        var openRemapper: () -> Void
     }
 
     var problem: String? {
@@ -42,6 +43,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(warning)
             menu.addItem(.separator())
         }
+
+        let remap = ClosureMenuItem("Keyboard Remapping…") { [host] in host.openRemapper() }
+        remap.keyEquivalent = ","
+        menu.addItem(remap)
+        menu.addItem(.separator())
 
         let tiling = ClosureMenuItem("Tiling") { [host] in host.perform(.toggleTiling) }
         tiling.state = host.tilingEnabled() ? .on : .off

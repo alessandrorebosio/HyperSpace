@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var eventTap = EventTap(drag: DragController(windowManager: windowManager)) { [weak self] action in
         self?.runner.run(action)
     }
+    private lazy var remapWindow = RemapWindowController(remapper: remapper)
     private var statusMenu: StatusMenu!
     private var permissionTimer: Timer?
     private var trusted = false
@@ -23,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tilingEnabled: { [unowned self] in windowManager.isEnabled },
             currentLayout: { [unowned self] in windowManager.currentLayout },
             perform: { [unowned self] in runner.run($0) },
-            openConfig: { [unowned self] in store.openInEditor() }
+            openConfig: { [unowned self] in store.openInEditor() },
+            openRemapper: { [unowned self] in remapWindow.show() }
         ))
         store.onChange = { [weak self] in self?.apply($0) }
 

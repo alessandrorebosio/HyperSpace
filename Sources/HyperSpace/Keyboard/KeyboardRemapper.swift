@@ -54,8 +54,18 @@ struct RemapRule: Equatable {
 final class KeyboardRemapper {
     private static let mappingKey = "UserKeyMapping" as CFString
 
+    struct Keyboard: Hashable {
+        let product: String
+        let builtIn: Bool
+    }
+
+    /// Called after a keyboard is connected or the Mac wakes.
+    var onKeyboardsChanged: (() -> Void)?
+
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     private var rules: [RemapRule] = []
+    /// While set, every keyboard sends its physical keys (used to capture keys in the editor).
+    private var suspended = false
     private var notifyPort: IONotificationPortRef?
     private var iterator: io_iterator_t = 0
     private var wakeObserver: NSObjectProtocol?
@@ -75,13 +85,45 @@ final class KeyboardRemapper {
         sync()
     }
 
+    func suspend() {
+        suspended = true
+        sync()
+    }
+
+    func resume() {
+        suspended = false
+        sync()
+    }
+
+    /// Connected keyboards, built-in first, without duplicates (one keyboard may expose several services).
+    func connectedKeyboards() -> [Keyboard] {
+        var seen = Set<Keyboard>()
+        return keyboardServices()
+            .map { Self.describe($0) }
+            .filter { seen.insert($0).inserted }
+            .sorted { ($0.builtIn ? 0 : 1, $0.product) < ($1.builtIn ? 0 : 1, $1.product) }
+    }
+
+    private func keyboardServices() -> [IOHIDServiceClient] {
+        let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []
+        return services.filter {
+            IOHIDServiceClientConformsTo($0, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Keyboard)) != 0
+        }
+    }
+
+    private static func describe(_ service: IOHIDServiceClient) -> Keyboard {
+        Keyboard(
+            product: IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String ?? "",
+            builtIn: (IOHIDServiceClientCopyProperty(service, kIOHIDBuiltInKey as CFString) as? NSNumber)?.boolValue ?? false
+        )
+    }
+
     /// Brings every connected keyboard in line with the rules, writing only where needed.
     private func sync() {
-        let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []
-        for service in services where IOHIDServiceClientConformsTo(service, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Keyboard)) != 0 {
-            let product = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String ?? ""
-            let builtIn = (IOHIDServiceClientCopyProperty(service, kIOHIDBuiltInKey as CFString) as? NSNumber)?.boolValue ?? false
-            let desired = Self.mapping(rules, product: product, builtIn: builtIn)
+        for service in keyboardServices() {
+            let keyboard = Self.describe(service)
+            let product = keyboard.product
+            let desired = suspended ? NSArray() : Self.mapping(rules, product: product, builtIn: keyboard.builtIn)
             let current = IOHIDServiceClientCopyProperty(service, Self.mappingKey) as? NSArray ?? []
             guard !current.isEqual(desired) else { continue }
             IOHIDServiceClientSetProperty(service, Self.mappingKey, desired as CFArray)
@@ -128,7 +170,10 @@ final class KeyboardRemapper {
     /// The HID service client shows up shortly after the IOKit registry entry.
     private func keyboardsChanged() {
         for delay in [0.3, 1.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.sync() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.sync()
+                self?.onKeyboardsChanged?()
+            }
         }
     }
 
