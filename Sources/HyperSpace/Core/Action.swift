@@ -43,6 +43,11 @@ enum Action {
     case media(MediaKey)
     /// A left click at the pointer with modifiers (e.g. ⌘-click opens a link in a new tab).
     case click(Modifiers)
+    /// Shows or hides an app (opening it if needed) centered above the others, out of the
+    /// tiling; with no app, the windows sent to the scratchpad.
+    case scratchpad(String?)
+    /// The focused window goes to the scratchpad, or from it back into the tiling.
+    case moveToScratchpad
 
     static func parse(_ text: String) throws -> Action {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -109,6 +114,8 @@ enum Action {
             guard let key = MediaKey(rawValue: arg.lowercased()) else { throw ConfigError("unknown media key in '\(text)'") }
             return .media(key)
         case "click": return .click(try Modifiers.parse(arg))
+        case "scratchpad": return .scratchpad(arg.isEmpty ? nil : arg)
+        case "move-to-scratchpad": return .moveToScratchpad
         default: throw ConfigError("unknown action '\(text)'")
         }
     }

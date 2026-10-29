@@ -206,6 +206,14 @@ oppure, se è da sola, la impila nella colonna accanto; **sinistra/destra** la f
 nuova colonna da quel lato, oppure, se è da sola, scambia la colonna con la vicina. `resize width` cambia la
 larghezza della colonna, `resize height` l'altezza della finestra nella colonna.
 Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati.
+**Scratchpad** (come in i3). Una scorciatoia per app, es. `{ "keys": "meh+x", "action": "scratchpad com.anthropic.claudefordesktop" }`:
+la prima volta apre l'app (se non è aperta) e la mostra al centro del monitor attivo, sopra le altre finestre e
+fuori dal tiling; premuta di nuovo la nasconde, poi la rimostra. Resta visibile anche cambiando workspace finché
+non la nascondi, e se ci arrivi con ⌘Tab si mostra da sola. `move-to-scratchpad` (es. `hyper+x`) manda la finestra
+attiva nello scratchpad o la rimette nel tiling del workspace corrente. La dimensione è una frazione del monitor:
+`"scratchpad": { "width": 0.6, "height": 0.7 }` (predefinita). Le app si gestiscono anche da Settings → Tiling →
+Scratchpad Apps. Lo scratchpad viene ricordato tra i riavvii.
+
 `floating` elenca i bundle ID da non affiancare. `floatingWindows` fa fluttuare solo alcune finestre, in base al
 titolo (contiene il testo, maiuscole indifferenti), di un'app o di tutte; si gestisce anche da Settings → Tiling →
 Floating Windows. Vale anche per le finestre che prendono il titolo un attimo dopo l'apertura:
@@ -226,6 +234,9 @@ Floating Windows. Vale anche per le finestre che prendono il titolo un attimo do
 | `layout tall\|wide\|columns\|monocle\|next` | Cambia layout dello schermo attivo |
 | `ratio +0.05` / `ratio -0.05` | Ridimensiona l'area master |
 | `float` | Finestra corrente floating ↔ tiling |
+| `scratchpad <Nome App o bundle id>` | Mostra/nasconde l'app al centro sopra le altre, fuori dal tiling (la apre se serve) |
+| `scratchpad` | Mostra/nasconde le finestre mandate nello scratchpad |
+| `move-to-scratchpad` | Manda la finestra attiva nello scratchpad, o da lì la rimette nel tiling |
 | `tiling` | Attiva/disattiva il tiling |
 | `retile` | Ricalcola subito il layout |
 | `display next` | Sposta la finestra sul monitor successivo |

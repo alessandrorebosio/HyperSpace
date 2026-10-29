@@ -38,25 +38,14 @@ final class ActionRunner {
         case .system(let action): action.perform()
         case .media(let key): key.post()
         case .click(let mods): Pointer.click(mods)
+        case .scratchpad(let app): windowManager.toggleScratchpad(app: app)
+        case .moveToScratchpad: windowManager.moveFocusedToScratchpad()
         }
     }
 
     /// Accepts a bundle identifier ("com.apple.Terminal") or an app name ("Terminal").
     private func launch(_ name: String) {
-        let workspace = NSWorkspace.shared
-        let folders = ["/Applications", "/System/Applications", "/System/Applications/Utilities",
-                       "/Applications/Utilities", NSHomeDirectory() + "/Applications"]
-        let url = workspace.urlForApplication(withBundleIdentifier: name)
-            ?? folders.lazy
-                .map { URL(fileURLWithPath: "\($0)/\(name).app") }
-                .first { FileManager.default.fileExists(atPath: $0.path) }
-        guard let url else {
-            log.error("launch: app not found: \(name, privacy: .public)")
-            return
-        }
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        workspace.openApplication(at: url, configuration: configuration) { _, _ in }
+        AppLauncher.open(name)
     }
 
     private func shell(_ command: String) {

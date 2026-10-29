@@ -153,6 +153,34 @@ struct TilingView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section {
+                ForEach(model.scratchpadApps) { shortcut in
+                    HStack {
+                        AppLabel(bundleID: TilingModel.scratchpadApp(shortcut))
+                        Spacer()
+                        ShortcutCap(model: model, keys: shortcut.keys, field: .shortcut(shortcut.action))
+                        RemoveButton { model.removeScratchpadApp(shortcut.action) }
+                    }
+                }
+                Menu {
+                    ForEach(model.scratchpadCandidates, id: \.bundleID) { app in
+                        Button(app.name) { model.addScratchpadApp(app.bundleID) }
+                    }
+                    Divider()
+                    Button("Choose App…") { model.chooseAppForScratchpad() }
+                } label: {
+                    Label("Add App", systemImage: "plus.circle.fill").foregroundStyle(Color.accentColor)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            } header: {
+                Text("Scratchpad Apps")
+            } footer: {
+                Text("The shortcut shows the app centered above the other windows, out of the tiling, opening it if needed; pressed again it hides it. \"Move window to or from the scratchpad\" below puts it back in the tiling.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             ForEach(TilingModel.shortcutActions, id: \.group) { group in
                 Section {
                     ForEach(group.items, id: \.action) { item in

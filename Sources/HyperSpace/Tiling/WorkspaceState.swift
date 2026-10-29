@@ -11,6 +11,8 @@ struct WorkspaceState: Codable, Equatable {
         var workspace: Int
         /// Set only when floating was toggled by hand.
         var floating: Bool?
+        /// In the scratchpad (out of the tiling, shown on demand).
+        var scratchpad: Bool?
     }
 
     var savedAt = Date()

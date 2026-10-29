@@ -16,6 +16,10 @@ final class ManagedWindow {
     var weight: CGFloat = 1
     /// When we last moved it: the moves this causes are ours, not the user's.
     var movedByUs = Date.distantPast
+    /// Out of the tiling and the workspaces: shown centered above the others on demand.
+    var scratchpad = false
+    /// A scratchpad window on screen (it stays there across workspace switches).
+    var scratchpadShown = false
 
     init(id: CGWindowID, element: AXUIElement, pid: pid_t, bundleID: String?) {
         self.id = id
@@ -130,6 +134,8 @@ final class WindowManager {
     private let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
     /// The last problems talking to apps, for the debug report.
     private var issues: [String] = []
+    /// Apps opened for the scratchpad: their next window goes there (until the date).
+    private var pendingScratchpad: [String: Date] = [:]
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -358,6 +364,15 @@ final class WindowManager {
                 window.isFloating = floating
                 window.userOverride = true
             }
+            window.scratchpad = restored?.scratchpad ?? false
+        }
+        // The app was opened by its scratchpad shortcut: this window is the scratchpad one.
+        if let app = watcher.bundleID, let until = pendingScratchpad[app] {
+            pendingScratchpad[app] = nil
+            if Date() < until {
+                window.scratchpad = true
+                DispatchQueue.main.async { [weak self] in self?.showScratchpad(window) }
+            }
         }
         // A window joins its app's assigned workspace, the one it had before a restart, the
         // one the app was opened from (you may have moved on while it loaded), or the one
@@ -373,7 +388,7 @@ final class WindowManager {
         }
         // An app with a rule you just opened takes you to its workspace, however its first
         // window was found (an app slow to answer is picked up by a later look).
-        if let assigned, assigned < workspaceCount, launch != nil, restored == nil { reveal(window) }
+        if let assigned, assigned < workspaceCount, launch != nil, restored == nil, !window.scratchpad { reveal(window) }
         windows[id] = window
         order.append(id)
         watcher.watch(element)
@@ -410,6 +425,96 @@ final class WindowManager {
         }
     }
 
+    // MARK: - Scratchpad
+
+    /// Shows or hides an app's scratchpad window, opening the app (or a window of it) first
+    /// when needed; with no app, the windows sent to the scratchpad.
+    func toggleScratchpad(app name: String?) {
+        guard running else { return }
+        let focusedID = focused()?.id
+        guard let name else {
+            let pad = order.compactMap { windows[$0] }.filter(\.scratchpad)
+            if let shown = pad.first(where: { $0.scratchpadShown && $0.id == focusedID }) {
+                hideScratchpad(shown)
+            } else if let shown = pad.first(where: \.scratchpadShown) {
+                focus(shown)
+            } else if let hidden = pad.first {
+                showScratchpad(hidden)
+            }
+            return
+        }
+        guard let bundleID = AppLauncher.bundleID(for: name) else {
+            note("scratchpad: app not found: \(name)")
+            return
+        }
+        let mine = order.compactMap { windows[$0] }.filter { $0.bundleID == bundleID }
+        if let window = mine.first(where: \.scratchpad) {
+            if window.scratchpadShown, window.id == focusedID { hideScratchpad(window) } else { showScratchpad(window) }
+        } else if let window = mine.first(where: { $0.id == focusedID }) ?? mine.first {
+            // Already open in the tiling: it moves to the scratchpad.
+            window.scratchpad = true
+            showScratchpad(window)
+        } else {
+            // Not open, or no window: its next window is the scratchpad one.
+            pendingScratchpad[bundleID] = Date().addingTimeInterval(30)
+            AppLauncher.open(name)
+        }
+    }
+
+    /// The focused window goes into the scratchpad (shown), or from it into the tiling of the
+    /// workspace you are on.
+    func moveFocusedToScratchpad() {
+        guard running, let window = focused() else { return }
+        if window.scratchpad {
+            window.scratchpad = false
+            window.scratchpadShown = false
+            window.hiddenFrame = nil
+            window.workspace = focusedScreen().flatMap { displayed[$0.id] } ?? window.workspace
+            log.debug("window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) back into workspace \(window.workspace)")
+            retile()
+            focus(window)
+        } else {
+            window.scratchpad = true
+            showScratchpad(window)
+            retile()
+        }
+    }
+
+    private func showScratchpad(_ window: ManagedWindow) {
+        guard windows[window.id] === window, window.scratchpad else { return }
+        let screens = ScreenInfo.current()
+        guard let screen = focusedScreen() ?? screens.first else { return }
+        ignoreFocusChanges()
+        let frame = Self.scratchpadFrame(in: screen.visible, size: config.scratchpadSize)
+        let current = onScreenBounds()[window.id]
+        log.debug("show scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) on display \(screen.id)")
+        window.scratchpadShown = true
+        window.hiddenFrame = nil
+        setFrame(window, frame, from: current)
+        focus(window)
+        notifyWorkspace()
+    }
+
+    private func hideScratchpad(_ window: ManagedWindow) {
+        ignoreFocusChanges()
+        window.scratchpadShown = false
+        let screens = ScreenInfo.current()
+        if let frame = onScreenBounds()[window.id] { hide(window, from: frame, screens: screens) }
+        log.debug("hide scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public))")
+        // Back to what you were doing.
+        if let workspace = activeDisplay.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
+            focusWindow(in: workspace)
+        }
+    }
+
+    /// Centered in the visible area, `size` being fractions of it.
+    static func scratchpadFrame(in visible: CGRect, size: CGSize) -> CGRect {
+        let width = (visible.width * size.width).rounded()
+        let height = (visible.height * size.height).rounded()
+        return CGRect(x: (visible.midX - width / 2).rounded(), y: (visible.midY - height / 2).rounded(),
+                      width: width, height: height)
+    }
+
     // MARK: - Debug report
 
     private func note(_ issue: String) {
@@ -440,6 +545,7 @@ final class WindowManager {
                 let title = (AX.string(window.element, kAXTitleAttribute) ?? "").prefix(40)
                 var flags: [String] = []
                 if window.isFloating { flags.append("floating") }
+                if window.scratchpad { flags.append(window.scratchpadShown ? "scratchpad shown" : "scratchpad") }
                 if window.hiddenFrame != nil { flags.append("parked") }
                 if bounds[window.id] == nil { flags.append("off screen") }
                 lines.append("  \(window.bundleID ?? "?") #\(window.id) “\(title)” \(bounds[window.id].map(Self.describe) ?? "-") \(flags.joined(separator: " "))")
@@ -500,7 +606,8 @@ final class WindowManager {
         for (i, window) in list.enumerated() {
             index[window.id] = i
             state.windows.append(.init(app: window.bundleID!, title: "", workspace: window.workspace,
-                                       floating: window.userOverride ? window.isFloating : nil))
+                                       floating: window.userOverride ? window.isFloating : nil,
+                                       scratchpad: window.scratchpad ? true : nil))
         }
         for (workspace, layout) in columns {
             let saved = layout.columns.map { $0.windows.compactMap { index[$0] } }.filter { !$0.isEmpty }
@@ -565,6 +672,8 @@ final class WindowManager {
         switch notification {
         case kAXWindowCreatedNotification:
             guard let watcher = apps[pid], let window = track(element, in: watcher) else { return }
+            // A scratchpad window is shown where you are, whatever its workspace.
+            if window.scratchpad { return }
             if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
                 lastFocused[window.workspace] = window.id
                 if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
@@ -594,7 +703,7 @@ final class WindowManager {
             // Moved or resized by hand: back to its tile once the mouse is released. Our own
             // moves land on the target frame, so the retile has nothing to do for them.
             guard let window = windows.values.first(where: { $0.pid == pid && CFEqual($0.element, element) }),
-                  !window.isFloating, window.hiddenFrame == nil,
+                  !window.isFloating, !window.scratchpad, window.hiddenFrame == nil,
                   // A window that cannot take its tile (a minimum size) must not loop.
                   Date().timeIntervalSince(window.movedByUs) > 0.5 else { return }
             scheduleSnapBack()
@@ -667,6 +776,13 @@ final class WindowManager {
         let shown = Set(displayed.values)
 
         for window in windows.values {
+            if window.scratchpad {
+                // Out of the workspaces: parked unless shown.
+                if !window.scratchpadShown, window.hiddenFrame == nil, let frame = bounds[window.id] {
+                    hide(window, from: frame, screens: screens)
+                }
+                continue
+            }
             if !shown.contains(window.workspace) {
                 if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
             } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
@@ -709,7 +825,9 @@ final class WindowManager {
 
     /// Tiled windows of a workspace that are on screen, in tiling order.
     private func tiledWindows(in workspace: Int, bounds: [CGWindowID: CGRect]) -> [ManagedWindow] {
-        order.compactMap { windows[$0] }.filter { $0.workspace == workspace && !$0.isFloating && bounds[$0.id] != nil }
+        order.compactMap { windows[$0] }.filter {
+            $0.workspace == workspace && !$0.isFloating && !$0.scratchpad && bounds[$0.id] != nil
+        }
     }
 
     /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
@@ -938,7 +1056,9 @@ final class WindowManager {
     /// Focuses the workspace: its last focused window, or with no windows, its display.
     private func focusWindow(in workspace: Int) {
         let bounds = onScreenBounds()
-        let candidates = order.compactMap { windows[$0] }.filter { $0.workspace == workspace && bounds[$0.id] != nil }
+        let candidates = order.compactMap { windows[$0] }.filter {
+            $0.workspace == workspace && !$0.scratchpad && bounds[$0.id] != nil
+        }
         if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
             focus(target)
         } else if let id = display(showing: workspace), case let screens = ScreenInfo.current(),
@@ -951,6 +1071,11 @@ final class WindowManager {
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
     private func followFocus(_ window: ManagedWindow?) {
         guard running, let window else { return }
+        if window.scratchpad {
+            // ⌘Tab or the Dock to a hidden scratchpad window: show it instead of a workspace.
+            if !window.scratchpadShown, Date() > followFocusAfter { showScratchpad(window) }
+            return
+        }
         if window.hiddenFrame == nil, let id = display(showing: window.workspace) { activeDisplay = id }
         if window.id != movedAway { movedAway = nil }
         guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
@@ -983,7 +1108,7 @@ final class WindowManager {
         let screens = ScreenInfo.current()
         var apps: [pid_t: NSRunningApplication] = [:]
         return (0..<workspaceCount).map { index in
-            let members = order.compactMap { windows[$0] }.filter { $0.workspace == index }
+            let members = order.compactMap { windows[$0] }.filter { $0.workspace == index && !$0.scratchpad }
             let entries = members.map { window -> WorkspaceSummary.Window in
                 let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
                 apps[window.pid] = app

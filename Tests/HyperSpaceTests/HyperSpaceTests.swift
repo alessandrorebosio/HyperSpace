@@ -313,3 +313,24 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(layout.columns.map(\.windows) == [[10, 11], [12]])
     }
 }
+
+@Suite struct ScratchpadTests {
+    @Test func frameIsCentered() {
+        let visible = CGRect(x: 0, y: 33, width: 1470, height: 923)
+        let frame = WindowManager.scratchpadFrame(in: visible, size: CGSize(width: 0.6, height: 0.7))
+        #expect(frame.width == 882 && frame.height == 646)
+        #expect(abs(frame.midX - visible.midX) <= 1 && abs(frame.midY - visible.midY) <= 1)
+    }
+
+    @Test func actionsAndSize() throws {
+        let config = try HyperSpaceTests.config(#"""
+        {"keyboard":{"bindings":[{"keys":"meh+x","action":"scratchpad com.anthropic.claudefordesktop"},
+                                 {"keys":"hyper+x","action":"move-to-scratchpad"},{"keys":"meh+z","action":"scratchpad"}]},
+         "tiling":{"scratchpad":{"width":0.5,"height":2}}}
+        """#)
+        #expect(try action(config, "meh+x") == "scratchpad(Optional(\"com.anthropic.claudefordesktop\"))")
+        #expect(try action(config, "hyper+x") == "moveToScratchpad")
+        #expect(try action(config, "meh+z") == "scratchpad(nil)")
+        #expect(config.tiling.scratchpadSize == CGSize(width: 0.5, height: 1))
+    }
+}

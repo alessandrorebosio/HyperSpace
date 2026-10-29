@@ -45,6 +45,12 @@ struct RawConfig: Decodable {
         var workspaces: [Workspace]?
         var assign: [Assignment]?
         var mouseFollowsFocus: Bool?
+        var scratchpad: Scratchpad?
+    }
+    /// Size of scratchpad windows, as fractions of the display.
+    struct Scratchpad: Decodable {
+        var width: Double?
+        var height: Double?
     }
     /// Windows whose title contains `title`, of `app` (bundle id) or of any app.
     struct FloatingWindow: Decodable {
@@ -161,6 +167,8 @@ struct TilingConfig {
     var assignments: [String: Int] = [:]
     /// Moving the focus to another display brings the pointer along.
     var mouseFollowsFocus = true
+    /// Scratchpad windows' size, as fractions of the display's visible area.
+    var scratchpadSize = CGSize(width: 0.6, height: 0.7)
 }
 
 /// Windows that float by title (a dialog, an app's own settings), of one app or any.
@@ -278,6 +286,8 @@ struct Config {
         tiling.floatingWindows = (raw.floatingWindows ?? []).filter { !$0.title.isEmpty }
             .map { FloatingWindowRule(app: $0.app.flatMap { $0.isEmpty ? nil : $0 }, title: $0.title) }
         tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? true
+        func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat(min(1, max(0.2, $0))) } ?? fallback }
+        tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, 0.6), height: fraction(raw.scratchpad?.height, 0.7))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }

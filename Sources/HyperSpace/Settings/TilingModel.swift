@@ -47,6 +47,10 @@ final class TilingModel: ObservableObject {
             ("Next layout", "layout next"),
             ("Toggle floating", "float"),
         ]),
+        ("Scratchpad", [
+            ("Show or hide the scratchpad", "scratchpad"),
+            ("Move window to or from the scratchpad", "move-to-scratchpad"),
+        ]),
     ]
 
     @Published private(set) var enabled = true
@@ -70,6 +74,8 @@ final class TilingModel: ObservableObject {
         var workspace: String
     }
     @Published private(set) var shortcuts: [Shortcut] = []
+    /// Apps with their own scratchpad shortcut ("scratchpad <bundle id>" bindings).
+    @Published private(set) var scratchpadApps: [Shortcut] = []
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
 
@@ -149,6 +155,41 @@ final class TilingModel: ObservableObject {
             .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
     }
 
+    var scratchpadCandidates: [(name: String, bundleID: String)] {
+        Self.runningApps.filter { app in !scratchpadApps.contains { $0.action == Self.scratchpadAction(app.bundleID) } }
+    }
+
+    static func scratchpadAction(_ bundleID: String) -> String { "scratchpad \(bundleID)" }
+
+    static func scratchpadApp(_ shortcut: Shortcut) -> String {
+        String(shortcut.action.dropFirst("scratchpad ".count))
+    }
+
+    /// Adds an app and records its shortcut right away.
+    func addScratchpadApp(_ bundleID: String) {
+        let action = Self.scratchpadAction(bundleID)
+        if !scratchpadApps.contains(where: { $0.action == action }) {
+            scratchpadApps.append(Shortcut(title: Self.appName(bundleID), action: action, keys: ""))
+        }
+        startCapture(.shortcut(action))
+    }
+
+    func chooseAppForScratchpad() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK, let url = panel.url,
+              let bundleID = Bundle(url: url)?.bundleIdentifier else { return }
+        addScratchpadApp(bundleID)
+    }
+
+    func removeScratchpadApp(_ action: String) {
+        if capturing == .shortcut(action) { stopCapture() }
+        scratchpadApps.removeAll { $0.action == action }
+        save()
+    }
+
     func addAssignment(_ bundleID: String) {
         guard !assignments.contains(where: { $0.app == bundleID }), let first = workspaces.first else { return }
         assignments.append(Assignment(app: bundleID, workspace: first.name))
@@ -202,7 +243,7 @@ final class TilingModel: ObservableObject {
     /// Shortcuts used more than once, which only the last one would get.
     func isDuplicate(_ keys: String) -> Bool {
         guard !keys.isEmpty else { return false }
-        let all = workspaces.flatMap { [$0.switchKeys, $0.moveKeys] } + shortcuts.map(\.keys)
+        let all = workspaces.flatMap { [$0.switchKeys, $0.moveKeys] } + (shortcuts + scratchpadApps).map(\.keys)
         return all.filter { $0 == keys }.count > 1
     }
 
@@ -242,6 +283,7 @@ final class TilingModel: ObservableObject {
             if let index = workspaces.firstIndex(where: { $0.id == id }) { workspaces[index].moveKeys = keys }
         case .shortcut(let action):
             if let index = shortcuts.firstIndex(where: { $0.action == action }) { shortcuts[index].keys = keys }
+            if let index = scratchpadApps.firstIndex(where: { $0.action == action }) { scratchpadApps[index].keys = keys }
         case nil:
             break
         }
@@ -279,6 +321,11 @@ final class TilingModel: ObservableObject {
             let keys = bindings.last { ($0["action"] as? String) == item.action }?["keys"] as? String
             return Shortcut(title: item.title, action: item.action, keys: keys ?? "")
         }
+        scratchpadApps = bindings.compactMap { binding in
+            guard let action = binding["action"] as? String, action.hasPrefix("scratchpad "),
+                  let keys = binding["keys"] as? String else { return nil }
+            return Shortcut(title: Self.appName(String(action.dropFirst("scratchpad ".count))), action: action, keys: keys)
+        }
     }
 
     private func save() {
@@ -313,9 +360,10 @@ final class TilingModel: ObservableObject {
             var keyboard = root["keyboard"] as? [String: Any] ?? [:]
             let managed = Set(shortcuts.map(\.action))
             var bindings = (keyboard["bindings"] as? [[String: Any]] ?? []).filter {
-                !managed.contains($0["action"] as? String ?? "")
+                let action = $0["action"] as? String ?? ""
+                return !managed.contains(action) && !action.hasPrefix("scratchpad ")
             }
-            bindings += shortcuts.filter { !$0.keys.isEmpty }.map { ["keys": $0.keys, "action": $0.action] }
+            bindings += (shortcuts + scratchpadApps).filter { !$0.keys.isEmpty }.map { ["keys": $0.keys, "action": $0.action] }
             keyboard["bindings"] = bindings
             root["keyboard"] = keyboard
         }
