@@ -10,6 +10,13 @@ struct ColumnLayout {
 
     private(set) var columns: [Column] = []
 
+    init() {}
+
+    /// A saved arrangement; empty columns are dropped.
+    init(columns: [[CGWindowID]]) {
+        self.columns = columns.filter { !$0.isEmpty }.map { Column(windows: $0) }
+    }
+
     /// Keeps the arrangement of windows still tiled, drops the others, and gives each
     /// new window its own column on the right.
     mutating func sync(with ids: [CGWindowID]) {

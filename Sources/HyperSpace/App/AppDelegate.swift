@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         remapper.reset()
+        windowManager.saveState()
         windowManager.restoreHiddenWindows()
     }
 

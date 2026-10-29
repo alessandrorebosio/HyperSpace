@@ -117,6 +117,14 @@ final class WindowManager {
     /// Running apps are being picked up at start: retile once they all are.
     private var adopting = false
     private let writer = AXWriter()
+    /// The workspaces saved last time, while the windows found at start are matched to them.
+    private var restorer: WorkspaceRestorer?
+    private var restoredState: WorkspaceState?
+    private var restoredIndex: [CGWindowID: Int] = [:]
+    private var saveScheduled = false
+    /// The last state written, without titles, so an unchanged state is not written again.
+    private var lastSavedShape: WorkspaceState?
+    private let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -210,6 +218,7 @@ final class WindowManager {
         // Window elements use the global AX timeout (6 s by default): an app still busy
         // launching at login must not stall the window manager that long.
         _ = AX.systemWide
+        loadSavedState()
         syncDisplays()
         // One app per run loop turn, the frontmost first: shortcuts stay responsive while
         // apps that are slow to answer (at login) are adopted, and the screen tiles once.
@@ -241,6 +250,7 @@ final class WindowManager {
         guard running else { return }
         guard let app = pending.first else {
             adopting = false
+            applyRestoredLayout()
             rescueStrandedWindows()
             scheduleRetile()
             return
@@ -329,14 +339,28 @@ final class WindowManager {
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
         window.isFloating = config.floating.contains(watcher.bundleID ?? "")
-        // A window joins its app's assigned workspace, the one the app was opened from
-        // (you may have moved on while it loaded), or the one shown where it appears.
+        // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
+        var restored: WorkspaceState.Window?
+        if restorer != nil, let app = watcher.bundleID,
+           let index = restorer?.claim(app: app, title: AX.string(element, kAXTitleAttribute)) {
+            restored = restorer?.window(index)
+            restoredIndex[id] = index
+            if let floating = restored?.floating {
+                window.isFloating = floating
+                window.userOverride = true
+            }
+        }
+        // A window joins its app's assigned workspace, the one it had before a restart, the
+        // one the app was opened from (you may have moved on while it loaded), or the one
+        // shown where it appears.
         let launch = launches.workspace(for: watcher.pid)
         if let assigned = watcher.bundleID.flatMap({ config.assignments[$0] }), assigned < workspaceCount {
             window.workspace = assigned
             // An app with a rule you just opened takes you to its workspace, however its first
             // window was found (an app slow to answer is picked up by a later look).
-            if launch != nil { reveal(window) }
+            if launch != nil, restored == nil { reveal(window) }
+        } else if let restored, restored.workspace < workspaceCount {
+            window.workspace = restored.workspace
         } else if let launch, launch < workspaceCount {
             window.workspace = launch
         } else if let origin = AX.position(element), let size = AX.size(element), case let screens = ScreenInfo.current(), !screens.isEmpty {
@@ -369,6 +393,93 @@ final class WindowManager {
         }
     }
 
+    // MARK: - Saved state
+
+    /// Brings back which workspace each display showed and where workspaces were moved;
+    /// windows are matched as they are found, for a minute.
+    private func loadSavedState() {
+        guard let state = WorkspaceState.load() else { return }
+        let ids = Set(ScreenInfo.current().map(\.id))
+        for (key, display) in state.homeOverride {
+            if let workspace = Int(key), workspace < workspaceCount, ids.contains(display) { homeOverride[workspace] = display }
+        }
+        for (key, workspace) in state.displayed {
+            if let display = CGDirectDisplayID(key), ids.contains(display), workspace < workspaceCount { displayed[display] = workspace }
+        }
+        restoredState = state
+        restorer = WorkspaceRestorer(state)
+        log.debug("restoring \(state.windows.count) window(s) saved \(state.savedAt, privacy: .public)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.restorer = nil
+            self?.restoredState = nil
+            self?.restoredIndex = [:]
+            self?.scheduleSave()
+        }
+    }
+
+    /// Restored windows take their saved order and columns.
+    private func applyRestoredLayout() {
+        guard let state = restoredState, !restoredIndex.isEmpty else { return }
+        let restoredIDs = restoredIndex.filter { windows[$0.key] != nil }.sorted { $0.value < $1.value }.map(\.key)
+        order = restoredIDs + order.filter { restoredIndex[$0] == nil }
+        let idByIndex = Dictionary(restoredIndex.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
+        for (key, saved) in state.columns {
+            guard let workspace = Int(key) else { continue }
+            columns[workspace] = ColumnLayout(columns: saved.map { $0.compactMap { idByIndex[$0] } })
+        }
+    }
+
+    /// The state to save, without titles (read later, off the main thread), and the windows
+    /// whose titles go with it.
+    private func currentState() -> (state: WorkspaceState, elements: [AXUIElement]) {
+        let list = order.compactMap { windows[$0] }.filter { $0.bundleID != nil }
+        var index: [CGWindowID: Int] = [:]
+        var state = WorkspaceState(savedAt: .distantPast)
+        for (i, window) in list.enumerated() {
+            index[window.id] = i
+            state.windows.append(.init(app: window.bundleID!, title: "", workspace: window.workspace,
+                                       floating: window.userOverride ? window.isFloating : nil))
+        }
+        for (workspace, layout) in columns {
+            let saved = layout.columns.map { $0.windows.compactMap { index[$0] } }.filter { !$0.isEmpty }
+            if !saved.isEmpty { state.columns[String(workspace)] = saved }
+        }
+        for (display, workspace) in displayed { state.displayed[String(display)] = workspace }
+        for (workspace, display) in homeOverride { state.homeOverride[String(workspace)] = display }
+        return (state, list.map(\.element))
+    }
+
+    /// Saves a moment after a change, when something really changed. Not while windows are
+    /// still being matched to the saved state, which would lose the apps not reopened yet.
+    private func scheduleSave() {
+        guard running, restorer == nil, !saveScheduled else { return }
+        saveScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            saveScheduled = false
+            guard running, restorer == nil else { return }
+            var (state, elements) = currentState()
+            guard state != lastSavedShape else { return }
+            lastSavedShape = state
+            saveQueue.async {
+                for i in elements.indices { state.windows[i].title = AX.string(elements[i], kAXTitleAttribute) ?? "" }
+                state.savedAt = Date()
+                state.save()
+            }
+        }
+    }
+
+    /// Saves at once (on quit), keeping the saved windows not found again yet.
+    func saveState() {
+        guard running else { return }
+        var (state, elements) = currentState()
+        for i in elements.indices { state.windows[i].title = AX.string(elements[i], kAXTitleAttribute) ?? "" }
+        if let restorer { state.windows += restorer.unclaimed }
+        state.savedAt = Date()
+        saveQueue.sync {}
+        state.save()
+    }
+
     private func untrack(_ id: CGWindowID) {
         windows[id] = nil
         order.removeAll { $0 == id }
@@ -382,6 +493,7 @@ final class WindowManager {
         )
         for id in windows.keys where !alive.contains(id) { untrack(id) }
         for watcher in apps.values { discover(watcher) }
+        applyRestoredLayout()
         scheduleRetile()
     }
 
@@ -517,6 +629,7 @@ final class WindowManager {
                 if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame, from: bounds[window.id]) }
             }
         }
+        scheduleSave()
     }
 
     private func area(of screen: ScreenInfo) -> CGRect {
