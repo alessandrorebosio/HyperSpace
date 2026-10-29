@@ -57,6 +57,10 @@ final class TilingModel: ObservableObject {
     @Published var workspaces: [Workspace] = []
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
+    @Published private(set) var floatingWindows: [FloatingWindowRule] = []
+    /// The rule being written: app (nil for any) and title text.
+    @Published var newFloatingApp: String?
+    @Published var newFloatingTitle = ""
     /// Apps whose windows open in a given workspace (by name).
     @Published private(set) var assignments: [Assignment] = []
 
@@ -114,6 +118,21 @@ final class TilingModel: ObservableObject {
         save()
     }
 
+    func addFloatingWindow() {
+        let title = newFloatingTitle.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return }
+        let rule = FloatingWindowRule(app: newFloatingApp, title: title)
+        guard !floatingWindows.contains(rule) else { return }
+        floatingWindows.append(rule)
+        newFloatingTitle = ""
+        save()
+    }
+
+    func removeFloatingWindow(_ rule: FloatingWindowRule) {
+        floatingWindows.removeAll { $0 == rule }
+        save()
+    }
+
     /// Running apps that could be made floating, by name.
     var floatingCandidates: [(name: String, bundleID: String)] {
         Self.runningApps.filter { !floating.contains($0.bundleID) }
@@ -123,7 +142,7 @@ final class TilingModel: ObservableObject {
         Self.runningApps.filter { app in !assignments.contains { $0.app == app.bundleID } }
     }
 
-    private static var runningApps: [(name: String, bundleID: String)] {
+    static var runningApps: [(name: String, bundleID: String)] {
         NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
             .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? $0, $0) } }
@@ -241,6 +260,10 @@ final class TilingModel: ObservableObject {
         padding = (tiling["padding"] as? NSNumber)?.intValue ?? 8
         mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? true
         floating = tiling["floating"] as? [String] ?? []
+        floatingWindows = (tiling["floatingWindows"] as? [[String: Any]] ?? []).compactMap { entry in
+            guard let title = entry["title"] as? String, !title.isEmpty else { return nil }
+            return FloatingWindowRule(app: (entry["app"] as? String).flatMap { $0.isEmpty ? nil : $0 }, title: title)
+        }
         assignments = (tiling["assign"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let app = entry["app"] as? String, let workspace = entry["workspace"] as? String else { return nil }
             return Assignment(app: app, workspace: workspace)
@@ -269,6 +292,11 @@ final class TilingModel: ObservableObject {
             tiling["padding"] = padding
             tiling["mouseFollowsFocus"] = mouseFollowsFocus
             tiling["floating"] = floating
+            tiling["floatingWindows"] = floatingWindows.isEmpty ? nil : floatingWindows.map { rule -> [String: Any] in
+                var entry: [String: Any] = ["title": rule.title]
+                if let app = rule.app { entry["app"] = app }
+                return entry
+            }
             // Rules pointing at a workspace that no longer exists are dropped.
             let names = Set(workspaces.map(\.name))
             let rules = assignments.filter { names.contains($0.workspace) }

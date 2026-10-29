@@ -206,7 +206,16 @@ oppure, se è da sola, la impila nella colonna accanto; **sinistra/destra** la f
 nuova colonna da quel lato, oppure, se è da sola, scambia la colonna con la vicina. `resize width` cambia la
 larghezza della colonna, `resize height` l'altezza della finestra nella colonna.
 Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati.
-`floating` elenca i bundle ID da non affiancare.
+`floating` elenca i bundle ID da non affiancare. `floatingWindows` fa fluttuare solo alcune finestre, in base al
+titolo (contiene il testo, maiuscole indifferenti), di un'app o di tutte; si gestisce anche da Settings → Tiling →
+Floating Windows. Vale anche per le finestre che prendono il titolo un attimo dopo l'apertura:
+
+```json
+"floatingWindows": [
+  { "app": "com.autodesk.fusion360", "title": "Preferences" },
+  { "title": "Picture-in-Picture" }
+]
+```
 
 ### Azioni
 | Azione | |

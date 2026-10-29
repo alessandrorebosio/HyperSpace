@@ -120,6 +120,39 @@ struct TilingView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section {
+                ForEach(Array(model.floatingWindows.enumerated()), id: \.offset) { _, rule in
+                    HStack {
+                        if let app = rule.app { AppLabel(bundleID: app) } else { Text("Any app") }
+                        Text("“\(rule.title)”").foregroundStyle(.secondary)
+                        Spacer()
+                        RemoveButton { model.removeFloatingWindow(rule) }
+                    }
+                }
+                HStack {
+                    Picker("App", selection: Binding(get: { model.newFloatingApp }, set: { model.newFloatingApp = $0 })) {
+                        Text("Any app").tag(String?.none)
+                        ForEach(TilingModel.runningApps, id: \.bundleID) { app in
+                            Text(app.name).tag(Optional(app.bundleID))
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    TextField("Title", text: Binding(get: { model.newFloatingTitle }, set: { model.newFloatingTitle = $0 }),
+                              prompt: Text("Title contains…"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { model.addFloatingWindow() }
+                    Button("Add") { model.addFloatingWindow() }
+                        .disabled(model.newFloatingTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            } header: {
+                Text("Floating Windows")
+            } footer: {
+                Text("Windows whose title contains the text are never tiled, like an app's settings or a dialog. Case doesn't matter.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             ForEach(TilingModel.shortcutActions, id: \.group) { group in
                 Section {
                     ForEach(group.items, id: \.action) { item in

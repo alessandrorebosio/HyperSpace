@@ -41,9 +41,15 @@ struct RawConfig: Decodable {
         var padding: Double?
         var masterRatio: Double?
         var floating: [String]?
+        var floatingWindows: [FloatingWindow]?
         var workspaces: [Workspace]?
         var assign: [Assignment]?
         var mouseFollowsFocus: Bool?
+    }
+    /// Windows whose title contains `title`, of `app` (bundle id) or of any app.
+    struct FloatingWindow: Decodable {
+        var app: String?
+        var title: String
     }
     /// Windows of `app` (bundle id) open in workspace `workspace` (name or number).
     struct Assignment: Decodable {
@@ -148,12 +154,33 @@ struct TilingConfig {
     var padding: CGFloat = 8
     var masterRatio: CGFloat = 0.55
     var floating: Set<String> = []
+    var floatingWindows: [FloatingWindowRule] = []
     /// Workspace names; empty means a single implicit workspace.
     var workspaces: [String] = []
     /// Bundle id → workspace index for windows to open in.
     var assignments: [String: Int] = [:]
     /// Moving the focus to another display brings the pointer along.
     var mouseFollowsFocus = true
+}
+
+/// Windows that float by title (a dialog, an app's own settings), of one app or any.
+struct FloatingWindowRule: Equatable {
+    var app: String?
+    /// Case-insensitive substring of the window title.
+    var title: String
+
+    func matches(app bundleID: String?, title windowTitle: String?) -> Bool {
+        guard app == nil || app == bundleID, let windowTitle, !title.isEmpty else { return false }
+        return windowTitle.range(of: title, options: .caseInsensitive) != nil
+    }
+}
+
+extension TilingConfig {
+    /// Whether a window floats: its app is floating, or a title rule matches it.
+    func floats(app bundleID: String?, title: String?) -> Bool {
+        if let bundleID, floating.contains(bundleID) { return true }
+        return floatingWindows.contains { $0.matches(app: bundleID, title: title) }
+    }
 }
 
 /// Validated, compiled configuration.
@@ -248,6 +275,8 @@ struct Config {
         tiling.padding = CGFloat(max(0, raw.padding ?? 8))
         tiling.masterRatio = CGFloat(min(0.9, max(0.1, raw.masterRatio ?? 0.55)))
         tiling.floating = Set(raw.floating ?? [])
+        tiling.floatingWindows = (raw.floatingWindows ?? []).filter { !$0.title.isEmpty }
+            .map { FloatingWindowRule(app: $0.app.flatMap { $0.isEmpty ? nil : $0 }, title: $0.title) }
         tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? true
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")

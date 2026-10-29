@@ -205,3 +205,20 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(KeyboardLock.label(minutes: 0) == "Never")
     }
 }
+
+@Suite struct FloatingWindowTests {
+    @Test func titleRules() throws {
+        let config = try HyperSpaceTests.config(#"""
+        {"tiling":{"floating":["com.apple.calculator"],
+          "floatingWindows":[{"app":"com.autodesk.fusion360","title":"preferences"},{"title":"Picture-in-Picture"},{"title":""}]}}
+        """#)
+        let tiling = config.tiling
+        #expect(tiling.floatingWindows.count == 2)
+        #expect(tiling.floats(app: "com.apple.calculator", title: nil))
+        #expect(tiling.floats(app: "com.autodesk.fusion360", title: "Preferences"))
+        #expect(!tiling.floats(app: "com.autodesk.fusion360", title: "Untitled design"))
+        #expect(!tiling.floats(app: "com.apple.Safari", title: "Preferences"))
+        #expect(tiling.floats(app: "com.apple.Safari", title: "Picture-in-Picture"))
+        #expect(!tiling.floats(app: "com.apple.Safari", title: nil))
+    }
+}

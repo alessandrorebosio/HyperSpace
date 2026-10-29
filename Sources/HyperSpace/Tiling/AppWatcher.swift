@@ -42,9 +42,10 @@ final class AppWatcher {
         AX.elements(element, kAXWindowsAttribute)
     }
 
-    /// Per-window notifications: closed, and moved or resized (by hand, to snap it back).
+    /// Per-window notifications: closed, moved or resized (by hand, to snap it back), and
+    /// retitled (for title floating rules).
     func watch(_ window: AXUIElement) {
-        for name in [kAXUIElementDestroyedNotification, kAXMovedNotification, kAXResizedNotification] {
+        for name in [kAXUIElementDestroyedNotification, kAXMovedNotification, kAXResizedNotification, kAXTitleChangedNotification] {
             AXObserverAddNotification(observer, window, name as CFString, refcon)
         }
     }

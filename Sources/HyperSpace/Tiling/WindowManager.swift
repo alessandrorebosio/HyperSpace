@@ -143,8 +143,9 @@ final class WindowManager {
             screenStates.removeAll()
         }
         config = newConfig
+        let byTitle = !config.floatingWindows.isEmpty
         for window in windows.values where !window.userOverride {
-            window.isFloating = config.floating.contains(window.bundleID ?? "")
+            window.isFloating = config.floats(app: window.bundleID, title: byTitle ? AX.string(window.element, kAXTitleAttribute) : nil)
         }
         // Fewer workspaces than before: their windows join the first one.
         displayed = displayed.filter { $0.value < workspaceCount }
@@ -341,7 +342,8 @@ final class WindowManager {
             return nil
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
-        window.isFloating = config.floating.contains(watcher.bundleID ?? "")
+        window.isFloating = config.floats(app: watcher.bundleID,
+                                          title: config.floatingWindows.isEmpty ? nil : AX.string(element, kAXTitleAttribute))
         // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
         var restored: WorkspaceState.Window?
         if restorer != nil, let app = watcher.bundleID,
@@ -541,6 +543,15 @@ final class WindowManager {
             scheduleSnapBack()
         case kAXFocusedWindowChangedNotification:
             scheduleFocusUpdate()
+        case kAXTitleChangedNotification:
+            // Many windows set their title a moment after opening: title rules apply then.
+            guard !config.floatingWindows.isEmpty,
+                  let window = windows.values.first(where: { $0.pid == pid && CFEqual($0.element, element) }),
+                  !window.userOverride else { return }
+            let floats = config.floats(app: window.bundleID, title: AX.string(element, kAXTitleAttribute))
+            guard floats != window.isFloating else { return }
+            window.isFloating = floats
+            scheduleRetile()
         default:
             scheduleRetile()
         }
