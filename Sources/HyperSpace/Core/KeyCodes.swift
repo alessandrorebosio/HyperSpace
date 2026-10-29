@@ -25,8 +25,9 @@ struct KeyInfo {
     /// "left_command" → "Left Command", "f5" → "F5".
     var label: String { KeyInfo.label(for: name) }
 
+    /// Aliases are shown by their canonical name ("[" → "Left Bracket").
     static func label(for name: String) -> String {
-        name.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        KeyCodes.canonicalName(name).split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
     }
 }
 
@@ -171,6 +172,19 @@ enum KeyCodes {
         return table
     }()
 
+    private static let canonicalNames: [String: String] = {
+        var names: [String: String] = [:]
+        for (_, keys) in groups {
+            for key in keys { for alias in key.names { names[alias] = key.name } }
+        }
+        return names
+    }()
+
+    /// "[" → "left_bracket", "esc" → "escape"; unknown names are returned as they are.
+    static func canonicalName(_ name: String) -> String {
+        canonicalNames[name.lowercased()] ?? name
+    }
+
     private static let namesByKeyCode: [UInt16: String] = {
         var names: [UInt16: String] = [:]
         for (_, keys) in groups {
@@ -193,6 +207,7 @@ struct Modifiers: OptionSet, Hashable {
     static let ctrl = Modifiers(rawValue: 1 << 2)
     static let shift = Modifiers(rawValue: 1 << 3)
     static let hyper: Modifiers = [.cmd, .alt, .ctrl, .shift]
+    static let meh: Modifiers = [.alt, .ctrl, .shift]
 
     init(rawValue: UInt8) { self.rawValue = rawValue }
 
@@ -221,7 +236,7 @@ struct Modifiers: OptionSet, Hashable {
         case "ctrl", "control", "⌃": return .ctrl
         case "shift", "⇧": return .shift
         case "hyper": return .hyper
-        case "meh": return [.alt, .ctrl, .shift]
+        case "meh": return .meh
         default: return nil
         }
     }
@@ -243,6 +258,14 @@ struct Modifiers: OptionSet, Hashable {
             .filter { contains($0.0) }.map(\.1).joined(separator: "+")
     }
 
+    /// Config text for these modifiers plus an optional key: "hyper", "meh+1",
+    /// "ctrl+alt+left", "cmd+space".
+    func text(key: String?) -> String {
+        let prefix = self == .hyper ? "hyper" : self == .meh ? "meh" : configText
+        guard let key else { return prefix }
+        return prefix.isEmpty ? key : "\(prefix)+\(key)"
+    }
+
     /// ⌃⌥⇧⌘ in macOS menu order.
     var symbols: String {
         (contains(.ctrl) ? "⌃" : "") + (contains(.alt) ? "⌥" : "") + (contains(.shift) ? "⇧" : "") + (contains(.cmd) ? "⌘" : "")
@@ -261,21 +284,6 @@ struct Modifiers: OptionSet, Hashable {
 }
 
 struct KeyCombo: Equatable {
-    /// Config text for a shortcut: "meh+1", "hyper+h", "ctrl+alt+left".
-    static func text(_ mods: Modifiers, key: String) -> String {
-        if mods == .hyper { return "hyper+\(key)" }
-        if mods == [.ctrl, .alt, .shift] { return "meh+\(key)" }
-        return mods.isEmpty ? key : "\(mods.configText)+\(key)"
-    }
-
-    /// "⌃⌥⇧ 1" for display.
-    static func label(_ text: String) -> String {
-        let tokens = text.split(separator: "+").map(String.init)
-        guard let key = tokens.last else { return text }
-        let mods = tokens.dropLast().reduce(into: Modifiers()) { $0.formUnion(Modifiers.token($1) ?? []) }
-        return [mods.symbols, KeyInfo.label(for: key)].filter { !$0.isEmpty }.joined(separator: " ")
-    }
-
     let keyCode: UInt16
     let modifiers: Modifiers
 

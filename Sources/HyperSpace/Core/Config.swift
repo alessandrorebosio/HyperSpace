@@ -175,6 +175,23 @@ struct Config {
     init(_ raw: RawConfig) throws {
         let keyboard = raw.keyboard
 
+        // Shortcuts first: carrier keys for combinations must avoid every key they use.
+        var boundKeyCodes = Set<UInt16>()
+        func bind(_ keys: String, _ action: Action) throws {
+            let combo = try KeyCombo.parse(keys)
+            boundKeyCodes.insert(combo.keyCode)
+            tap.bindKey(combo, action)
+        }
+        for binding in keyboard?.bindings ?? [] {
+            try bind(binding.keys, try Action.parse(binding.action))
+        }
+        if let tiling = raw.tiling {
+            for (keys, action) in try parseTiling(tiling) { try bind(keys, action) }
+        }
+        if let mouse = raw.mouse {
+            try parseMouse(mouse)
+        }
+
         // `hyperKey` is shorthand for a remap to "hyper" on every keyboard.
         var rawRemaps = keyboard?.remap ?? []
         if let name = keyboard?.hyperKey, !name.isEmpty {
@@ -183,13 +200,6 @@ struct Config {
         let parsed = try rawRemaps.map { remap -> (from: UInt64, to: RemapTarget, target: KeyboardTarget) in
             guard let from = KeyCodes.lookup(remap.from)?.hidUsage else { throw ConfigError("unknown key '\(remap.from)' in remap") }
             return (from, try RemapTarget.parse(remap.to), KeyboardTarget(remap.keyboard))
-        }
-
-        var boundKeyCodes = Set<UInt16>()
-        for binding in keyboard?.bindings ?? [] {
-            let combo = try KeyCombo.parse(binding.keys)
-            boundKeyCodes.insert(combo.keyCode)
-            tap.bindKey(combo, try Action.parse(binding.action))
         }
 
         var usedHID = Set(parsed.map(\.from))
@@ -205,45 +215,49 @@ struct Config {
                 remaps.append(RemapRule(from: from, to: carrier.hidUsage!, target: target))
             }
         }
-        tap.suppressCapsLock = remaps.contains { $0.from == KeyCodes.lookup("caps_lock")?.hidUsage }
+        let capsLock = KeyCodes.lookup("caps_lock")?.hidUsage
+        tap.suppressCapsLock = remaps.contains { $0.from == capsLock }
+    }
 
-        if let mouse = raw.mouse {
-            tap.reverseScroll = mouse.reverseScroll ?? false
-            if let drag = mouse.dragModifier, !drag.isEmpty {
-                tap.dragModifier = try Modifiers.parse(drag)
-            }
-            for button in mouse.buttons ?? [] {
-                // 0 and 1 are left/right click: remapping them would make the mouse unusable.
-                guard (2..<32).contains(button.button) else {
-                    throw ConfigError("mouse button must be between 2 and 31 (got \(button.button))")
-                }
-                tap.bindButton(button.button, try Modifiers.parse(button.modifiers ?? ""), try Action.parse(button.action))
-            }
+    private mutating func parseMouse(_ mouse: RawConfig.Mouse) throws {
+        tap.reverseScroll = mouse.reverseScroll ?? false
+        if let drag = mouse.dragModifier, !drag.isEmpty {
+            tap.dragModifier = try Modifiers.parse(drag)
         }
+        for button in mouse.buttons ?? [] {
+            // 0 and 1 are left/right click: remapping them would make the mouse unusable.
+            guard (2..<32).contains(button.button) else {
+                throw ConfigError("mouse button must be between 2 and 31 (got \(button.button))")
+            }
+            tap.bindButton(button.button, try Modifiers.parse(button.modifiers ?? ""), try Action.parse(button.action))
+        }
+    }
 
-        if let tiling = raw.tiling {
-            self.tiling.enabled = tiling.enabled ?? true
-            if let layout = tiling.layout {
-                guard let kind = LayoutKind(rawValue: layout.lowercased()) else { throw ConfigError("unknown layout '\(layout)'") }
-                self.tiling.layout = kind
-            }
-            self.tiling.gap = CGFloat(max(0, tiling.gap ?? 8))
-            self.tiling.padding = CGFloat(max(0, tiling.padding ?? 8))
-            self.tiling.masterRatio = CGFloat(min(0.9, max(0.1, tiling.masterRatio ?? 0.55)))
-            self.tiling.floating = Set(tiling.floating ?? [])
-            for (index, workspace) in (tiling.workspaces ?? []).enumerated() {
-                self.tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
-                if let keys = workspace.switchKeys, !keys.isEmpty { tap.bindKey(try KeyCombo.parse(keys), .workspace(index)) }
-                if let keys = workspace.move, !keys.isEmpty { tap.bindKey(try KeyCombo.parse(keys), .moveToWorkspace(index)) }
-            }
-            for rule in tiling.assign ?? [] {
-                let names = self.tiling.workspaces
-                guard let index = names.firstIndex(of: rule.workspace)
-                        ?? Int(rule.workspace).map({ $0 - 1 }).flatMap({ names.indices.contains($0) ? $0 : nil }) else {
-                    throw ConfigError("app rule for \(rule.app): no workspace named '\(rule.workspace)'")
-                }
-                self.tiling.assignments[rule.app] = index
-            }
+    /// Fills `tiling` and returns the workspace shortcuts to bind.
+    private mutating func parseTiling(_ raw: RawConfig.Tiling) throws -> [(String, Action)] {
+        var shortcuts: [(String, Action)] = []
+        tiling.enabled = raw.enabled ?? true
+        if let layout = raw.layout {
+            guard let kind = LayoutKind(rawValue: layout.lowercased()) else { throw ConfigError("unknown layout '\(layout)'") }
+            tiling.layout = kind
         }
+        tiling.gap = CGFloat(max(0, raw.gap ?? 8))
+        tiling.padding = CGFloat(max(0, raw.padding ?? 8))
+        tiling.masterRatio = CGFloat(min(0.9, max(0.1, raw.masterRatio ?? 0.55)))
+        tiling.floating = Set(raw.floating ?? [])
+        for (index, workspace) in (raw.workspaces ?? []).enumerated() {
+            tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
+            if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }
+            if let keys = workspace.move, !keys.isEmpty { shortcuts.append((keys, .moveToWorkspace(index))) }
+        }
+        let names = tiling.workspaces
+        for rule in raw.assign ?? [] {
+            guard let index = names.firstIndex(of: rule.workspace)
+                    ?? Int(rule.workspace).map({ $0 - 1 }).flatMap({ names.indices.contains($0) ? $0 : nil }) else {
+                throw ConfigError("app rule for \(rule.app): no workspace named '\(rule.workspace)'")
+            }
+            tiling.assignments[rule.app] = index
+        }
+        return shortcuts
     }
 }

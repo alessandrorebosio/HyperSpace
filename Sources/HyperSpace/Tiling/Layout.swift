@@ -83,6 +83,15 @@ struct ScreenInfo {
     }
 }
 
+extension ScreenInfo {
+    /// A frame of `size` (shrunk to fit) centered in the visible area.
+    func centered(_ size: CGSize) -> CGRect {
+        let fitted = CGSize(width: min(size.width, visible.width), height: min(size.height, visible.height))
+        return CGRect(x: visible.midX - fitted.width / 2, y: visible.midY - fitted.height / 2,
+                      width: fitted.width, height: fitted.height)
+    }
+}
+
 extension Array where Element == ScreenInfo {
     func index(for rect: CGRect) -> Int {
         let center = rect.center

@@ -49,26 +49,13 @@ enum RemapTarget: Equatable {
         }
     }
 
-    /// Canonical config text for a combination: "hyper", "meh" or "ctrl+alt+shift+cmd+key".
-    static func text(_ mods: Modifiers, key: String?) -> String {
-        if key == nil && mods == .hyper { return "hyper" }
-        if key == nil && mods == [.alt, .ctrl, .shift] { return "meh" }
-        var parts: [String] = []
-        if mods.contains(.ctrl) { parts.append("ctrl") }
-        if mods.contains(.alt) { parts.append("alt") }
-        if mods.contains(.shift) { parts.append("shift") }
-        if mods.contains(.cmd) { parts.append("cmd") }
-        if let key { parts.append(key) }
-        return parts.joined(separator: "+")
-    }
-
-    /// Human label: "Escape", "Hyper ⌃⌥⇧⌘", "⌃⌥⇧", "⌘ Space".
+    /// Human label for a key, combination or shortcut: "Escape", "Hyper  ⌃⌥⇧⌘", "⌃⌥⇧ 1", "⌘ Space".
     static func label(_ text: String) -> String {
         switch try? parse(text) {
         case .combination(let mods, _, let keyName):
             let keyLabel = keyName.map { KeyInfo.label(for: $0) }
             if keyLabel == nil && mods == .hyper { return "Hyper  ⌃⌥⇧⌘" }
-            if keyLabel == nil && mods == [.alt, .ctrl, .shift] { return "Meh  ⌃⌥⇧" }
+            if keyLabel == nil && mods == .meh { return "Meh  ⌃⌥⇧" }
             return [mods.symbols, keyLabel ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
         default:
             return KeyInfo.label(for: text)

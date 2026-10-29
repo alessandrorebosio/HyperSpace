@@ -12,10 +12,15 @@ ifeq ($(SIGN_IDENTITY),-)
 SIGN_REQUIREMENT := -r='designated => identifier "$(BUNDLE_ID)"'
 endif
 
-.PHONY: build app run install clean
+.PHONY: build test app run install clean
 
 build:
 	swift build -c $(CONFIG)
+
+# Building the tests first avoids a stale-cache "TestingMacros plugin not found" error.
+test:
+	swift build --build-tests
+	swift test
 
 app: build
 	rm -rf $(BUNDLE)

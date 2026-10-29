@@ -25,7 +25,7 @@ final class MouseModel: ObservableObject {
     @Published private(set) var saveError: String?
 
     private let eventTap: EventTap
-    private var monitor: Any?
+    private let monitor = LocalEventMonitor()
 
     init(eventTap: EventTap) {
         self.eventTap = eventTap
@@ -48,10 +48,6 @@ final class MouseModel: ObservableObject {
         if capturing == .button(id) || capturing == .action(id) { stopCapture() }
         rules.removeAll { $0.id == id }
         save()
-    }
-
-    func disable(_ id: UUID) {
-        setAction("none", for: id)
     }
 
     func choose(_ action: String, for id: UUID) {
@@ -157,30 +153,29 @@ final class MouseModel: ObservableObject {
         switch field {
         case .button:
             eventTap.setButtonsSuspended(true)
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
-                guard let self, event.buttonNumber >= 2, event.buttonNumber < 32 else { return event }
+            monitor.start(.otherMouseDown) { [weak self] event in
+                guard let self, event.buttonNumber >= 2, event.buttonNumber < 32 else { return false }
                 let modifiers = Modifiers(event.modifierFlags)
                 update(field) { $0.button = event.buttonNumber; $0.modifiers = modifiers }
-                return nil
+                return true
             }
         case .action:
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self else { return event }
+            monitor.start(.keyDown) { [weak self] event in
+                guard let self else { return false }
                 guard let name = KeyCodes.name(forKeyCode: event.keyCode) else {
                     NSSound.beep()
-                    return nil
+                    return true
                 }
                 let modifiers = Modifiers(event.modifierFlags)
-                let combo = modifiers.isEmpty ? name : RemapTarget.text(modifiers, key: name)
+                let combo = modifiers.text(key: name)
                 update(field) { $0.action = "key \(combo)" }
-                return nil
+                return true
             }
         }
     }
 
     func stopCapture() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
+        monitor.stop()
         if case .button = capturing { eventTap.setButtonsSuspended(false) }
         capturing = nil
     }
@@ -221,20 +216,15 @@ final class MouseModel: ObservableObject {
 
     private func save() {
         let complete = rules.filter(\.isComplete)
-        do {
-            try ConfigWriter.update { root in
-                var mouse = root["mouse"] as? [String: Any] ?? [:]
-                mouse["reverseScroll"] = reverseScroll
-                mouse["buttons"] = complete.map { rule -> [String: Any] in
-                    var entry: [String: Any] = ["button": rule.button!, "action": rule.action]
-                    if !rule.modifiers.isEmpty { entry["modifiers"] = rule.modifiers.configText }
-                    return entry
-                }
-                root["mouse"] = mouse
+        saveError = ConfigWriter.save { root in
+            var mouse = root["mouse"] as? [String: Any] ?? [:]
+            mouse["reverseScroll"] = reverseScroll
+            mouse["buttons"] = complete.map { rule -> [String: Any] in
+                var entry: [String: Any] = ["button": rule.button!, "action": rule.action]
+                if !rule.modifiers.isEmpty { entry["modifiers"] = rule.modifiers.configText }
+                return entry
             }
-            saveError = nil
-        } catch {
-            saveError = error.localizedDescription
+            root["mouse"] = mouse
         }
     }
 }

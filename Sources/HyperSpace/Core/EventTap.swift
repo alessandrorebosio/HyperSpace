@@ -50,8 +50,14 @@ final class EventTap {
         ready.wait()
     }
 
+    /// Runs a block on the tap thread, which owns all tap state.
+    private func onTapThread(_ block: @escaping () -> Void) {
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopWakeUp(runLoop)
+    }
+
     func apply(_ newConfig: TapConfig) {
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+        onTapThread { [self] in
             config = newConfig
             carrierDown = [Bool](repeating: false, count: newConfig.carriers.count)
             heldModifiers = []
@@ -61,23 +67,20 @@ final class EventTap {
             let newMask = newConfig.eventMask
             if newMask != mask || (tap == nil && newMask != 0) { installTap(mask: newMask) }
         }
-        CFRunLoopWakeUp(runLoop)
     }
 
     func setButtonsSuspended(_ suspended: Bool) {
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+        onTapThread { [self] in
             buttonsSuspended = suspended
             for i in swallowedButtons.indices { swallowedButtons[i] = false }
         }
-        CFRunLoopWakeUp(runLoop)
     }
 
     func setKeyBindingsSuspended(_ suspended: Bool) {
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+        onTapThread { [self] in
             keyBindingsSuspended = suspended
             for i in swallowedKeys.indices { swallowedKeys[i] = false }
         }
-        CFRunLoopWakeUp(runLoop)
     }
 
     private func installTap(mask newMask: CGEventMask) {
@@ -154,9 +157,6 @@ final class EventTap {
         }
     }
 
-    private func modifiers(of event: CGEvent) -> Modifiers {
-        Modifiers(event.flags).union(heldModifiers)
-    }
 
     /// Returns true when the event must be swallowed.
     private func handleKey(_ event: CGEvent, down: Bool) -> Bool {
@@ -170,7 +170,7 @@ final class EventTap {
         }
         if keyBindingsSuspended { return false }
         if down {
-            let index = config.keyTable[TapConfig.slot(code, modifiers(of: event))]
+            let index = config.keyTable[TapConfig.slot(code, Modifiers(event.flags))]
             guard index >= 0 else { return false }
             swallowedKeys[code] = true
             dispatch(config.actions[Int(index)])
@@ -203,7 +203,7 @@ final class EventTap {
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
         guard button < 32, !buttonsSuspended else { return false }
         if down {
-            let index = config.buttonTable[TapConfig.slot(button, modifiers(of: event))]
+            let index = config.buttonTable[TapConfig.slot(button, Modifiers(event.flags))]
             guard index >= 0 else { return false }
             swallowedButtons[button] = true
             dispatch(config.actions[Int(index)])
@@ -229,7 +229,7 @@ final class EventTap {
     }
 
     private func beginDrag(_ event: CGEvent, mode: DragMode) -> Bool {
-        guard let required = config.dragModifier, modifiers(of: event) == required else { return false }
+        guard let required = config.dragModifier, Modifiers(event.flags) == required else { return false }
         dragMode = mode
         drag.begin(mode, at: event.location)
         return true

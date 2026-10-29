@@ -12,6 +12,24 @@ extension Modifiers {
     }
 }
 
+/// An NSEvent local monitor for key or button capture. The handler returns true when
+/// it consumed the event; the monitor is removed on `stop` or when released.
+final class LocalEventMonitor {
+    private var token: Any?
+
+    func start(_ mask: NSEvent.EventTypeMask, _ handler: @escaping (NSEvent) -> Bool) {
+        stop()
+        token = NSEvent.addLocalMonitorForEvents(matching: mask) { handler($0) ? nil : $0 }
+    }
+
+    func stop() {
+        if let token { NSEvent.removeMonitor(token) }
+        token = nil
+    }
+
+    deinit { stop() }
+}
+
 /// A key drawn as a key cap. Clicking it starts capturing; while capturing it is
 /// outlined in the accent color.
 struct KeyCap: View {

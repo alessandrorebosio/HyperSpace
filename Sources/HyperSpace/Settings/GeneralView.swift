@@ -13,7 +13,8 @@ final class GeneralModel: ObservableObject {
 
     @Published private(set) var launchAtLogin = false
     @Published private(set) var accessibilityGranted = false
-    @Published private(set) var status: String?
+    /// Outcome of the last action on this page.
+    @Published private(set) var status: (text: String, ok: Bool)?
 
     let actions: Actions
 
@@ -25,7 +26,7 @@ final class GeneralModel: ObservableObject {
     func refresh() {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         accessibilityGranted = Permissions.isTrusted(prompt: false)
-        status = actions.problem()
+        status = actions.problem().map { ($0, false) }
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -36,7 +37,7 @@ final class GeneralModel: ObservableObject {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            status = "Launch at login: \(error.localizedDescription)"
+            status = ("Launch at login: \(error.localizedDescription)", false)
         }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -44,7 +45,7 @@ final class GeneralModel: ObservableObject {
     func reload() {
         actions.reloadConfig()
         // The reload is synchronous; show its outcome.
-        status = actions.problem() ?? "Config reloaded"
+        status = actions.problem().map { ($0, false) } ?? ("Config reloaded", true)
     }
 
     var configPath: String {
@@ -82,8 +83,8 @@ struct GeneralView: View {
                     Spacer()
                 }
                 if let status = model.status {
-                    Label(status, systemImage: status == "Config reloaded" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(status == "Config reloaded" ? Color.green : Color.orange)
+                    Label(status.text, systemImage: status.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(status.ok ? Color.green : Color.orange)
                 }
             } header: {
                 Text("Configuration")

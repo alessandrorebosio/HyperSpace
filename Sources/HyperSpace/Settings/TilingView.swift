@@ -189,7 +189,7 @@ private struct ShortcutCap: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            KeyCap(text: model.capturing == field ? "Press keys…" : (keys.isEmpty ? "None" : KeyCombo.label(keys)),
+            KeyCap(text: model.capturing == field ? "Press keys…" : (keys.isEmpty ? "None" : RemapTarget.label(keys)),
                    width: 150, placeholder: keys.isEmpty, active: model.capturing == field) {
                 model.capturing == field ? model.stopCapture() : model.startCapture(field)
             }

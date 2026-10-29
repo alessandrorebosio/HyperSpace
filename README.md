@@ -14,6 +14,7 @@ Servono solo i Command Line Tools (Xcode non è necessario).
 make app        # build/HyperSpace.app (release, firmata ad-hoc)
 make run        # build + avvio
 make install    # copia in /Applications
+make test       # test (Swift Testing): config, scorciatoie, combinazioni, layout a colonne
 ```
 
 Al primo avvio macOS chiede il permesso di Accessibilità; HyperSpace parte da solo appena viene concesso.
@@ -232,7 +233,7 @@ Sources/HyperSpace/
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
 ├── Mouse/      DragController (ponte tap → window manager)
-└── Tiling/     WindowManager, AppWatcher (AXObserver), Layout, AX helpers
+└── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), Layout, AX helpers
 ```
 
 Scelte fatte per prestazioni e permessi minimi:

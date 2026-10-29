@@ -26,7 +26,7 @@ final class RemapModel: ObservableObject {
     @Published private(set) var capturePreview = ""
 
     private let remapper: KeyboardRemapper
-    private var monitor: Any?
+    private let monitor = LocalEventMonitor()
     // Target capture: the most modifiers held at once, and the physical key when only one was pressed.
     private var peakModifiers: Modifiers = []
     private var modifierPresses = 0
@@ -110,14 +110,14 @@ final class RemapModel: ObservableObject {
         soleModifierKey = nil
         capturePreview = ""
         remapper.suspend()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
-            guard let self else { return event }
+        monitor.start([.keyDown, .flagsChanged]) { [weak self] event in
+            guard let self else { return false }
             if case .to = capturing {
                 captureTarget(event)
             } else {
                 captureSource(event)
             }
-            return nil
+            return true
         }
     }
 
@@ -132,7 +132,7 @@ final class RemapModel: ObservableObject {
         let held = Modifiers(event.modifierFlags)
 
         if event.type == .keyDown {
-            finishCapture(held.isEmpty ? name : RemapTarget.text(held, key: name))
+            finishCapture(held.text(key: name))
             return
         }
         // Caps lock and fn are plain keys here, not part of a combination.
@@ -149,13 +149,12 @@ final class RemapModel: ObservableObject {
         if let sole = soleModifierKey, let single = KeyCodes.name(forKeyCode: sole) {
             finishCapture(single)
         } else {
-            finishCapture(RemapTarget.text(peakModifiers, key: nil))
+            finishCapture(peakModifiers.text(key: nil))
         }
     }
 
     func stopCapture() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
+        monitor.stop()
         guard capturing != nil else { return }
         capturing = nil
         capturePreview = ""
@@ -207,20 +206,15 @@ final class RemapModel: ObservableObject {
 
     private func save() {
         let complete = rules.filter(\.isComplete)
-        do {
-            try ConfigWriter.update { root in
-                var keyboard = root["keyboard"] as? [String: Any] ?? [:]
-                keyboard["hyperKey"] = nil
-                keyboard["remap"] = complete.map { rule -> [String: Any] in
-                    var entry: [String: Any] = ["from": rule.from, "to": rule.to]
-                    if rule.keyboard != "all" { entry["keyboard"] = rule.keyboard }
-                    return entry
-                }
-                root["keyboard"] = keyboard
+        saveError = ConfigWriter.save { root in
+            var keyboard = root["keyboard"] as? [String: Any] ?? [:]
+            keyboard["hyperKey"] = nil
+            keyboard["remap"] = complete.map { rule -> [String: Any] in
+                var entry: [String: Any] = ["from": rule.from, "to": rule.to]
+                if rule.keyboard != "all" { entry["keyboard"] = rule.keyboard }
+                return entry
             }
-            saveError = nil
-        } catch {
-            saveError = error.localizedDescription
+            root["keyboard"] = keyboard
         }
     }
 }

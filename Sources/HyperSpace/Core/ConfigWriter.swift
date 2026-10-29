@@ -16,6 +16,16 @@ enum ConfigWriter {
         try (format(root, depth: 0) + "\n").write(to: ConfigStore.url, atomically: true, encoding: .utf8)
     }
 
+    /// `update` for the settings pages: the error message, or nil when saved.
+    static func save(_ change: (inout [String: Any]) -> Void) -> String? {
+        do {
+            try update(change)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     private static let keyOrder = [
         "keyboard", "mouse", "tiling",
         "hyperKey", "remap", "bindings",

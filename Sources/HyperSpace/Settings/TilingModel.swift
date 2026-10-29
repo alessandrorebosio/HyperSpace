@@ -68,7 +68,7 @@ final class TilingModel: ObservableObject {
     @Published private(set) var saveError: String?
 
     private let eventTap: EventTap
-    private var monitor: Any?
+    private let monitor = LocalEventMonitor()
     private var pendingSave: DispatchWorkItem?
 
     init(eventTap: EventTap) {
@@ -193,21 +193,20 @@ final class TilingModel: ObservableObject {
         stopCapture()
         capturing = field
         eventTap.setKeyBindingsSuspended(true)
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, let name = KeyCodes.name(forKeyCode: event.keyCode) else { return nil }
+        monitor.start(.keyDown) { [weak self] event in
+            guard let self, let name = KeyCodes.name(forKeyCode: event.keyCode) else { return true }
             let mods = Modifiers(event.modifierFlags)
             switch (name, mods.isEmpty) {
             case ("escape", true): stopCapture()
             case ("delete", true): finishCapture("")
-            default: finishCapture(KeyCombo.text(mods, key: name))
+            default: finishCapture(mods.text(key: name))
             }
-            return nil
+            return true
         }
     }
 
     func stopCapture() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
+        monitor.stop()
         guard capturing != nil else { return }
         capturing = nil
         eventTap.setKeyBindingsSuspended(false)
@@ -258,39 +257,34 @@ final class TilingModel: ObservableObject {
     private func save() {
         pendingSave?.cancel()
         pendingSave = nil
-        do {
-            try ConfigWriter.update { root in
-                var tiling = root["tiling"] as? [String: Any] ?? [:]
-                tiling["enabled"] = enabled
-                tiling["layout"] = layout.rawValue
-                tiling["gap"] = gap
-                tiling["padding"] = padding
-                tiling["floating"] = floating
-                // Rules pointing at a workspace that no longer exists are dropped.
-                let names = Set(workspaces.map(\.name))
-                let rules = assignments.filter { names.contains($0.workspace) }
-                tiling["assign"] = rules.isEmpty ? nil : rules.map { ["app": $0.app, "workspace": $0.workspace] }
-                tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
-                    var entry: [String: Any] = ["name": workspace.name]
-                    if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }
-                    if !workspace.moveKeys.isEmpty { entry["move"] = workspace.moveKeys }
-                    return entry
-                }
-                root["tiling"] = tiling
-
-                // Window shortcuts replace their own bindings; other bindings are kept as they are.
-                var keyboard = root["keyboard"] as? [String: Any] ?? [:]
-                let managed = Set(shortcuts.map(\.action))
-                var bindings = (keyboard["bindings"] as? [[String: Any]] ?? []).filter {
-                    !managed.contains($0["action"] as? String ?? "")
-                }
-                bindings += shortcuts.filter { !$0.keys.isEmpty }.map { ["keys": $0.keys, "action": $0.action] }
-                keyboard["bindings"] = bindings
-                root["keyboard"] = keyboard
+        saveError = ConfigWriter.save { root in
+            var tiling = root["tiling"] as? [String: Any] ?? [:]
+            tiling["enabled"] = enabled
+            tiling["layout"] = layout.rawValue
+            tiling["gap"] = gap
+            tiling["padding"] = padding
+            tiling["floating"] = floating
+            // Rules pointing at a workspace that no longer exists are dropped.
+            let names = Set(workspaces.map(\.name))
+            let rules = assignments.filter { names.contains($0.workspace) }
+            tiling["assign"] = rules.isEmpty ? nil : rules.map { ["app": $0.app, "workspace": $0.workspace] }
+            tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
+                var entry: [String: Any] = ["name": workspace.name]
+                if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }
+                if !workspace.moveKeys.isEmpty { entry["move"] = workspace.moveKeys }
+                return entry
             }
-            saveError = nil
-        } catch {
-            saveError = error.localizedDescription
+            root["tiling"] = tiling
+
+            // Window shortcuts replace their own bindings; other bindings are kept as they are.
+            var keyboard = root["keyboard"] as? [String: Any] ?? [:]
+            let managed = Set(shortcuts.map(\.action))
+            var bindings = (keyboard["bindings"] as? [[String: Any]] ?? []).filter {
+                !managed.contains($0["action"] as? String ?? "")
+            }
+            bindings += shortcuts.filter { !$0.keys.isEmpty }.map { ["keys": $0.keys, "action": $0.action] }
+            keyboard["bindings"] = bindings
+            root["keyboard"] = keyboard
         }
     }
 }

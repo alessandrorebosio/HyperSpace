@@ -64,7 +64,7 @@ private struct MouseRuleRow: View {
                     }
                 }
                 Divider()
-                Button("Disable Button") { model.disable(rule.id) }
+                Button("Disable Button") { model.choose("none", for: rule.id) }
             }
             Spacer(minLength: 12)
             WarningBadge(text: model.warning(for: rule))

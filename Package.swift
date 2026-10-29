@@ -9,5 +9,9 @@ let package = Package(
             name: "HyperSpace",
             path: "Sources/HyperSpace"
         ),
+        .testTarget(
+            name: "HyperSpaceTests",
+            dependencies: ["HyperSpace"]
+        ),
     ]
 )
