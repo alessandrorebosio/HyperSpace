@@ -169,7 +169,7 @@ scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, sposta
 ```
 
 **Regole per app.** Le finestre di un'app si aprono direttamente nel suo workspace; se l'app è in primo piano
-(l'hai appena aperta) HyperSpace passa a quel workspace. Dalla pagina Tiling → App Rules, oppure:
+(l'hai appena aperta) HyperSpace ti porta in quel workspace, anche se l'app ci mette un po' ad aprirsi (non nei primi minuti dopo l'accensione, quando le app si riaprono da sole). Dalla pagina Tiling → App Rules, oppure:
 
 ```json
 "assign": [

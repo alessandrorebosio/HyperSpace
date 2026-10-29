@@ -25,7 +25,11 @@ struct LaunchTracker {
         return launch.workspace
     }
 
-    mutating func forget(_ pid: pid_t) {
+    func contains(_ pid: pid_t) -> Bool {
+        launches[pid] != nil
+    }
+
+        mutating func forget(_ pid: pid_t) {
         launches[pid] = nil
     }
 

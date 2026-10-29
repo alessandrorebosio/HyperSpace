@@ -170,9 +170,7 @@ final class WindowManager {
         }
         observe(NSWorkspace.didLaunchApplicationNotification) { [weak self] app in
             guard let self, let app else { return }
-            if let workspace = focusedScreen().flatMap({ self.displayed[$0.id] }) {
-                launches.launched(app.processIdentifier, in: workspace)
-            }
+            noteLaunch(app)
             addApp(app)
         }
         observe(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
@@ -183,6 +181,9 @@ final class WindowManager {
         observe(NSWorkspace.didActivateApplicationNotification) { [weak self] app in
             // Windows living on other Spaces are only listed by AX once visible.
             guard let self, let app else { return }
+            // An app being opened activates before macOS reports it launched (that comes once
+            // it finished launching, for some apps after their first window).
+            noteLaunch(app)
             if let watcher = apps[app.processIdentifier] {
                 if discover(watcher) { scheduleRetile() }
             } else {
@@ -218,6 +219,17 @@ final class WindowManager {
         for delay in [2.0, 6.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.rescan() }
         }
+    }
+
+    /// Remembers the workspace an app is being opened from, the first time it is seen.
+    private func noteLaunch(_ app: NSRunningApplication) {
+        let pid = app.processIdentifier
+        guard app.activationPolicy == .regular, !launches.contains(pid),
+              app.launchDate.map({ Date().timeIntervalSince($0) < 30 }) ?? !app.isFinishedLaunching,
+              !windows.values.contains(where: { $0.pid == pid }),
+              let workspace = focusedScreen().flatMap({ displayed[$0.id] }) else { return }
+        log.debug("launch of \(app.bundleIdentifier ?? "?", privacy: .public) from workspace \(workspace)")
+        launches.launched(pid, in: workspace)
     }
 
     private func adopt(_ pending: ArraySlice<NSRunningApplication>) {
@@ -316,6 +328,9 @@ final class WindowManager {
         let launch = launches.workspace(for: watcher.pid)
         if let assigned = watcher.bundleID.flatMap({ config.assignments[$0] }), assigned < workspaceCount {
             window.workspace = assigned
+            // An app with a rule you just opened takes you to its workspace, however its first
+            // window was found (an app slow to answer is picked up by a later look).
+            if launch != nil { reveal(window) }
         } else if let launch, launch < workspaceCount {
             window.workspace = launch
         } else if let origin = AX.position(element), let size = AX.size(element), case let screens = ScreenInfo.current(), !screens.isEmpty {
@@ -328,6 +343,24 @@ final class WindowManager {
         watcher.watch(element)
         log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)")
         return window
+    }
+
+    /// Shows the workspace of a window just tracked, once tracking is done.
+    private func reveal(_ window: ManagedWindow) {
+        // Apps opened together with the Mac at login must not flip through their workspaces.
+        guard ProcessInfo.processInfo.systemUptime > 180 else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, windows[window.id] === window, display(showing: window.workspace) == nil else { return }
+            log.debug("reveal workspace \(window.workspace) for opened app \(window.bundleID ?? "?", privacy: .public)")
+            lastFocused[window.workspace] = window.id
+            switchWorkspace(window.workspace)
+            // The window may reach the screen a moment later: focus it then.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, windows[window.id] === window, display(showing: window.workspace) != nil,
+                      focused()?.id != window.id, onScreenBounds()[window.id] != nil else { return }
+                focus(window)
+            }
+        }
     }
 
     private func untrack(_ id: CGWindowID) {
