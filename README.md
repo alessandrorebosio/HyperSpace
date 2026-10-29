@@ -14,7 +14,7 @@ Servono solo i Command Line Tools (Xcode non è necessario).
 make app        # build/HyperSpace.app (release, firmata ad-hoc)
 make run        # build + avvio
 make install    # copia in /Applications
-make test       # test (Swift Testing): config, scorciatoie, combinazioni, layout a colonne
+make test       # test (Swift Testing): config, scorciatoie, combinazioni, layout, logica dei workspace, stato salvato
 ```
 
 Al primo avvio macOS chiede il permesso di Accessibilità; HyperSpace parte da solo appena viene concesso.
@@ -253,7 +253,8 @@ Sources/HyperSpace/
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
 ├── Mouse/      DragController (ponte tap → window manager)
-└── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), Layout, AX helpers
+└── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), AXWriter (scritture per app),
+                WorkspaceState (workspace salvati), LaunchTracker, Layout, AX helpers
 ```
 
 Scelte fatte per prestazioni e permessi minimi:
@@ -272,7 +273,13 @@ Scelte fatte per prestazioni e permessi minimi:
   spostate solo se la loro posizione è effettivamente diversa.
 - **Drag a 1000 Hz senza backlog**: il tap tiene solo l'ultima posizione e c'è al massimo un aggiornamento
   in coda sul main thread.
-- **Timeout AX a 0,5 s** per app: un'app bloccata non congela il window manager.
+- **Scritture AX fuori dal main thread**: spostare, ridimensionare, parcheggiare e dare il focus a una finestra
+  avviene su una coda seriale per app (`AXWriter`). Un'app lenta o bloccata fa aspettare solo sé stessa, mai le
+  scorciatoie o le altre app. Le letture e lo stato restano sul main thread.
+- **Timeout AX a 0,5 s** per tutti gli elementi (il predefinito di macOS è 6 s).
+- **Workspace salvati** in `~/Library/Application Support/HyperSpace/workspaces.json` (un attimo dopo ogni
+  cambiamento e all'uscita): dopo un riavvio di HyperSpace o del Mac ogni finestra torna nel suo workspace,
+  con ordine e colonne, riconosciuta da app e titolo. Le regole per app hanno la precedenza.
 - Config osservata con un `DispatchSource` kqueue: nessun costo finché il file non cambia.
 
 ### Limiti noti
