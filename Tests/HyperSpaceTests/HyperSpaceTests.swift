@@ -150,3 +150,27 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(screen.centered(CGSize(width: 1000, height: 300)) == CGRect(x: 0, y: 162.5, width: 800, height: 300))
     }
 }
+
+@Suite struct LaunchTrackerTests {
+    @Test func windowsJoinTheLaunchWorkspace() {
+        var tracker = LaunchTracker()
+        let start = Date()
+        tracker.launched(42, in: 3, at: start)
+        #expect(tracker.workspace(for: 7, at: start) == nil)
+        // Still loading after 20 s: the first window goes where the app was opened.
+        #expect(tracker.workspace(for: 42, at: start + 20) == 3)
+        // A second window right after follows it; a later one opens where you are.
+        #expect(tracker.workspace(for: 42, at: start + 21) == 3)
+        #expect(tracker.workspace(for: 42, at: start + 30) == nil)
+    }
+
+    @Test func launchTimesOut() {
+        var tracker = LaunchTracker()
+        let start = Date()
+        tracker.launched(42, in: 1, at: start)
+        #expect(tracker.workspace(for: 42, at: start + LaunchTracker.launchTimeout + 1) == nil)
+        tracker.launched(43, in: 1, at: start)
+        tracker.forget(43)
+        #expect(tracker.workspace(for: 43, at: start) == nil)
+    }
+}

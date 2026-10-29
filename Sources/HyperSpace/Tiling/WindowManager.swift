@@ -106,6 +106,9 @@ final class WindowManager {
     private var activeDisplay: CGDirectDisplayID?
     /// Last value sent to `onWorkspaceChange`, so the menu bar is redrawn only on change.
     private var lastNotice: (names: [String], focused: Int)??
+    /// Workspaces apps were opened from, for the windows they show while loading.
+    private var launches = LaunchTracker()
+    private var focusUpdateScheduled = false
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -161,10 +164,16 @@ final class WindowManager {
             })
         }
         observe(NSWorkspace.didLaunchApplicationNotification) { [weak self] app in
-            if let app { self?.addApp(app) }
+            guard let self, let app else { return }
+            if let workspace = focusedScreen().flatMap({ self.displayed[$0.id] }) {
+                launches.launched(app.processIdentifier, in: workspace)
+            }
+            addApp(app)
         }
         observe(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
-            if let app { self?.removeApp(app.processIdentifier) }
+            guard let self, let app else { return }
+            launches.forget(app.processIdentifier)
+            removeApp(app.processIdentifier)
         }
         observe(NSWorkspace.didActivateApplicationNotification) { [weak self] app in
             // Windows living on other Spaces are only listed by AX once visible.
@@ -174,8 +183,7 @@ final class WindowManager {
             } else {
                 addApp(app)
             }
-            followFocus()
-            notifyWorkspace()
+            scheduleFocusUpdate()
         }
         observe(NSWorkspace.didHideApplicationNotification) { [weak self] _ in self?.scheduleRetile() }
         observe(NSWorkspace.didUnhideApplicationNotification) { [weak self] _ in self?.scheduleRetile() }
@@ -204,6 +212,7 @@ final class WindowManager {
         screenObserver = nil
         apps.values.forEach { $0.invalidate() }
         apps.removeAll()
+        launches.removeAll()
         windows.removeAll()
         order.removeAll()
         lastFocused.removeAll()
@@ -233,7 +242,7 @@ final class WindowManager {
         if let watcher = AppWatcher(app: app, refcon: refcon) {
             apps[pid] = watcher
             if discover(watcher) { scheduleRetile() }
-        } else if attempt < 6 {
+        } else if attempt < 20 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.addApp(app, attempt: attempt + 1)
             }
@@ -264,9 +273,13 @@ final class WindowManager {
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
         window.isFloating = config.floating.contains(watcher.bundleID ?? "")
-        // A window joins its app's assigned workspace, or the one shown where it appears.
+        // A window joins its app's assigned workspace, the one the app was opened from
+        // (you may have moved on while it loaded), or the one shown where it appears.
+        let launch = launches.workspace(for: watcher.pid)
         if let assigned = watcher.bundleID.flatMap({ config.assignments[$0] }), assigned < workspaceCount {
             window.workspace = assigned
+        } else if let launch, launch < workspaceCount {
+            window.workspace = launch
         } else if let origin = AX.position(element), let size = AX.size(element), case let screens = ScreenInfo.current(), !screens.isEmpty {
             window.workspace = displayed[screens[screens.index(for: CGRect(origin: origin, size: size))].id] ?? 0
         } else {
@@ -301,10 +314,22 @@ final class WindowManager {
         switch notification {
         case kAXWindowCreatedNotification:
             guard let watcher = apps[pid], let window = track(element, in: watcher) else { return }
-            // An app you just opened shows its assigned workspace, so its window is visible.
             if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
                 lastFocused[window.workspace] = window.id
-                switchWorkspace(window.workspace)
+                if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
+                    // An app you just opened shows its assigned workspace, so its window is visible.
+                    switchWorkspace(window.workspace)
+                } else {
+                    // It finished loading after you left its workspace: it stays there, and
+                    // the focus stays where you are.
+                    log.debug("window \(window.id) (\(watcher.bundleID ?? "?", privacy: .public)) opened in hidden workspace \(window.workspace)")
+                    let here = activeDisplay.flatMap { displayed[$0] }
+                    ignoreFocusChanges()
+                    movedAway = window.id
+                    retile()
+                    if let here { focusWindow(in: here) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+                }
                 return
             }
             scheduleRetile()
@@ -315,8 +340,7 @@ final class WindowManager {
             untrack(id)
             scheduleRetile()
         case kAXFocusedWindowChangedNotification:
-            followFocus()
-            notifyWorkspace()
+            scheduleFocusUpdate()
         default:
             scheduleRetile()
         }
@@ -331,6 +355,19 @@ final class WindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             self?.retileScheduled = false
             self?.retile()
+        }
+    }
+
+    /// An app activation and its focused-window change arrive together: one lookup for both.
+    private func scheduleFocusUpdate() {
+        guard running, !focusUpdateScheduled else { return }
+        focusUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            focusUpdateScheduled = false
+            let window = focused()
+            followFocus(window)
+            notifyWorkspace(focused: window)
         }
     }
 
@@ -572,8 +609,8 @@ final class WindowManager {
     }
 
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
-    private func followFocus() {
-        guard running, let window = focused() else { return }
+    private func followFocus(_ window: ManagedWindow?) {
+        guard running, let window else { return }
         if window.hiddenFrame == nil, let id = display(showing: window.workspace) { activeDisplay = id }
         if window.id != movedAway { movedAway = nil }
         guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
@@ -583,12 +620,12 @@ final class WindowManager {
 
     /// Tells the menu bar what each display shows; called often (every focus change), so it
     /// only looks up the focused display when there are several, and only reports changes.
-    private func notifyWorkspace() {
+    private func notifyWorkspace(focused window: ManagedWindow?? = nil) {
         var notice: (names: [String], focused: Int)?
         if running, config.enabled, config.workspaces.count > 1 {
             let screens = ScreenInfo.current()
             let names = screens.map { displayed[$0.id].map(name(of:)) ?? "–" }
-            let focusedID = screens.count > 1 ? focusedScreen()?.id : nil
+            let focusedID = screens.count > 1 ? focusedScreen(window ?? focused())?.id : nil
             notice = (names, screens.firstIndex { $0.id == focusedID } ?? 0)
         }
         if let last = lastNotice, last?.names == notice?.names, last?.focused == notice?.focused { return }
@@ -642,10 +679,10 @@ final class WindowManager {
 
     /// The display the user works on: the focused window's, else the one we last moved the
     /// focus to (an empty workspace has no window), else the one under the pointer.
-    private func focusedScreen() -> ScreenInfo? {
+    private func focusedScreen(_ focusedWindow: ManagedWindow?? = nil) -> ScreenInfo? {
         let screens = ScreenInfo.current()
         guard !screens.isEmpty else { return nil }
-        if let window = focused(), window.hiddenFrame == nil, display(showing: window.workspace) != nil,
+        if let window = focusedWindow ?? focused(), window.hiddenFrame == nil, display(showing: window.workspace) != nil,
            let frame = onScreenBounds()[window.id] {
             return screens[screens.index(for: frame)]
         }
