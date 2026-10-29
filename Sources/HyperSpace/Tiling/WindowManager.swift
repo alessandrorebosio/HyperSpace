@@ -461,10 +461,28 @@ final class WindowManager {
         }
     }
 
-    /// The focused window goes into the scratchpad (shown), or from it into the tiling of the
-    /// workspace you are on.
-    func moveFocusedToScratchpad() {
-        guard running, let window = focused() else { return }
+    /// The focused window, or with an app that app's window, goes into the scratchpad (shown),
+    /// or from it into the tiling of the workspace you are on. An app not open is opened.
+    func moveToScratchpad(app name: String?) {
+        guard running else { return }
+        guard let name else {
+            if let window = focused() { toggleScratchpadTiling(window) }
+            return
+        }
+        guard let bundleID = AppLauncher.bundleID(for: name) else {
+            note("scratchpad: app not found: \(name)")
+            return
+        }
+        let mine = order.compactMap { windows[$0] }.filter { $0.bundleID == bundleID }
+        let focusedID = focused()?.id
+        if let window = mine.first(where: \.scratchpad) ?? mine.first(where: { $0.id == focusedID }) ?? mine.first {
+            toggleScratchpadTiling(window)
+        } else {
+            AppLauncher.open(name)
+        }
+    }
+
+    private func toggleScratchpadTiling(_ window: ManagedWindow) {
         if window.scratchpad {
             window.scratchpad = false
             window.scratchpadShown = false

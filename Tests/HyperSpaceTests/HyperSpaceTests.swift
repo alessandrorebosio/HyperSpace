@@ -325,12 +325,14 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
     @Test func actionsAndSize() throws {
         let config = try HyperSpaceTests.config(#"""
         {"keyboard":{"bindings":[{"keys":"meh+x","action":"scratchpad com.anthropic.claudefordesktop"},
-                                 {"keys":"hyper+x","action":"move-to-scratchpad"},{"keys":"meh+z","action":"scratchpad"}]},
+                                 {"keys":"hyper+x","action":"move-to-scratchpad"},{"keys":"meh+z","action":"scratchpad"},
+                                 {"keys":"hyper+c","action":"move-to-scratchpad com.anthropic.claudefordesktop"}]},
          "tiling":{"scratchpad":{"width":0.5,"height":2}}}
         """#)
         #expect(try action(config, "meh+x") == "scratchpad(Optional(\"com.anthropic.claudefordesktop\"))")
-        #expect(try action(config, "hyper+x") == "moveToScratchpad")
+        #expect(try action(config, "hyper+x") == "moveToScratchpad(nil)")
         #expect(try action(config, "meh+z") == "scratchpad(nil)")
+        #expect(try action(config, "hyper+c") == "moveToScratchpad(Optional(\"com.anthropic.claudefordesktop\"))")
         #expect(config.tiling.scratchpadSize == CGSize(width: 0.5, height: 1))
     }
 }

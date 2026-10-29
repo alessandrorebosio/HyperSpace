@@ -39,7 +39,7 @@ final class ActionRunner {
         case .media(let key): key.post()
         case .click(let mods): Pointer.click(mods)
         case .scratchpad(let app): windowManager.toggleScratchpad(app: app)
-        case .moveToScratchpad: windowManager.moveFocusedToScratchpad()
+        case .moveToScratchpad(let app): windowManager.moveToScratchpad(app: app)
         }
     }
 

@@ -46,8 +46,9 @@ enum Action {
     /// Shows or hides an app (opening it if needed) centered above the others, out of the
     /// tiling; with no app, the windows sent to the scratchpad.
     case scratchpad(String?)
-    /// The focused window goes to the scratchpad, or from it back into the tiling.
-    case moveToScratchpad
+    /// The focused window (or the app's window) goes to the scratchpad, or from it back into
+    /// the tiling.
+    case moveToScratchpad(String?)
 
     static func parse(_ text: String) throws -> Action {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -115,7 +116,7 @@ enum Action {
             return .media(key)
         case "click": return .click(try Modifiers.parse(arg))
         case "scratchpad": return .scratchpad(arg.isEmpty ? nil : arg)
-        case "move-to-scratchpad": return .moveToScratchpad
+        case "move-to-scratchpad": return .moveToScratchpad(arg.isEmpty ? nil : arg)
         default: throw ConfigError("unknown action '\(text)'")
         }
     }
