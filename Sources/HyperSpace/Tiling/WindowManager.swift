@@ -116,6 +116,7 @@ final class WindowManager {
     private var snapBackScheduled = false
     /// Running apps are being picked up at start: retile once they all are.
     private var adopting = false
+    private let writer = AXWriter()
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -159,6 +160,7 @@ final class WindowManager {
             setFrame(window, frame)
             window.hiddenFrame = nil
         }
+        writer.flush(timeout: 1.5)
     }
 
     private func start() {
@@ -298,6 +300,7 @@ final class WindowManager {
 
     private func removeApp(_ pid: pid_t) {
         apps.removeValue(forKey: pid)?.invalidate()
+        writer.forget(pid)
         for (id, window) in windows where window.pid == pid { untrack(id) }
         scheduleRetile()
     }
@@ -536,7 +539,7 @@ final class WindowManager {
     /// ignores a background app raising a window on another display, it checks and retries.
     private func focus(_ window: ManagedWindow) {
         ignoreFocusChanges()
-        AX.focus(window.element, pid: window.pid)
+        writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
         let screens = ScreenInfo.current()
         if let frame = onScreenBounds()[window.id], !screens.isEmpty {
             let screen = screens[screens.index(for: frame)]
@@ -546,9 +549,10 @@ final class WindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
             log.debug("focus did not take for window \(window.id) (\(window.bundleID ?? "?", privacy: .public)), retrying")
-            self?.ignoreFocusChanges()
+            guard let self else { return }
+            ignoreFocusChanges()
             NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
-            AX.focus(window.element, pid: window.pid)
+            writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
         }
     }
 
@@ -560,19 +564,24 @@ final class WindowManager {
 
     /// `current`, when known, lets a move within a display skip the writes it does not need.
     private func setFrame(_ window: ManagedWindow, _ frame: CGRect, from current: CGRect? = nil) {
-        // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
-        // animate every AX resize; switch it off while we move the window.
         window.movedByUs = Date()
+        let steps = Self.frameSteps(from: current, to: frame, sameDisplay: current.map { Self.sameDisplay($0, frame) } ?? false)
+        guard !steps.isEmpty else { return }
         let app = apps[window.pid]?.element
-        let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
-        if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", false) }
-        for step in Self.frameSteps(from: current, to: frame, sameDisplay: current.map { Self.sameDisplay($0, frame) } ?? false) {
-            switch step {
-            case .size: AX.setSize(window.element, frame.size)
-            case .position: AX.setPosition(window.element, frame.origin)
+        let element = window.element
+        writer.perform(window.pid) {
+            // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
+            // animate every AX resize; switch it off while we move the window.
+            let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
+            if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", false) }
+            for step in steps {
+                switch step {
+                case .size: AX.setSize(element, frame.size)
+                case .position: AX.setPosition(element, frame.origin)
+                }
             }
+            if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }
         }
-        if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }
     }
 
     enum FrameStep { case size, position }
@@ -709,7 +718,8 @@ final class WindowManager {
         guard window.hiddenFrame == nil, !screens.isEmpty else { return }
         window.hiddenFrame = frame
         let screen = screens[screens.index(for: frame)].frame
-        AX.setPosition(window.element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1))
+        let element = window.element
+        writer.perform(window.pid) { AX.setPosition(element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)) }
     }
 
     /// A floating window returns to its frame, on the display now showing its workspace;
