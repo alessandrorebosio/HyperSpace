@@ -66,7 +66,7 @@ stato del permesso di Accessibilità, Quit).
 ### Keyboard
 **Blocco tastiera.** In cima alla pagina Keyboard (o dal menu nella barra, **Lock Keyboard**) puoi bloccare la
 tastiera per pulirla: ogni tasto viene ignorato, compresi media, volume e luminosità, finché non la sblocchi
-con il mouse (**Unlock** nella pagina o **Unlock Keyboard** nel menu; nella barra compare un lucchetto).
+con il mouse (**Unlock** nella pagina o **Unlock Keyboard** nel menu, nello stesso punto di Lock; nella barra compare un lucchetto).
 Il blocco non viene salvato: uscendo da HyperSpace la tastiera torna attiva. Touch ID e il tasto di accensione
 non si possono bloccare.
 

@@ -10,7 +10,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var setKeyboardLocked: (Bool) -> Void
     }
 
-    /// Shows a lock in the menu bar and an Unlock item at the top of the menu.
+    /// Shows a lock in the menu bar; the menu item turns into Unlock Keyboard.
     var keyboardLocked = false {
         didSet { updateIcon() }
     }
@@ -79,16 +79,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        if keyboardLocked {
-            menu.addItem(ClosureMenuItem("Unlock Keyboard") { [host] in host.setKeyboardLocked(false) })
-            menu.addItem(.separator())
-        }
-
         addWorkspaces(to: menu)
 
-        if !keyboardLocked {
-            menu.addItem(ClosureMenuItem("Lock Keyboard") { [host] in host.setKeyboardLocked(true) })
-        }
+        // Lock and Unlock share one place, so the mouse finds Unlock where it clicked Lock.
+        let locked = keyboardLocked
+        menu.addItem(ClosureMenuItem(locked ? "Unlock Keyboard" : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) })
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
