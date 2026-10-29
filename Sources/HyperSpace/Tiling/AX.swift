@@ -88,6 +88,16 @@ enum AX {
             && settable.boolValue
     }
 
+    /// A standard window that is really a dialog, like the Finder's Empty Trash or Copy
+    /// progress: it can be closed but neither zoomed nor made full screen. Windows with no
+    /// title bar buttons at all (borderless terminals) are not dialogs.
+    static func isDialogLike(_ element: AXUIElement) -> Bool {
+        guard self.element(element, kAXCloseButtonAttribute) != nil,
+              self.element(element, kAXFullScreenButtonAttribute) == nil else { return false }
+        guard let zoom = self.element(element, kAXZoomButtonAttribute) else { return true }
+        return bool(zoom, kAXEnabledAttribute) == false
+    }
+
     /// The window under a screen point (global top-left coordinates).
     static func window(at point: CGPoint) -> AXUIElement? {
         var hit: AXUIElement?

@@ -7,6 +7,8 @@ final class ManagedWindow {
     let pid: pid_t
     let bundleID: String?
     var isFloating = false
+    /// A dialog-like window (no zoom, no full screen): always floats unless toggled by hand.
+    var isDialog = false
     /// Set once the user toggles floating by hand; config reloads then leave it alone.
     var userOverride = false
     var workspace = 0
@@ -155,7 +157,8 @@ final class WindowManager {
         config = newConfig
         let byTitle = !config.floatingWindows.isEmpty
         for window in windows.values where !window.userOverride {
-            window.isFloating = config.floats(app: window.bundleID, title: byTitle ? AX.string(window.element, kAXTitleAttribute) : nil)
+            window.isFloating = window.isDialog
+                || config.floats(app: window.bundleID, title: byTitle ? AX.string(window.element, kAXTitleAttribute) : nil)
         }
         // Fewer workspaces than before: their windows join the first one.
         displayed = displayed.filter { $0.value < workspaceCount }
@@ -354,8 +357,9 @@ final class WindowManager {
             return nil
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
-        window.isFloating = config.floats(app: watcher.bundleID,
-                                          title: config.floatingWindows.isEmpty ? nil : AX.string(element, kAXTitleAttribute))
+        window.isDialog = AX.isDialogLike(element)
+        window.isFloating = window.isDialog
+            || config.floats(app: watcher.bundleID, title: config.floatingWindows.isEmpty ? nil : AX.string(element, kAXTitleAttribute))
         // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
         var restored: WorkspaceState.Window?
         if restorer != nil, let app = watcher.bundleID,
@@ -515,9 +519,18 @@ final class WindowManager {
         // Apps that size in steps (terminals) or have a minimum size miss the exact size:
         // centered on what they took, and the other scratchpad windows take it too.
         let element = window.element
+        let misses = { (size: CGSize) in abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1 }
         writer.perform(window.pid) { [weak self] in
-            guard let size = AX.size(element), let origin = AX.position(element) else { return }
-            if abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1 {
+            guard var size = AX.size(element) else { return }
+            // Coming from another display, some apps resize themselves a moment after the
+            // move (a different scale): ask again before taking their size as their best.
+            if misses(size) {
+                Thread.sleep(forTimeInterval: 0.1)
+                AX.setSize(element, frame.size)
+                size = AX.size(element) ?? size
+            }
+            guard let origin = AX.position(element) else { return }
+            if misses(size) {
                 DispatchQueue.main.async { self?.scratchpadFitted = (target, size) }
             }
             let centered = Self.centered(size, in: target)
@@ -584,7 +597,7 @@ final class WindowManager {
             for window in members {
                 let title = (AX.string(window.element, kAXTitleAttribute) ?? "").prefix(40)
                 var flags: [String] = []
-                if window.isFloating { flags.append("floating") }
+                if window.isFloating { flags.append(window.isDialog ? "floating (dialog)" : "floating") }
                 if window.scratchpad { flags.append(window.scratchpadShown ? "scratchpad shown" : "scratchpad") }
                 if window.hiddenFrame != nil { flags.append("parked") }
                 if bounds[window.id] == nil { flags.append("off screen") }
@@ -754,7 +767,7 @@ final class WindowManager {
             guard !config.floatingWindows.isEmpty,
                   let window = managed(element, pid: pid),
                   !window.userOverride else { return }
-            let floats = config.floats(app: window.bundleID, title: AX.string(element, kAXTitleAttribute))
+            let floats = window.isDialog || config.floats(app: window.bundleID, title: AX.string(element, kAXTitleAttribute))
             guard floats != window.isFloating else { return }
             window.isFloating = floats
             scheduleRetile()
@@ -878,6 +891,9 @@ final class WindowManager {
 
     /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
     /// not from the user, and must not switch workspaces.
+    /// Counts focus requests, so a retry of an old one gives up.
+    private var focusRequest = 0
+
     private func ignoreFocusChanges() {
         followFocusAfter = Date().addingTimeInterval(0.6)
     }
@@ -887,6 +903,8 @@ final class WindowManager {
     /// ignores a background app raising a window on another display, it checks and retries.
     private func focus(_ window: ManagedWindow) {
         ignoreFocusChanges()
+        focusRequest += 1
+        let request = focusRequest
         writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
         let screens = ScreenInfo.current()
         if let frame = onScreenBounds()[window.id], !screens.isEmpty {
@@ -895,7 +913,9 @@ final class WindowManager {
             bringPointer(to: frame.center, on: screen, screens)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
+            // A later focus (another workspace, keys pressed in a row) wins over this retry.
+            guard self?.focusRequest == request,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
             log.debug("focus did not take for window \(window.id) (\(window.bundleID ?? "?", privacy: .public)), retrying")
             self?.note("focus did not take for \(window.bundleID ?? "?") window \(window.id)")
             guard let self else { return }
@@ -1060,8 +1080,10 @@ final class WindowManager {
             show(index, on: screen.id)
             retile()
         }
-        focusWindow(in: index)
-        notifyWorkspace()
+        // The focus moves asynchronously: the menu bar is told what it will be, not what the
+        // old window still is (an empty workspace has no focus change to correct it later).
+        let target = focusWindow(in: index)
+        notifyWorkspace(focused: .some(target))
     }
 
     func switchToPreviousWorkspace() {
@@ -1100,18 +1122,32 @@ final class WindowManager {
     }
 
     /// Focuses the workspace: its last focused window, or with no windows, its display.
-    private func focusWindow(in workspace: Int) {
+    /// Returns the window it focuses (nil for the display alone).
+    @discardableResult
+    private func focusWindow(in workspace: Int) -> ManagedWindow? {
         let bounds = onScreenBounds()
         let candidates = order.compactMap { windows[$0] }.filter {
             $0.workspace == workspace && !$0.scratchpad && bounds[$0.id] != nil
         }
         if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
             focus(target)
+            return target
         } else if let id = display(showing: workspace), case let screens = ScreenInfo.current(),
                   let screen = screens.first(where: { $0.id == id }) {
             activeDisplay = id
             bringPointer(to: screen.visible.center, on: screen, screens)
+            // Nothing to focus there: take the keyboard away from the window you left (on
+            // another display it would keep typing there). HyperSpace has no window to show.
+            // Through AX like any other app: NSApp.activate is ignored from the background.
+            // Off the main thread, which has to answer the request.
+            focusRequest += 1
+            let me = getpid()
+            writer.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                log.debug("empty workspace \(workspace): frontmost \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "-", privacy: .public)")
+            }
         }
+        return nil
     }
 
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
@@ -1175,7 +1211,7 @@ final class WindowManager {
             switchWorkspace(window.workspace)
         } else {
             focus(window)
-            notifyWorkspace()
+            notifyWorkspace(focused: .some(window))
         }
     }
 
@@ -1362,8 +1398,8 @@ final class WindowManager {
         show(back, on: source.id)
         log.debug("move workspace \(workspace) from display \(source.id) to \(target.id); display \(source.id) now shows \(back ?? -1)")
         retile()
-        focusWindow(in: workspace)
-        notifyWorkspace()
+        let focusedWindow = focusWindow(in: workspace)
+        notifyWorkspace(focused: .some(focusedWindow))
     }
 
     /// What a display shows once its workspace moved away: the last of its own it showed, or
@@ -1377,8 +1413,9 @@ final class WindowManager {
         let screens = ScreenInfo.current()
         guard screens.count > 1, let current = focusedScreen(),
               let index = screens.firstIndex(where: { $0.id == current.id }) else { return }
-        if let workspace = displayed[screens[(index + 1) % screens.count].id] { focusWindow(in: workspace) }
-        notifyWorkspace()
+        guard let workspace = displayed[screens[(index + 1) % screens.count].id] else { return notifyWorkspace() }
+        let window = focusWindow(in: workspace)
+        notifyWorkspace(focused: .some(window))
     }
 
     // MARK: - Mouse drag (modifier + left drag moves, modifier + right drag resizes)

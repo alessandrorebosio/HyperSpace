@@ -15,7 +15,7 @@ The repository README (in Italian) was compared with the code. The code wins; th
 ## Undocumented in the README
 
 - `move-to-scratchpad <App>` exists (the README shows only the argument-less form); it is what Settings writes for *To tiling and back*.
-- With more than one workspace configured, the menu bar icon is replaced by the workspace shown on each display (`1 | 2`, focused display in bold).
+- With more than one workspace configured, the menu bar icon is replaced by the workspace shown on each display (`1 2`, the focused display's workspace in a filled box).
 - Mouse buttons must be in 2…31; 0/1 produce a config error.
 - Unknown JSON keys are silently ignored; values are clamped (`gap`/`padding` ≥ 0, `masterRatio` 0.1…0.9, `scratchpad` sizes 0.2…1).
 - The `tiling` action and layout changes are runtime-only: they are not written to the file, and a reload restores the file's values.

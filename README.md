@@ -209,7 +209,9 @@ In `columns`, spostando una finestra (`swap`): **giù/su** la scambia con quella
 oppure, se è da sola, la impila nella colonna accanto; **sinistra/destra** la fa uscire dalla colonna in una
 nuova colonna da quel lato, oppure, se è da sola, scambia la colonna con la vicina. `resize width` cambia la
 larghezza della colonna, `resize height` l'altezza della finestra nella colonna.
-Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati.
+Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati. Le finestre che sembrano
+dialog (si chiudono ma non si possono ingrandire né mettere a schermo intero, come Svuota cestino o la copia del Finder)
+restano floating in qualsiasi app; `float` le affianca comunque.
 **Scratchpad** (come in i3). Una scorciatoia per app, es. `{ "keys": "meh+x", "action": "scratchpad com.anthropic.claudefordesktop" }`:
 la prima volta apre l'app (se non è aperta) e la mostra al centro del monitor attivo, sopra le altre finestre e
 fuori dal tiling; premuta di nuovo la nasconde, poi la rimostra. Resta visibile anche cambiando workspace finché

@@ -8,8 +8,9 @@ The menu is rebuilt only when it opens (`menuNeedsUpdate`).
 
 **Icon / title**
 - Normal: the symbol `square.grid.2x2`. A problem shows `exclamationmark.triangle`; a locked keyboard shows `lock`.
-- **With more than one workspace configured**, the icon is replaced by an i3-style title: the workspace shown on each display left to right, separated by ` | ` (e.g. `1 | music`), `–` for a display showing none.
-  With several displays, the focused display's name is bold. A lock prefixes it when the keyboard is locked, `⚠︎` when there is a problem.
+- **With more than one workspace configured**, the icon is replaced by an i3bar-style title: the workspace shown on each display left to right (e.g. `1 2 music`), `–` for a display showing none.
+  The focused display's workspace sits in a filled rounded box with its name cut out, like i3bar's focused workspace button (also with a single display). A lock prefixes it when the keyboard is locked, `⚠︎` when there is a problem.
+  It is drawn as one template image (`StatusMenu.workspacesImage`), so it follows the menu bar's light/dark color like the system items.
 - **With tiling off the item is hidden**, unless there is a problem to report or the keyboard is locked. Double-click the app to open Settings.
 
 **Menu contents** (top to bottom)

@@ -29,7 +29,7 @@ notifications, drivers/kexts, root.
 | A remap does nothing | Is the key name right? Several rules on the same key: the most specific wins. Rules for a keyboard name must match its product name (see *Copy Debug Info → keyboards*) |
 | "too many different combinations (at most 8)" | Reduce distinct combinations as remap targets |
 | A key combination from F13–F20 acts oddly | Carriers use F13–F20: avoid binding those keys yourself |
-| A window will not tile | Only standard windows tile; dialogs, panels and native full-screen windows are ignored; check floating rules and `float` toggles |
+| A window will not tile | Only standard windows tile; dialogs, panels and native full-screen windows are ignored; check floating rules and `float` toggles. A window that can neither zoom nor go full screen floats as a dialog (`floating (dialog)` in Copy Debug Info); `float` tiles it anyway |
 | A window jumps back after moving it | Intentional snap back; use modifier drag or the shortcuts |
 | Windows left in the bottom-right corner | Normally restored on quit/tiling off; after a crash they are rescued (centred) at the next start |
 | Nothing at all after login | At login for 90 s apps with rules do not move you; the first config may still be loading |
@@ -46,7 +46,7 @@ notifications, drivers/kexts, root.
 - `Problem: …` if any;
 - Tiling: `running`/`stopped`, enabled, layout; per display: id, frame, the workspace it shows, `[focused]`;
 - *Moved workspaces* (home overrides);
-- per workspace with windows: app bundle id, window id, title, frame, and flags (`floating`, `scratchpad`/`scratchpad shown`, `parked`, `off screen`);
+- per workspace with windows: app bundle id, window id, title, frame, and flags (`floating`, `floating (dialog)`, `scratchpad`/`scratchpad shown`, `parked`, `off screen`);
 - *Watched apps*;
 - **Recent issues** (last 30): apps that cannot be watched yet, windows without id, failed AX moves (with the AX error code), focus that did not take, scratchpad app not found.
 

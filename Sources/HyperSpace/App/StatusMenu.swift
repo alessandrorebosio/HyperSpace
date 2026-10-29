@@ -79,20 +79,62 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             button.attributedTitle = NSAttributedString()
             return
         }
-        // A thin template lock before the workspaces, drawn like the rest of the menu bar.
-        button.image = keyboardLocked ? Self.lockImage : nil
-        button.imagePosition = .imageLeading
-        let size = NSFont.systemFontSize
-        let regular: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)]
-        let bold: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)]
-        let title = NSMutableAttributedString(string: (keyboardLocked ? " " : "") + (problem == nil ? "" : "⚠︎ "), attributes: regular)
-        for (index, name) in workspaces.names.enumerated() {
-            if index > 0 { title.append(NSAttributedString(string: " | ", attributes: regular)) }
-            // With several displays the focused one is bold.
-            let focused = workspaces.names.count > 1 && index == workspaces.focused
-            title.append(NSAttributedString(string: name, attributes: focused ? bold : regular))
+        // One template image, so it follows the menu bar's colors like the system items.
+        button.image = Self.workspacesImage(names: workspaces.names, focused: workspaces.focused,
+                                            locked: keyboardLocked, problem: problem != nil)
+        button.imagePosition = .imageOnly
+        button.attributedTitle = NSAttributedString()
+    }
+
+    /// The workspaces left to right, the focused one in a filled box with its name cut out,
+    /// like the focused workspace button of i3bar. A lock and ⚠︎ go before them when needed.
+    static func workspacesImage(names: [String], focused: Int, locked: Bool, problem: Bool) -> NSImage {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+        let height = NSStatusBar.system.thickness
+        let padding: CGFloat = 5, gap: CGFloat = 2, boxHeight = min(height - 4, 18)
+        let lock = locked ? lockImage : nil
+        let warning = problem ? NSAttributedString(string: "⚠︎", attributes: attributes) : nil
+        let sizes = names.map { ($0 as NSString).size(withAttributes: attributes) }
+
+        var width: CGFloat = 0
+        if let lock { width += lock.size.width + 4 }
+        if let warning { width += warning.size().width + 4 }
+        width += sizes.reduce(0) { $0 + $1.width + padding * 2 } + gap * CGFloat(max(names.count - 1, 0))
+
+        let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            var x: CGFloat = 0
+            if let lock {
+                lock.draw(in: NSRect(x: x, y: (height - lock.size.height) / 2, width: lock.size.width, height: lock.size.height))
+                x += lock.size.width + 4
+            }
+            if let warning {
+                let size = warning.size()
+                warning.draw(at: NSPoint(x: x, y: (height - size.height) / 2))
+                x += size.width + 4
+            }
+            for (index, name) in names.enumerated() {
+                let size = sizes[index]
+                let box = NSRect(x: x, y: (height - boxHeight) / 2, width: size.width + padding * 2, height: boxHeight)
+                let origin = NSPoint(x: box.minX + padding, y: (height - size.height) / 2)
+                if index == focused {
+                    NSColor.black.setFill()
+                    NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
+                    context.saveGState()
+                    context.setBlendMode(.destinationOut)
+                    (name as NSString).draw(at: origin, withAttributes: attributes)
+                    context.restoreGState()
+                } else {
+                    (name as NSString).draw(at: origin, withAttributes: attributes)
+                }
+                x = box.maxX + gap
+            }
+            return true
         }
-        button.attributedTitle = title
+        image.isTemplate = true
+        image.accessibilityDescription = "Workspace " + (names.indices.contains(focused) ? names[focused] : "")
+        return image
     }
 
     private static let lockImage: NSImage? = {

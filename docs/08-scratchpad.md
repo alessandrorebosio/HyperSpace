@@ -47,7 +47,8 @@ Among the windows in the scratchpad: if one is shown and focused → hide it; el
 
 Some apps (terminals sizing in steps, apps with a minimum size) do not take the exact size asked for. After placing the window HyperSpace reads the size it really took (on the app's AX queue):
 
-1. If it differs by more than 1 pt from the requested frame, that **actual size is remembered** together with the target frame (`scratchpadFitted`).
+1. If it differs by more than 1 pt from the requested frame, HyperSpace **asks once more** after 0.1 s: coming from another display (a different scale) some apps resize themselves a moment after the move, so the first read is not their best.
+   If it still differs, that **actual size is remembered** together with the target frame (`scratchpadFitted`).
 2. The window is **re-centred on the size it took** (moved only if more than 1 pt off).
 3. **Other scratchpad windows adopt the same size**: as long as the target frame (display + configured fractions) is the same, new scratchpad windows are placed with the remembered size, centred in the target. They therefore **overlap exactly** instead of peeking out from behind each other.
 

@@ -62,11 +62,12 @@ After a `swap` in columns the moved window's weight is reset to 1.
 
 ## Floating windows and rules
 
-A window floats if any of these holds (`TilingConfig.floats`):
+A window floats if any of these holds (rules 2–3: `TilingConfig.floats`):
 
-1. its bundle id is in `tiling.floating`;
-2. a `floatingWindows` rule matches: `app` (bundle id; absent/empty = any app) and `title` (case-insensitive *substring* of the window title; an empty title never matches);
-3. you toggled it with `float` (a user override: it wins over the rules and is saved in `workspaces.json`, so it survives restarts).
+1. it is **dialog-like** (`AX.isDialogLike`), in any app: a standard window with a close button but no full-screen button and a missing or disabled zoom button, such as the Finder's Empty Trash and Copy progress windows or fixed-size alerts. Windows with no title-bar buttons at all (borderless terminals) still tile;
+2. its bundle id is in `tiling.floating`;
+3. a `floatingWindows` rule matches: `app` (bundle id; absent/empty = any app) and `title` (case-insensitive *substring* of the window title; an empty title never matches);
+4. you toggled it with `float` (a user override: it wins over the rules and is saved in `workspaces.json`, so it survives restarts).
 
 ```json
 "floating": ["com.apple.finder"],

@@ -24,7 +24,7 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift`.
 - **Workspace 1 lives on the main display** (the one with the menu bar), **2 on the second**, 3 on the third, and so on (displays ordered: main first, then left to right, then by `y`). Workspaces beyond the number of displays live on the main display.
 - Each display **shows exactly one** of its workspaces (the lowest-numbered one by default), or none if no workspace lives there.
 - `workspace n` (**`switchWorkspace`**) shows n on *its* display, remembers what it replaced, and focuses its last focused window (or the first one; with no windows, it moves the pointer to the display
-  centre). The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
+  centre and activates HyperSpace itself, so the keyboard no longer types into the window you left). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
 - Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
 
 ## Moving windows and workspaces
