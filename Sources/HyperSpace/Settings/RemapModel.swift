@@ -24,16 +24,25 @@ final class RemapModel: ObservableObject {
     @Published private(set) var saveError: String?
     /// Modifiers held so far while capturing a target, shown live ("⌃⌥⇧…").
     @Published private(set) var capturePreview = ""
+    @Published private(set) var isKeyboardLocked = false
 
     private let remapper: KeyboardRemapper
+    private let eventTap: EventTap
+    private var lockObserver: NSObjectProtocol?
     private let monitor = LocalEventMonitor()
     // Target capture: the most modifiers held at once, and the physical key when only one was pressed.
     private var peakModifiers: Modifiers = []
     private var modifierPresses = 0
     private var soleModifierKey: UInt16?
 
-    init(remapper: KeyboardRemapper) {
+    init(remapper: KeyboardRemapper, eventTap: EventTap) {
         self.remapper = remapper
+        self.eventTap = eventTap
+        isKeyboardLocked = eventTap.isKeyboardLocked
+        // Also unlocked from the menu bar.
+        lockObserver = NotificationCenter.default.addObserver(
+            forName: EventTap.keyboardLockDidChange, object: eventTap, queue: .main
+        ) { [weak self] _ in self?.isKeyboardLocked = eventTap.isKeyboardLocked }
         load()
         refreshKeyboards()
         remapper.onKeyboardsChanged = { [weak self] in self?.refreshKeyboards() }
@@ -41,6 +50,13 @@ final class RemapModel: ObservableObject {
 
     deinit {
         stopCapture()
+        if let lockObserver { NotificationCenter.default.removeObserver(lockObserver) }
+    }
+
+    /// Ignores every key until unlocked with the mouse (to clean the keyboard).
+    func setKeyboardLocked(_ locked: Bool) {
+        if locked { stopCapture() }
+        eventTap.setKeyboardLocked(locked)
     }
 
     // MARK: - Editing

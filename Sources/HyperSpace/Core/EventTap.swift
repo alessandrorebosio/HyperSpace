@@ -10,6 +10,13 @@ import CoreGraphics
 final class EventTap {
     /// Stamped on events we synthesize so the tap lets them through untouched.
     static let syntheticMarker: Int64 = 0x4859_5045
+    /// Posted on the main thread when the keyboard is locked or unlocked.
+    static let keyboardLockDidChange = Notification.Name("HyperSpaceKeyboardLockDidChange")
+    /// NX_SYSDEFINED: media, volume and brightness keys.
+    private static let systemDefined = CGEventType(rawValue: 14)!
+
+    /// Every key is ignored (e.g. to clean the keyboard); unlocked with the mouse. Main thread.
+    private(set) var isKeyboardLocked = false
 
     private let onAction: (Action) -> Void
     private let drag: DragController
@@ -31,6 +38,7 @@ final class EventTap {
     /// (combination keys still work, so caps lock → ⌃⌥⇧ can be part of the shortcut).
     private var keyBindingsSuspended = false
     private var dragMode: DragMode?
+    private var keyboardLocked = false
 
     init(drag: DragController, onAction: @escaping (Action) -> Void) {
         self.drag = drag
@@ -64,9 +72,33 @@ final class EventTap {
             dragMode = nil
             for i in swallowedKeys.indices { swallowedKeys[i] = false }
             for i in swallowedButtons.indices { swallowedButtons[i] = false }
-            let newMask = newConfig.eventMask
-            if newMask != mask || (tap == nil && newMask != 0) { installTap(mask: newMask) }
+            updateMask()
         }
+    }
+
+    func setKeyboardLocked(_ locked: Bool) {
+        guard locked != isKeyboardLocked else { return }
+        isKeyboardLocked = locked
+        log.info("keyboard \(locked ? "locked" : "unlocked", privacy: .public)")
+        onTapThread { [self] in
+            keyboardLocked = locked
+            carrierDown = [Bool](repeating: false, count: config.carriers.count)
+            heldModifiers = []
+            for i in swallowedKeys.indices { swallowedKeys[i] = false }
+            updateMask()
+        }
+        NotificationCenter.default.post(name: Self.keyboardLockDidChange, object: self)
+    }
+
+    /// The events the config needs, plus every keyboard event while locked.
+    private func updateMask() {
+        var newMask = config.eventMask
+        if keyboardLocked {
+            for type in [CGEventType.keyDown, .keyUp, .flagsChanged, Self.systemDefined] {
+                newMask |= CGEventMask(1) << type.rawValue
+            }
+        }
+        if newMask != mask || (tap == nil && newMask != 0) { installTap(mask: newMask) }
     }
 
     func setButtonsSuspended(_ suspended: Bool) {
@@ -122,6 +154,15 @@ final class EventTap {
             break
         }
         if event.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker { return pass }
+        if keyboardLocked {
+            switch type {
+            case .keyDown, .keyUp, .flagsChanged: return nil
+            case Self.systemDefined:
+                // Subtype 8 is the media/volume/brightness keys; other subtypes come from the mouse.
+                return NSEvent(cgEvent: event)?.subtype.rawValue == 8 ? nil : pass
+            default: break
+            }
+        }
         if config.suppressCapsLock, event.flags.contains(.maskAlphaShift) {
             // A remapped caps lock must not engage caps lock: drop the flag right away
             // and switch the lock state off (the reset arrives as another flagsChanged).

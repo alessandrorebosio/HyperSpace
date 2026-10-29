@@ -31,8 +31,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings: { [unowned self] in settingsWindow.show() },
             workspaces: { [unowned self] in windowManager.summaries() },
             showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
-            focusWindow: { [unowned self] in windowManager.focusWindow($0) }
+            focusWindow: { [unowned self] in windowManager.focusWindow($0) },
+            setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) }
         ))
+        NotificationCenter.default.addObserver(forName: EventTap.keyboardLockDidChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            statusMenu.keyboardLocked = eventTap.isKeyboardLocked
+        }
         store.onChange = { [weak self] in self?.apply($0) }
         windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspaces = $0 }
 

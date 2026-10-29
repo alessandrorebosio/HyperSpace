@@ -63,7 +63,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         if window == nil {
-            let keyboard = RemapModel(remapper: remapper)
+            let keyboard = RemapModel(remapper: remapper, eventTap: eventTap)
             let mouse = MouseModel(eventTap: eventTap)
             let tiling = TilingModel(eventTap: eventTap)
             let navigation = SettingsNavigation()

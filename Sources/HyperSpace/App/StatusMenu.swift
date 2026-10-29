@@ -7,6 +7,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var workspaces: () -> [WorkspaceSummary]
         var showWorkspace: (Int) -> Void
         var focusWindow: (CGWindowID) -> Void
+        var setKeyboardLocked: (Bool) -> Void
+    }
+
+    /// Shows a lock in the menu bar and an Unlock item at the top of the menu.
+    var keyboardLocked = false {
+        didSet { updateIcon() }
     }
 
     /// Shown at the top of the menu (missing permission, config error).
@@ -34,7 +40,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func updateIcon() {
         guard let button = item.button else { return }
         guard let workspaces else {
-            let symbol = problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
+            let symbol = keyboardLocked ? "lock.fill" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
             let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
             image?.isTemplate = true
             button.image = image
@@ -45,7 +51,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let size = NSFont.systemFontSize
         let regular: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)]
         let bold: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)]
-        let title = NSMutableAttributedString(string: problem == nil ? "" : "⚠︎ ", attributes: regular)
+        let title = NSMutableAttributedString(string: (keyboardLocked ? "🔒 " : "") + (problem == nil ? "" : "⚠︎ "), attributes: regular)
         for (index, name) in workspaces.names.enumerated() {
             if index > 0 { title.append(NSAttributedString(string: " | ", attributes: regular)) }
             // With several displays the focused one is bold.
@@ -63,8 +69,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        if keyboardLocked {
+            menu.addItem(ClosureMenuItem("Unlock Keyboard") { [host] in host.setKeyboardLocked(false) })
+            menu.addItem(.separator())
+        }
+
         addWorkspaces(to: menu)
 
+        if !keyboardLocked {
+            menu.addItem(ClosureMenuItem("Lock Keyboard") { [host] in host.setKeyboardLocked(true) })
+        }
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
