@@ -322,6 +322,14 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(abs(frame.midX - visible.midX) <= 1 && abs(frame.midY - visible.midY) <= 1)
     }
 
+    @Test func windowMissingTheSizeStaysCentered() {
+        let frame = CGRect(x: 294, y: 172, width: 882, height: 646)
+        // A terminal that only takes whole character cells.
+        let fitted = WindowManager.centered(CGSize(width: 875, height: 640), in: frame)
+        #expect(fitted == CGRect(x: 298, y: 175, width: 875, height: 640))
+        #expect(WindowManager.centered(frame.size, in: frame) == frame)
+    }
+
     @Test func actionsAndSize() throws {
         let config = try HyperSpaceTests.config(#"""
         {"keyboard":{"bindings":[{"keys":"meh+x","action":"scratchpad com.anthropic.claudefordesktop"},

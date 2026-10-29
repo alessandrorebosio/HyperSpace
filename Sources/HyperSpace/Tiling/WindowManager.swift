@@ -136,6 +136,8 @@ final class WindowManager {
     private var issues: [String] = []
     /// Apps opened for the scratchpad: their next window goes there (until the date).
     private var pendingScratchpad: [String: Date] = [:]
+    /// The size a scratchpad window took instead of the one asked for `target`.
+    private var scratchpadFitted: (target: CGRect, size: CGSize)?
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -503,12 +505,26 @@ final class WindowManager {
         let screens = ScreenInfo.current()
         guard let screen = focusedScreen() ?? screens.first else { return }
         ignoreFocusChanges()
-        let frame = Self.scratchpadFrame(in: screen.visible, size: config.scratchpadSize)
+        let target = Self.scratchpadFrame(in: screen.visible, size: config.scratchpadSize)
+        let frame = scratchpadFitted.flatMap { $0.target == target ? Self.centered($0.size, in: target) : nil } ?? target
         let current = onScreenBounds()[window.id]
         log.debug("show scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) on display \(screen.id)")
         window.scratchpadShown = true
         window.hiddenFrame = nil
         setFrame(window, frame, from: current)
+        // Apps that size in steps (terminals) or have a minimum size miss the exact size:
+        // centered on what they took, and the other scratchpad windows take it too.
+        let element = window.element
+        writer.perform(window.pid) { [weak self] in
+            guard let size = AX.size(element), let origin = AX.position(element) else { return }
+            if abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1 {
+                DispatchQueue.main.async { self?.scratchpadFitted = (target, size) }
+            }
+            let centered = Self.centered(size, in: target)
+            if abs(origin.x - centered.minX) > 1 || abs(origin.y - centered.minY) > 1 {
+                AX.setPosition(element, centered.origin)
+            }
+        }
         focus(window)
         notifyWorkspace()
     }
@@ -531,6 +547,12 @@ final class WindowManager {
         let height = (visible.height * size.height).rounded()
         return CGRect(x: (visible.midX - width / 2).rounded(), y: (visible.midY - height / 2).rounded(),
                       width: width, height: height)
+    }
+
+    /// A window of `size` centered on the scratchpad `frame`.
+    static func centered(_ size: CGSize, in frame: CGRect) -> CGRect {
+        CGRect(origin: CGPoint(x: (frame.midX - size.width / 2).rounded(), y: (frame.midY - size.height / 2).rounded()),
+               size: size)
     }
 
     // MARK: - Debug report
