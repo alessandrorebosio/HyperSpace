@@ -112,6 +112,8 @@ final class WindowManager {
     private var launches = LaunchTracker()
     private var focusUpdateScheduled = false
     private var snapBackScheduled = false
+    /// Running apps are being picked up at start: retile once they all are.
+    private var adopting = false
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -199,15 +201,35 @@ final class WindowManager {
             self?.notifyWorkspace()
         }
 
+        // Window elements use the global AX timeout (6 s by default): an app still busy
+        // launching at login must not stall the window manager that long.
+        _ = AX.systemWide
         syncDisplays()
-        for app in NSWorkspace.shared.runningApplications { addApp(app) }
-        rescueStrandedWindows()
-        scheduleRetile()
+        // One app per run loop turn, the frontmost first: shortcuts stay responsive while
+        // apps that are slow to answer (at login) are adopted, and the screen tiles once.
+        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let pending = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .sorted { ($0.processIdentifier == frontmost ? 0 : 1) < ($1.processIdentifier == frontmost ? 0 : 1) }
+        adopting = true
+        adopt(pending[...])
         // Right after a login or a WindowServer restart, or on a busy Mac, apps can answer AX
         // with placeholder elements: look again once they have settled.
         for delay in [2.0, 6.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.rescan() }
         }
+    }
+
+    private func adopt(_ pending: ArraySlice<NSRunningApplication>) {
+        guard running else { return }
+        guard let app = pending.first else {
+            adopting = false
+            rescueStrandedWindows()
+            scheduleRetile()
+            return
+        }
+        addApp(app)
+        DispatchQueue.main.async { [weak self] in self?.adopt(pending.dropFirst()) }
     }
 
     private func stop() {
@@ -221,6 +243,7 @@ final class WindowManager {
         apps.values.forEach { $0.invalidate() }
         apps.removeAll()
         launches.removeAll()
+        adopting = false
         windows.removeAll()
         order.removeAll()
         lastFocused.removeAll()
@@ -373,7 +396,7 @@ final class WindowManager {
 
     /// Coalesces bursts of events (an app opening five windows) into one retile.
     private func scheduleRetile() {
-        guard running, !retileScheduled else { return }
+        guard running, !adopting, !retileScheduled else { return }
         retileScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             self?.retileScheduled = false
@@ -452,7 +475,7 @@ final class WindowManager {
             for window in tiled {
                 guard let frame = frames[window.id] else { continue }
                 window.hiddenFrame = nil
-                if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame) }
+                if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame, from: bounds[window.id]) }
             }
         }
     }
@@ -499,19 +522,46 @@ final class WindowManager {
         AX.warpPointer(to: point)
     }
 
-    private func setFrame(_ window: ManagedWindow, _ frame: CGRect) {
+    /// `current`, when known, lets a move within a display skip the writes it does not need.
+    private func setFrame(_ window: ManagedWindow, _ frame: CGRect, from current: CGRect? = nil) {
         // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
         // animate every AX resize; switch it off while we move the window.
         window.movedByUs = Date()
         let app = apps[window.pid]?.element
         let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
         if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", false) }
-        // size → position → size: the first resize lets the window fit on the
-        // destination display, the second fixes apps that clamp to the old screen.
-        AX.setSize(window.element, frame.size)
-        AX.setPosition(window.element, frame.origin)
-        AX.setSize(window.element, frame.size)
+        for step in Self.frameSteps(from: current, to: frame, sameDisplay: current.map { Self.sameDisplay($0, frame) } ?? false) {
+            switch step {
+            case .size: AX.setSize(window.element, frame.size)
+            case .position: AX.setPosition(window.element, frame.origin)
+            }
+        }
         if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }
+    }
+
+    enum FrameStep { case size, position }
+
+    /// The AX writes that take a window from `current` to `target`. Across displays (or from
+    /// an unknown frame): size → position → size, the first resize lets the window fit on
+    /// the destination display, the second fixes apps that clamp to the old screen. Within a
+    /// display only what changed, shrinking before moving so the window never sticks out.
+    static func frameSteps(from current: CGRect?, to target: CGRect, sameDisplay: Bool) -> [FrameStep] {
+        guard let current, sameDisplay else { return [.size, .position, .size] }
+        let sizeChanges = abs(current.width - target.width) > 1 || abs(current.height - target.height) > 1
+        let originChanges = abs(current.minX - target.minX) > 1 || abs(current.minY - target.minY) > 1
+        switch (sizeChanges, originChanges) {
+        case (false, false): return []
+        case (true, false): return [.size]
+        case (false, true): return [.position]
+        case (true, true):
+            let grows = target.width > current.width + 1 || target.height > current.height + 1
+            return grows ? [.position, .size] : [.size, .position]
+        }
+    }
+
+    private static func sameDisplay(_ a: CGRect, _ b: CGRect) -> Bool {
+        let screens = ScreenInfo.current()
+        return !screens.isEmpty && screens.index(for: a) == screens.index(for: b)
     }
 
     /// Visible, normal-layer windows on the current Space with their frames.

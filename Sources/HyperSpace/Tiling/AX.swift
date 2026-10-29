@@ -10,7 +10,8 @@ private func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePo
 enum AX {
     static let systemWide: AXUIElement = {
         let element = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(element, 0.3)
+        // On the system-wide element this is the timeout of every element.
+        AXUIElementSetMessagingTimeout(element, 0.5)
         return element
     }()
 

@@ -174,3 +174,24 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(tracker.workspace(for: 43, at: start) == nil)
     }
 }
+
+@Suite struct FrameStepTests {
+    typealias W = WindowManager
+    let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+    @Test func onlyWhatChanges() {
+        #expect(W.frameSteps(from: frame, to: frame, sameDisplay: true) == [])
+        #expect(W.frameSteps(from: frame, to: frame.offsetBy(dx: 50, dy: 0), sameDisplay: true) == [.position])
+        #expect(W.frameSteps(from: frame, to: CGRect(x: 100, y: 100, width: 700, height: 600), sameDisplay: true) == [.size])
+    }
+
+    @Test func shrinkBeforeMovingGrowAfter() {
+        #expect(W.frameSteps(from: frame, to: CGRect(x: 0, y: 0, width: 400, height: 300), sameDisplay: true) == [.size, .position])
+        #expect(W.frameSteps(from: frame, to: CGRect(x: 0, y: 0, width: 1200, height: 600), sameDisplay: true) == [.position, .size])
+    }
+
+    @Test func acrossDisplaysOrUnknown() {
+        #expect(W.frameSteps(from: frame, to: frame.offsetBy(dx: 2000, dy: 0), sameDisplay: false) == [.size, .position, .size])
+        #expect(W.frameSteps(from: nil, to: frame, sameDisplay: true) == [.size, .position, .size])
+    }
+}
