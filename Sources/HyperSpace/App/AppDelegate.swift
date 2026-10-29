@@ -26,6 +26,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var trusted = false
     private var config: Config?
 
+    /// Opened by macOS at login rather than by the user.
+    private var launchedAtLogin = false
+    private var firstConfig = true
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Only readable here: the open-application event says whether it is a login launch.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        launchedAtLogin = event?.eventID == kAEOpenApplication
+            && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+
+    /// Double-clicking the app while it runs opens Settings (the only way with tiling off,
+    /// when there is no menu bar item).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        settingsWindow.show()
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusMenu = StatusMenu(host: StatusMenu.Host(
             openSettings: { [unowned self] in settingsWindow.show() },
@@ -40,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         store.onChange = { [weak self] in self?.apply($0) }
         windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspaces = $0 }
+        windowManager.onEnabledChange = { [weak self] in self?.statusMenu.tilingEnabled = $0 }
 
         trusted = Permissions.isTrusted(prompt: true)
         if !trusted { waitForPermission() }
@@ -69,6 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch result {
         case .success(let config):
             self.config = config
+            statusMenu.tilingEnabled = config.tiling.enabled
+            // Opened by hand with no menu bar item to show for it: show Settings instead.
+            if firstConfig, !config.tiling.enabled, !launchedAtLogin { settingsWindow.show() }
+            firstConfig = false
             remapper.apply(config.remaps)
             if config.tap.suppressCapsLock { CapsLock.turnOff() }
             if trusted {

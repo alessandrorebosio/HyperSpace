@@ -59,6 +59,10 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 
 ### Menu bar e finestra
 
+Con il tiling disattivato l'icona nella barra dei menu non c'è (resta solo se c'è un problema da segnalare o la
+tastiera è bloccata): per aprire le impostazioni fai doppio clic sull'app, che funziona anche con l'icona visibile.
+Aperta a mano con il tiling spento mostra subito le impostazioni; all'avvio con il Mac no.
+
 Il menu nella barra in alto elenca i workspace che hanno app aperte, ciascuno con accanto le icone delle sue app (✓ su quelli visibili, titoli delle finestre nel tooltip): un clic mostra il workspace. Sotto, **Lock Keyboard** (che diventa **Unlock Keyboard**), **Settings…** (⌘,) e **Quit**. La finestra segue lo stile Liquid Glass, si ridimensiona (minimo 680×420, così entra in una colonna) e ha una barra laterale:
 **Keyboard**, **Mouse**, **Tiling** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
 stato del permesso di Accessibilità, Quit).

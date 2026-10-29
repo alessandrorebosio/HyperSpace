@@ -75,6 +75,8 @@ final class WindowManager {
     /// Called with the workspace shown on each display (left to right) and the index of
     /// the focused display, or nil when workspaces are not in use.
     var onWorkspaceChange: (((names: [String], focused: Int)?) -> Void)?
+    /// Called when tiling is turned on or off by the toggle-tiling action.
+    var onEnabledChange: ((Bool) -> Void)?
 
     private var running = false
     private var apps: [pid_t: AppWatcher] = [:]
@@ -146,6 +148,7 @@ final class WindowManager {
     func toggleEnabled() {
         config.enabled.toggle()
         config.enabled ? start() : stop()
+        onEnabledChange?(config.enabled)
         scheduleRetile()
     }
 

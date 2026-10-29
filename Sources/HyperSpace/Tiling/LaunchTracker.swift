@@ -29,7 +29,7 @@ struct LaunchTracker {
         launches[pid] != nil
     }
 
-        mutating func forget(_ pid: pid_t) {
+    mutating func forget(_ pid: pid_t) {
         launches[pid] = nil
     }
 

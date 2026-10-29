@@ -20,6 +20,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         didSet { updateIcon() }
     }
 
+    /// With tiling off the menu bar item is gone (double-click the app to open Settings),
+    /// unless there is a problem to report or the keyboard is locked and needs Unlock.
+    var tilingEnabled = true {
+        didSet { updateIcon() }
+    }
+
     /// i3-style: the workspace shown on each display, left to right, instead of the icon.
     var workspaces: (names: [String], focused: Int)? {
         didSet { updateIcon() }
@@ -38,6 +44,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private func updateIcon() {
+        item.isVisible = tilingEnabled || problem != nil || keyboardLocked
         guard let button = item.button else { return }
         guard let workspaces else {
             let symbol = keyboardLocked ? "lock" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
