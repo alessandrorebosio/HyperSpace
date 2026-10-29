@@ -8,6 +8,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var showWorkspace: (Int) -> Void
         var focusWindow: (CGWindowID) -> Void
         var setKeyboardLocked: (Bool) -> Void
+        /// When a locked keyboard unlocks by itself.
+        var keyboardUnlocksAt: () -> Date?
     }
 
     /// Shows a lock in the menu bar; the menu item turns into Unlock Keyboard.
@@ -90,7 +92,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         // Lock and Unlock share one place, so the mouse finds Unlock where it clicked Lock.
         let locked = keyboardLocked
-        menu.addItem(ClosureMenuItem(locked ? "Unlock Keyboard" : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) })
+        let left = locked ? host.keyboardUnlocksAt().map { " (\(KeyboardLock.remaining(until: $0)))" } ?? "" : ""
+        menu.addItem(ClosureMenuItem(locked ? "Unlock Keyboard" + left : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) })
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)

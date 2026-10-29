@@ -17,6 +17,9 @@ final class EventTap {
 
     /// Every key is ignored (e.g. to clean the keyboard); unlocked with the mouse. Main thread.
     private(set) var isKeyboardLocked = false
+    /// When the lock lifts by itself, if it does. Main thread.
+    private(set) var keyboardUnlocksAt: Date?
+    private var unlockTimer: Timer?
 
     private let onAction: (Action) -> Void
     private let drag: DragController
@@ -76,9 +79,20 @@ final class EventTap {
         }
     }
 
+    /// Locks for `KeyboardLock.minutes` (or until unlocked when 0), or unlocks.
     func setKeyboardLocked(_ locked: Bool) {
         guard locked != isKeyboardLocked else { return }
         isKeyboardLocked = locked
+        unlockTimer?.invalidate()
+        unlockTimer = nil
+        keyboardUnlocksAt = nil
+        if locked, KeyboardLock.minutes > 0 {
+            let duration = TimeInterval(KeyboardLock.minutes * 60)
+            keyboardUnlocksAt = Date().addingTimeInterval(duration)
+            unlockTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+                self?.setKeyboardLocked(false)
+            }
+        }
         log.info("keyboard \(locked ? "locked" : "unlocked", privacy: .public)")
         onTapThread { [self] in
             keyboardLocked = locked

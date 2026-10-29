@@ -25,6 +25,12 @@ final class RemapModel: ObservableObject {
     /// Modifiers held so far while capturing a target, shown live ("⌃⌥⇧…").
     @Published private(set) var capturePreview = ""
     @Published private(set) var isKeyboardLocked = false
+    /// "2:41" until the lock lifts by itself, refreshed every second while locked.
+    @Published private(set) var unlocksIn: String?
+    @Published var lockMinutes = KeyboardLock.minutes {
+        didSet { KeyboardLock.minutes = lockMinutes }
+    }
+    private var countdown: Timer?
 
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
@@ -38,11 +44,11 @@ final class RemapModel: ObservableObject {
     init(remapper: KeyboardRemapper, eventTap: EventTap) {
         self.remapper = remapper
         self.eventTap = eventTap
-        isKeyboardLocked = eventTap.isKeyboardLocked
-        // Also unlocked from the menu bar.
+        // Also locked and unlocked from the menu bar, and unlocked by the timer.
         lockObserver = NotificationCenter.default.addObserver(
             forName: EventTap.keyboardLockDidChange, object: eventTap, queue: .main
-        ) { [weak self] _ in self?.isKeyboardLocked = eventTap.isKeyboardLocked }
+        ) { [weak self] _ in self?.syncLock() }
+        syncLock()
         load()
         refreshKeyboards()
         remapper.onKeyboardsChanged = { [weak self] in self?.refreshKeyboards() }
@@ -51,6 +57,21 @@ final class RemapModel: ObservableObject {
     deinit {
         stopCapture()
         if let lockObserver { NotificationCenter.default.removeObserver(lockObserver) }
+        countdown?.invalidate()
+    }
+
+    private func syncLock() {
+        isKeyboardLocked = eventTap.isKeyboardLocked
+        countdown?.invalidate()
+        countdown = nil
+        guard let until = eventTap.keyboardUnlocksAt else {
+            unlocksIn = nil
+            return
+        }
+        unlocksIn = KeyboardLock.remaining(until: until)
+        countdown = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.unlocksIn = KeyboardLock.remaining(until: until)
+        }
     }
 
     /// Ignores every key until unlocked with the mouse (to clean the keyboard).

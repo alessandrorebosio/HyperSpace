@@ -195,3 +195,13 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(W.frameSteps(from: nil, to: frame, sameDisplay: true) == [.size, .position, .size])
     }
 }
+
+@Suite struct KeyboardLockTests {
+    @Test func remaining() {
+        let now = Date()
+        #expect(KeyboardLock.remaining(until: now + 161, now: now) == "2:41")
+        #expect(KeyboardLock.remaining(until: now + 0.2, now: now) == "0:01")
+        #expect(KeyboardLock.remaining(until: now - 5, now: now) == "0:00")
+        #expect(KeyboardLock.label(minutes: 0) == "Never")
+    }
+}

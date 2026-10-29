@@ -10,7 +10,7 @@ struct RemapView: View {
             } header: {
                 Text("Keyboard Lock")
             } footer: {
-                Text("Every key is ignored, media and brightness keys included, until you unlock it with the mouse — here or from the menu bar. Handy to clean the keyboard. Quitting HyperSpace unlocks it.")
+                Text("Every key is ignored, media and brightness keys included, until you unlock it with the mouse — here or from the menu bar — or the chosen time is up. Handy to clean the keyboard. Quitting HyperSpace unlocks it.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -68,10 +68,16 @@ private struct KeyboardLockRow: View {
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.isKeyboardLocked ? "Keyboard locked" : "Keyboard active").font(.headline)
-                Text(model.isKeyboardLocked ? "Keys do nothing. Click Unlock to type again." : "Lock it to clean it without typing anything.")
-                    .font(.callout).foregroundStyle(.secondary)
+                Text(lockDetail).font(.callout).foregroundStyle(.secondary).monospacedDigit()
             }
             Spacer()
+            Picker("Unlock", selection: Binding(get: { model.lockMinutes }, set: { model.lockMinutes = $0 })) {
+                ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .disabled(model.isKeyboardLocked)
+            .help("When the keyboard unlocks by itself")
             if model.isKeyboardLocked {
                 Button("Unlock") { model.setKeyboardLocked(false) }
                     .buttonStyle(.borderedProminent)
@@ -82,6 +88,12 @@ private struct KeyboardLockRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var lockDetail: String {
+        guard model.isKeyboardLocked else { return "Lock it to clean it without typing anything." }
+        if let left = model.unlocksIn { return "Keys do nothing. Unlocks by itself in \(left)." }
+        return "Keys do nothing. Click Unlock to type again."
     }
 }
 

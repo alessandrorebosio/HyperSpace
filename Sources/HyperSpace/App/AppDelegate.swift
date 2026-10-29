@@ -50,7 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             workspaces: { [unowned self] in windowManager.summaries() },
             showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
             focusWindow: { [unowned self] in windowManager.focusWindow($0) },
-            setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) }
+            setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) },
+            keyboardUnlocksAt: { [unowned self] in eventTap.keyboardUnlocksAt }
         ))
         NotificationCenter.default.addObserver(forName: EventTap.keyboardLockDidChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
