@@ -511,7 +511,7 @@ final class WindowManager {
         log.debug("show scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) on display \(screen.id)")
         window.scratchpadShown = true
         window.hiddenFrame = nil
-        setFrame(window, frame, from: current)
+        setFrame(window, frame, from: current, screens: screens)
         // Apps that size in steps (terminals) or have a minimum size miss the exact size:
         // centered on what they took, and the other scratchpad windows take it too.
         let element = window.element
@@ -736,13 +736,13 @@ final class WindowManager {
             // Some apps put the window on screen a moment after announcing it.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
         case kAXUIElementDestroyedNotification:
-            guard let id = windows.first(where: { $0.value.pid == pid && CFEqual($0.value.element, element) })?.key else { return }
+            guard let id = managed(element, pid: pid)?.id else { return }
             untrack(id)
             scheduleRetile()
         case kAXMovedNotification, kAXResizedNotification:
             // Moved or resized by hand: back to its tile once the mouse is released. Our own
             // moves land on the target frame, so the retile has nothing to do for them.
-            guard let window = windows.values.first(where: { $0.pid == pid && CFEqual($0.element, element) }),
+            guard let window = managed(element, pid: pid),
                   !window.isFloating, !window.scratchpad, window.hiddenFrame == nil,
                   // A window that cannot take its tile (a minimum size) must not loop.
                   Date().timeIntervalSince(window.movedByUs) > 0.5 else { return }
@@ -752,7 +752,7 @@ final class WindowManager {
         case kAXTitleChangedNotification:
             // Many windows set their title a moment after opening: title rules apply then.
             guard !config.floatingWindows.isEmpty,
-                  let window = windows.values.first(where: { $0.pid == pid && CFEqual($0.element, element) }),
+                  let window = managed(element, pid: pid),
                   !window.userOverride else { return }
             let floats = config.floats(app: window.bundleID, title: AX.string(element, kAXTitleAttribute))
             guard floats != window.isFloating else { return }
@@ -761,6 +761,12 @@ final class WindowManager {
         default:
             scheduleRetile()
         }
+    }
+
+    /// The tracked window of an AX element, compared locally (asking the app for the
+    /// window id would be a round trip, and a destroyed element has none left).
+    private func managed(_ element: AXUIElement, pid: pid_t) -> ManagedWindow? {
+        windows.values.first { $0.pid == pid && CFEqual($0.element, element) }
     }
 
     // MARK: - Layout
@@ -853,7 +859,7 @@ final class WindowManager {
             for window in tiled {
                 guard let frame = frames[window.id] else { continue }
                 window.hiddenFrame = nil
-                if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame, from: bounds[window.id]) }
+                if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame, from: bounds[window.id], screens: screens) }
             }
         }
         scheduleSave()
@@ -906,9 +912,10 @@ final class WindowManager {
     }
 
     /// `current`, when known, lets a move within a display skip the writes it does not need.
-    private func setFrame(_ window: ManagedWindow, _ frame: CGRect, from current: CGRect? = nil) {
+    private func setFrame(_ window: ManagedWindow, _ frame: CGRect, from current: CGRect? = nil, screens: [ScreenInfo]? = nil) {
         window.movedByUs = Date()
-        let steps = Self.frameSteps(from: current, to: frame, sameDisplay: current.map { Self.sameDisplay($0, frame) } ?? false)
+        let sameDisplay = current.map { Self.sameDisplay($0, frame, screens ?? ScreenInfo.current()) } ?? false
+        let steps = Self.frameSteps(from: current, to: frame, sameDisplay: sameDisplay)
         guard !steps.isEmpty else { return }
         let app = apps[window.pid]?.element
         let element = window.element
@@ -954,9 +961,8 @@ final class WindowManager {
         }
     }
 
-    private static func sameDisplay(_ a: CGRect, _ b: CGRect) -> Bool {
-        let screens = ScreenInfo.current()
-        return !screens.isEmpty && screens.index(for: a) == screens.index(for: b)
+    private static func sameDisplay(_ a: CGRect, _ b: CGRect, _ screens: [ScreenInfo]) -> Bool {
+        !screens.isEmpty && screens.index(for: a) == screens.index(for: b)
     }
 
     /// Visible, normal-layer windows on the current Space with their frames.

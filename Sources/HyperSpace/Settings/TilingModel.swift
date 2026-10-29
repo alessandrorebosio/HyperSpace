@@ -228,14 +228,21 @@ final class TilingModel: ObservableObject {
         save()
     }
 
-    static func appName(_ bundleID: String) -> String {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
-        return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+    /// Names and icons by bundle id: rows ask on every redraw, LaunchServices is slow.
+    private static var appInfo: [String: (name: String, icon: NSImage?)] = [:]
+
+    private static func info(_ bundleID: String) -> (name: String, icon: NSImage?) {
+        if let info = appInfo[bundleID] { return info }
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        let info = (name: url.map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID,
+                    icon: url.map { NSWorkspace.shared.icon(forFile: $0.path) })
+        appInfo[bundleID] = info
+        return info
     }
 
-    static func appIcon(_ bundleID: String) -> NSImage? {
-        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map { NSWorkspace.shared.icon(forFile: $0.path) }
-    }
+    static func appName(_ bundleID: String) -> String { info(bundleID).name }
+
+    static func appIcon(_ bundleID: String) -> NSImage? { info(bundleID).icon }
 
     /// Typing a name saves shortly after the last keystroke.
     func rename(_ id: UUID, to name: String) {
