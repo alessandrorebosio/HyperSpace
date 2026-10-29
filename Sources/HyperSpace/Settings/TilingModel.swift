@@ -53,6 +53,7 @@ final class TilingModel: ObservableObject {
     @Published private(set) var layout = LayoutKind.columns
     @Published private(set) var gap = 8
     @Published private(set) var padding = 8
+    @Published private(set) var mouseFollowsFocus = true
     @Published var workspaces: [Workspace] = []
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
@@ -89,6 +90,7 @@ final class TilingModel: ObservableObject {
     func setLayout(_ kind: LayoutKind) { layout = kind; save() }
     func setGap(_ value: Int) { gap = max(0, min(64, value)); save() }
     func setPadding(_ value: Int) { padding = max(0, min(64, value)); save() }
+    func setMouseFollowsFocus(_ on: Bool) { mouseFollowsFocus = on; save() }
 
     func addWorkspace() {
         workspaces.append(Workspace(name: "\(workspaces.count + 1)", switchKeys: "", moveKeys: ""))
@@ -237,6 +239,7 @@ final class TilingModel: ObservableObject {
         layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? .columns
         gap = (tiling["gap"] as? NSNumber)?.intValue ?? 8
         padding = (tiling["padding"] as? NSNumber)?.intValue ?? 8
+        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? true
         floating = tiling["floating"] as? [String] ?? []
         assignments = (tiling["assign"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let app = entry["app"] as? String, let workspace = entry["workspace"] as? String else { return nil }
@@ -264,6 +267,7 @@ final class TilingModel: ObservableObject {
             tiling["layout"] = layout.rawValue
             tiling["gap"] = gap
             tiling["padding"] = padding
+            tiling["mouseFollowsFocus"] = mouseFollowsFocus
             tiling["floating"] = floating
             // Rules pointing at a workspace that no longer exists are dropped.
             let names = Set(workspaces.map(\.name))

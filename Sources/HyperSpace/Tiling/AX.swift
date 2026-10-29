@@ -94,6 +94,18 @@ enum AX {
         return element(hit, kAXWindowAttribute) ?? element(hit, kAXTopLevelUIElementAttribute)
     }
 
+    /// The pointer in global top-left coordinates.
+    static var pointer: CGPoint {
+        let mouse = NSEvent.mouseLocation
+        return CGPoint(x: mouse.x, y: (NSScreen.screens.first?.frame.height ?? 0) - mouse.y)
+    }
+
+    /// Moves the pointer without freezing it afterwards (a plain warp ignores the mouse briefly).
+    static func warpPointer(to point: CGPoint) {
+        CGWarpMouseCursorPosition(point)
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
     /// Raises a window and makes its app frontmost. Works from a background
     /// accessory app, unlike NSRunningApplication.activate on recent macOS.
     static func focus(_ window: AXUIElement, pid: pid_t) {

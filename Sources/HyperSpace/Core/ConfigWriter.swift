@@ -31,7 +31,7 @@ enum ConfigWriter {
         "hyperKey", "remap", "bindings",
         "keys", "from", "to", "button", "modifiers", "action",
         "reverseScroll", "dragModifier", "buttons",
-        "enabled", "layout", "gap", "padding", "masterRatio", "floating", "workspaces", "assign",
+        "enabled", "layout", "gap", "padding", "masterRatio", "mouseFollowsFocus", "floating", "workspaces", "assign",
         "name", "switch", "move", "app", "workspace",
     ]
 

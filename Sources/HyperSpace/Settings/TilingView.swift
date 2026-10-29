@@ -19,6 +19,10 @@ struct TilingView: View {
                 Stepper(value: Binding(get: { model.padding }, set: { model.setPadding($0) }), in: 0...64, step: 2) {
                     LabeledContent("Margin around the screen", value: "\(model.padding) pt")
                 }
+                Toggle(isOn: Binding(get: { model.mouseFollowsFocus }, set: { model.setMouseFollowsFocus($0) })) {
+                    Text("Pointer follows focus")
+                    Text("When the focus moves to another display, the pointer goes there too.")
+                }
             } header: {
                 Text("Tiling")
             }

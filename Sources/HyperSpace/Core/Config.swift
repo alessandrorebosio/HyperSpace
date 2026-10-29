@@ -43,6 +43,7 @@ struct RawConfig: Decodable {
         var floating: [String]?
         var workspaces: [Workspace]?
         var assign: [Assignment]?
+        var mouseFollowsFocus: Bool?
     }
     /// Windows of `app` (bundle id) open in workspace `workspace` (name or number).
     struct Assignment: Decodable {
@@ -151,6 +152,8 @@ struct TilingConfig {
     var workspaces: [String] = []
     /// Bundle id → workspace index for windows to open in.
     var assignments: [String: Int] = [:]
+    /// Moving the focus to another display brings the pointer along.
+    var mouseFollowsFocus = true
 }
 
 /// Validated, compiled configuration.
@@ -245,6 +248,7 @@ struct Config {
         tiling.padding = CGFloat(max(0, raw.padding ?? 8))
         tiling.masterRatio = CGFloat(min(0.9, max(0.1, raw.masterRatio ?? 0.55)))
         tiling.floating = Set(raw.floating ?? [])
+        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? true
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }

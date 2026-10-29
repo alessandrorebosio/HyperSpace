@@ -101,6 +101,9 @@ final class WindowManager {
     /// A window just moved to a hidden workspace that still has focus: it must not drag
     /// its workspace onto the screen. Cleared as soon as focus goes elsewhere.
     private var movedAway: CGWindowID?
+    /// The display the user works on, set when we move the focus there: an empty workspace
+    /// has no window to tell, and the pointer may still be on the other display.
+    private var activeDisplay: CGDirectDisplayID?
     /// Last value sent to `onWorkspaceChange`, so the menu bar is redrawn only on change.
     private var lastNotice: (names: [String], focused: Int)??
 
@@ -207,6 +210,7 @@ final class WindowManager {
         displayed.removeAll()
         homeOverride.removeAll()
         shownBefore.removeAll()
+        activeDisplay = nil
     }
 
     /// After a crash windows can be left parked off-screen: bring them back.
@@ -393,10 +397,31 @@ final class WindowManager {
         followFocusAfter = Date().addingTimeInterval(0.6)
     }
 
-    /// Focuses a window without the resulting focus change switching workspaces.
+    /// Focuses a window without the resulting focus change switching workspaces. Crossing
+    /// to another display brings the pointer along (if enabled), and as macOS sometimes
+    /// ignores a background app raising a window on another display, it checks and retries.
     private func focus(_ window: ManagedWindow) {
         ignoreFocusChanges()
         AX.focus(window.element, pid: window.pid)
+        let screens = ScreenInfo.current()
+        if let frame = onScreenBounds()[window.id], !screens.isEmpty {
+            let screen = screens[screens.index(for: frame)]
+            activeDisplay = screen.id
+            bringPointer(to: frame.center, on: screen, screens)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
+            log.debug("focus did not take for window \(window.id) (\(window.bundleID ?? "?", privacy: .public)), retrying")
+            self?.ignoreFocusChanges()
+            NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
+            AX.focus(window.element, pid: window.pid)
+        }
+    }
+
+    /// Moves the pointer to `point` when it is on another display than `screen`.
+    private func bringPointer(to point: CGPoint, on screen: ScreenInfo, _ screens: [ScreenInfo]) {
+        guard config.mouseFollowsFocus, !screen.frame.contains(AX.pointer) else { return }
+        AX.warpPointer(to: point)
     }
 
     private func setFrame(_ window: ManagedWindow, _ frame: CGRect) {
@@ -533,15 +558,23 @@ final class WindowManager {
         window.hiddenFrame = nil
     }
 
+    /// Focuses the workspace: its last focused window, or with no windows, its display.
     private func focusWindow(in workspace: Int) {
         let bounds = onScreenBounds()
         let candidates = order.compactMap { windows[$0] }.filter { $0.workspace == workspace && bounds[$0.id] != nil }
-        if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first { focus(target) }
+        if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
+            focus(target)
+        } else if let id = display(showing: workspace), case let screens = ScreenInfo.current(),
+                  let screen = screens.first(where: { $0.id == id }) {
+            activeDisplay = id
+            bringPointer(to: screen.visible.center, on: screen, screens)
+        }
     }
 
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
     private func followFocus() {
         guard running, let window = focused() else { return }
+        if window.hiddenFrame == nil, let id = display(showing: window.workspace) { activeDisplay = id }
         if window.id != movedAway { movedAway = nil }
         guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
         log.debug("follow focus to window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) in workspace \(window.workspace)")
@@ -607,17 +640,18 @@ final class WindowManager {
         return windows[id]
     }
 
-    /// The display with the focused window, or under the pointer when nothing is focused.
+    /// The display the user works on: the focused window's, else the one we last moved the
+    /// focus to (an empty workspace has no window), else the one under the pointer.
     private func focusedScreen() -> ScreenInfo? {
         let screens = ScreenInfo.current()
         guard !screens.isEmpty else { return nil }
-        if let window = focused(), window.hiddenFrame == nil, let frame = onScreenBounds()[window.id] {
+        if let window = focused(), window.hiddenFrame == nil, display(showing: window.workspace) != nil,
+           let frame = onScreenBounds()[window.id] {
             return screens[screens.index(for: frame)]
         }
-        let mouse = NSEvent.mouseLocation
-        let height = NSScreen.screens.first?.frame.height ?? 0
-        let point = CGPoint(x: mouse.x, y: height - mouse.y)
-        return screens.first { $0.frame.contains(point) } ?? screens.first
+        if let id = activeDisplay, let screen = screens.first(where: { $0.id == id }) { return screen }
+        let pointer = AX.pointer
+        return screens.first { $0.frame.contains(pointer) } ?? screens.first
     }
 
     /// Windows of the displayed workspaces that are on screen, with their frames.
@@ -633,9 +667,7 @@ final class WindowManager {
         let bounds = onScreenBounds()
         guard let current = focused(), let origin = bounds[current.id] else { return }
         let candidates = visible(bounds).filter { $0.0.id != current.id }
-        if let target = Layout.neighbor(of: origin, direction, among: candidates) {
-            AX.focus(target.element, pid: target.pid)
-        }
+        if let target = Layout.neighbor(of: origin, direction, among: candidates) { focus(target) }
     }
 
     /// The layout of the display showing a workspace.

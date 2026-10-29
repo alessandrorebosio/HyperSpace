@@ -20,6 +20,8 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(config.tap.carriers.map(\.modifiers) == [.hyper])
         #expect(config.tap.suppressCapsLock)
         #expect(config.tiling.layout == .columns)
+        #expect(config.tiling.mouseFollowsFocus)
+        #expect(try !HyperSpaceTests.config(#"{"tiling":{"mouseFollowsFocus":false}}"#).tiling.mouseFollowsFocus)
     }
 
     @Test func workspaceShortcutsAndRules() throws {
