@@ -114,10 +114,6 @@ final class WindowManager {
     private var snapBackScheduled = false
     /// Running apps are being picked up at start: retile once they all are.
     private var adopting = false
-    /// Apps hidden because all their windows are in hidden workspaces.
-    private var hiddenByUs = Set<pid_t>()
-    /// Unhidden by the last retile, so not yet in the window list.
-    private var justUnhidden = Set<pid_t>()
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -155,8 +151,6 @@ final class WindowManager {
 
     /// Puts every parked window back where it was (on quit).
     func restoreHiddenWindows() {
-        for pid in hiddenByUs { NSRunningApplication(processIdentifier: pid)?.unhide() }
-        hiddenByUs.removeAll()
         for window in windows.values {
             guard let frame = window.hiddenFrame else { continue }
             setFrame(window, frame)
@@ -480,20 +474,11 @@ final class WindowManager {
         syncDisplays()
         let screens = ScreenInfo.current()
         guard !screens.isEmpty else { return }
-        var bounds = onScreenBounds()
+        let bounds = onScreenBounds()
         let shown = Set(displayed.values)
 
-        let hiddenApps = syncHiddenApps(shown)
-        // Apps just unhidden are not in the window list yet: their windows are where they were.
-        for window in windows.values where justUnhidden.contains(window.pid) && bounds[window.id] == nil {
-            if let origin = AX.position(window.element), let size = AX.size(window.element) {
-                bounds[window.id] = CGRect(origin: origin, size: size)
-            }
-        }
         for window in windows.values {
             if !shown.contains(window.workspace) {
-                // Windows of an app hidden as a whole stay where they are, out of sight.
-                guard !hiddenApps.contains(window.pid) else { continue }
                 if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
             } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
                 show(window, on: screen)
@@ -528,36 +513,6 @@ final class WindowManager {
         }
     }
 
-    /// An app whose windows all belong to hidden workspaces is hidden (like ⌘H): nothing of it
-    /// stays on screen, not even a shadow in the corner, and it costs one call instead of a
-    /// move per window. Apps with windows on a shown workspace too get theirs parked instead.
-    /// Only apps hidden here are unhidden; returns them.
-    private func syncHiddenApps(_ shown: Set<Int>) -> Set<pid_t> {
-        var visible = Set<pid_t>(), all = Set<pid_t>()
-        for window in windows.values {
-            all.insert(window.pid)
-            if shown.contains(window.workspace) { visible.insert(window.pid) }
-        }
-        justUnhidden.removeAll()
-        for pid in hiddenByUs where !all.contains(pid) || visible.contains(pid) {
-            hiddenByUs.remove(pid)
-            if NSRunningApplication(processIdentifier: pid)?.unhide() == true { justUnhidden.insert(pid) }
-        }
-        var out = Set<pid_t>()
-        for pid in all.subtracting(visible) {
-            guard let app = NSRunningApplication(processIdentifier: pid) else { continue }
-            if !hiddenByUs.contains(pid) {
-                guard !app.isHidden, app.hide() else { continue }
-                hiddenByUs.insert(pid)
-            } else if !app.isHidden {
-                // Shown again from outside (⌘Tab, the Dock) before its workspace: park its windows.
-                continue
-            }
-            out.insert(pid)
-        }
-        return out
-    }
-
     private func area(of screen: ScreenInfo) -> CGRect {
         screen.visible.insetBy(dx: config.padding, dy: config.padding)
     }
@@ -580,10 +535,7 @@ final class WindowManager {
         ignoreFocusChanges()
         AX.focus(window.element, pid: window.pid)
         let screens = ScreenInfo.current()
-        // A window of an app just unhidden is not in the window list yet: ask it.
-        if let frame = onScreenBounds()[window.id] ?? AX.position(window.element).flatMap({ origin in
-            AX.size(window.element).map { CGRect(origin: origin, size: $0) }
-        }), !screens.isEmpty {
+        if let frame = onScreenBounds()[window.id], !screens.isEmpty {
             let screen = screens[screens.index(for: frame)]
             activeDisplay = screen.id
             bringPointer(to: frame.center, on: screen, screens)
@@ -768,9 +720,7 @@ final class WindowManager {
     /// Focuses the workspace: its last focused window, or with no windows, its display.
     private func focusWindow(in workspace: Int) {
         let bounds = onScreenBounds()
-        let candidates = order.compactMap { windows[$0] }.filter {
-            $0.workspace == workspace && (bounds[$0.id] != nil || justUnhidden.contains($0.pid))
-        }
+        let candidates = order.compactMap { windows[$0] }.filter { $0.workspace == workspace && bounds[$0.id] != nil }
         if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
             focus(target)
         } else if let id = display(showing: workspace), case let screens = ScreenInfo.current(),
