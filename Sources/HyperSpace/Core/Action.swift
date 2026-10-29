@@ -15,12 +15,10 @@ enum Action {
     case swap(Direction)
     case swapMaster
     case setLayout(LayoutKind)
-    case nextLayout
     case adjustRatio(Double)
     case toggleFloat
     case toggleTiling
     case retile
-    case moveToNextDisplay
     case focusNextDisplay
     /// The focused workspace, windows and all, moves to the next display and stays there.
     case moveWorkspaceToNextDisplay
@@ -75,7 +73,6 @@ enum Action {
         case "focus": return .focus(try direction())
         case "swap": return arg.lowercased() == "master" ? .swapMaster : .swap(try direction())
         case "layout":
-            if arg.lowercased() == "next" { return .nextLayout }
             guard let kind = LayoutKind(rawValue: arg.lowercased()) else { throw ConfigError("unknown layout in '\(text)'") }
             return .setLayout(kind)
         case "ratio":
@@ -84,7 +81,6 @@ enum Action {
         case "float": return .toggleFloat
         case "tiling": return .toggleTiling
         case "retile": return .retile
-        case "display": return .moveToNextDisplay
         case "focus-display": return .focusNextDisplay
         case "move-workspace-to-display": return .moveWorkspaceToNextDisplay
         case "workspace":

@@ -15,12 +15,10 @@ enum DefaultConfig {
           { "keys": "hyper+up", "action": "swap up" },
           { "keys": "hyper+right", "action": "swap right" },
           { "keys": "hyper+return", "action": "swap master" },
-          { "keys": "hyper+space", "action": "layout next" },
           { "keys": "hyper+f", "action": "float" },
           { "keys": "hyper+minus", "action": "ratio -0.05" },
           { "keys": "hyper+equal", "action": "ratio +0.05" },
           { "keys": "hyper+r", "action": "retile" },
-          { "keys": "hyper+n", "action": "display next" },
           { "keys": "hyper+t", "action": "launch Terminal" },
           { "keys": "hyper+escape", "action": "reload" }
         ]

@@ -1261,13 +1261,6 @@ final class WindowManager {
         updateActiveScreen { $0.layout = kind }
     }
 
-    func nextLayout() {
-        updateActiveScreen { state in
-            let all = LayoutKind.allCases
-            state.layout = all[(all.firstIndex(of: state.layout)! + 1) % all.count]
-        }
-    }
-
     func adjustRatio(_ delta: CGFloat) {
         updateActiveScreen { $0.ratio = min(0.9, max(0.1, $0.ratio + delta)) }
     }
@@ -1343,19 +1336,6 @@ final class WindowManager {
         window.userOverride = true
         if window.isFloating { focus(window) }
         scheduleRetile()
-    }
-
-    /// Moves the focused window into the workspace shown on the next display.
-    func moveToNextDisplay() {
-        let screens = ScreenInfo.current()
-        guard screens.count > 1, let window = focused(), let frame = onScreenBounds()[window.id] else { return }
-        syncDisplays()
-        let next = screens[(screens.index(for: frame) + 1) % screens.count]
-        if let workspace = displayed[next.id] { window.workspace = workspace }
-        if window.isFloating || !running { setFrame(window, next.centered(frame.size)) }
-        retile()
-        focus(window)
-        notifyWorkspace()
     }
 
     /// Moves the focused workspace, windows and arrangement, to the next display, where it

@@ -41,12 +41,10 @@ final class TilingModel: ObservableObject {
         ]),
         ("Displays", [
             ("Focus other display", "focus-display"),
-            ("Move window to other display", "display next"),
             ("Move workspace to other display", "move-workspace-to-display"),
         ]),
         ("More", [
             ("Previous workspace", "workspace back-and-forth"),
-            ("Next layout", "layout next"),
             ("Toggle floating", "float"),
             ("Move window to or from the scratchpad", "move-to-scratchpad"),
         ]),

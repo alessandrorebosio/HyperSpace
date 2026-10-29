@@ -235,7 +235,7 @@ Floating (un'app senza titolo = tutte le sue finestre). Vale anche per le finest
 | `focus left\|right\|up\|down` | Sposta il focus alla finestra più vicina in quella direzione |
 | `swap left\|right\|up\|down` | Scambia la finestra con la vicina (anche tra monitor) |
 | `swap master` | Porta la finestra in posizione master |
-| `layout tall\|wide\|columns\|monocle\|next` | Cambia layout dello schermo attivo |
+| `layout tall\|wide\|columns\|monocle` | Cambia layout dello schermo attivo |
 | `ratio +0.05` / `ratio -0.05` | Ridimensiona l'area master |
 | `float` | Finestra corrente floating ↔ tiling |
 | `scratchpad <Nome App o bundle id>` | Mostra/nasconde l'app al centro sopra le altre, fuori dal tiling (la apre se serve) |
@@ -243,7 +243,6 @@ Floating (un'app senza titolo = tutte le sue finestre). Vale anche per le finest
 | `move-to-scratchpad` | Manda la finestra attiva nello scratchpad, o da lì la rimette nel tiling |
 | `tiling` | Attiva/disattiva il tiling |
 | `retile` | Ricalcola subito il layout |
-| `display next` | Sposta la finestra sul monitor successivo |
 | `focus-display` | Focus su una finestra del monitor successivo |
 | `move-workspace-to-display` | Sposta il workspace attivo (finestre e disposizione) sul monitor successivo |
 | `workspace <n>` / `workspace back-and-forth` | Mostra il workspace n / torna al precedente |
