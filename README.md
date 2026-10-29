@@ -185,6 +185,7 @@ sono di HyperSpace. Ogni workspace ha il suo monitor: il **1 sul monitor princip
 menu), il **2 sul secondo**, il 3 sul terzo e così via; tutti gli altri stanno sul principale. Ogni monitor mostra
 uno dei suoi workspace: **Caps+N** mostra N sul suo monitor e ci porta il focus, senza toccare gli altri monitor.
 Un'app che apri resta nel workspace da cui l'hai aperta: se cambi workspace mentre sta ancora caricando, la sua finestra compare lì (nascosta) e il focus resta dove sei.
+Una finestra affiancata che sposti o ridimensioni a mano torna al suo posto quando rilasci il mouse (per spostarla davvero usa le scorciatoie o il trascinamento con modificatore).
 Quando il focus passa a un altro monitor il puntatore lo segue (al centro della finestra, o del monitor se il workspace è vuoto; `"mouseFollowsFocus": false` lo disattiva). Spostare una finestra in un altro workspace sposta solo quella. **Caps+⌘+Tab** (`move-workspace-to-display`) sposta invece l'intero workspace sull'altro monitor, che da lì in poi è il suo: il workspace che quel monitor mostrava resta intatto (nascosto) e il monitor lasciato torna all'ultimo dei suoi workspace. Le finestre dei workspace non mostrati vengono
 parcheggiate nell'angolo in basso a destra del loro schermo (come fa AeroSpace). Se un monitor viene staccato, i
 suoi workspace passano sul principale e tornano al loro posto quando lo riattacchi.

@@ -26,10 +26,15 @@ final class AppWatcher {
         let notifications = [kAXWindowCreatedNotification, kAXWindowMiniaturizedNotification,
                              kAXWindowDeminiaturizedNotification, kAXFocusedWindowChangedNotification]
         var registered = false
-        for name in notifications where AXObserverAddNotification(observer, element, name as CFString, refcon) == .success {
-            registered = true
+        var failure = AXError.success
+        for name in notifications {
+            let result = AXObserverAddNotification(observer, element, name as CFString, refcon)
+            if result == .success { registered = true } else { failure = result }
         }
-        guard registered else { return nil }
+        guard registered else {
+            log.debug("watch \(app.bundleIdentifier ?? "?", privacy: .public) failed: AX error \(failure.rawValue)")
+            return nil
+        }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 
@@ -37,8 +42,11 @@ final class AppWatcher {
         AX.elements(element, kAXWindowsAttribute)
     }
 
-    func watchDestroyed(_ window: AXUIElement) {
-        AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
+    /// Per-window notifications: closed, and moved or resized (by hand, to snap it back).
+    func watch(_ window: AXUIElement) {
+        for name in [kAXUIElementDestroyedNotification, kAXMovedNotification, kAXResizedNotification] {
+            AXObserverAddNotification(observer, window, name as CFString, refcon)
+        }
     }
 
     func invalidate() {

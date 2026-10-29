@@ -14,6 +14,8 @@ final class ManagedWindow {
     var hiddenFrame: CGRect?
     /// Share of the split it is in (stack or columns), changed by resizing.
     var weight: CGFloat = 1
+    /// When we last moved it: the moves this causes are ours, not the user's.
+    var movedByUs = Date.distantPast
 
     init(id: CGWindowID, element: AXUIElement, pid: pid_t, bundleID: String?) {
         self.id = id
@@ -109,6 +111,7 @@ final class WindowManager {
     /// Workspaces apps were opened from, for the windows they show while loading.
     private var launches = LaunchTracker()
     private var focusUpdateScheduled = false
+    private var snapBackScheduled = false
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -200,6 +203,11 @@ final class WindowManager {
         for app in NSWorkspace.shared.runningApplications { addApp(app) }
         rescueStrandedWindows()
         scheduleRetile()
+        // Right after a login or a WindowServer restart, or on a busy Mac, apps can answer AX
+        // with placeholder elements: look again once they have settled.
+        for delay in [2.0, 6.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.rescan() }
+        }
     }
 
     private func stop() {
@@ -241,6 +249,7 @@ final class WindowManager {
         guard running, app.activationPolicy == .regular, pid != getpid(), apps[pid] == nil, !app.isTerminated else { return }
         if let watcher = AppWatcher(app: app, refcon: refcon) {
             apps[pid] = watcher
+            log.debug("watch \(watcher.bundleID ?? "?", privacy: .public): \(watcher.windows.count) window(s)")
             if discover(watcher) { scheduleRetile() }
         } else if attempt < 20 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -266,7 +275,13 @@ final class WindowManager {
     /// Starts managing a window; nil when it is already known or not a standard window.
     @discardableResult
     private func track(_ element: AXUIElement, in watcher: AppWatcher) -> ManagedWindow? {
-        guard let id = AX.windowID(element), windows[id] == nil else { return nil }
+        guard let id = AX.windowID(element) else {
+            // The Finder desktop (a scroll area) is listed among its windows: not worth a line.
+            guard AX.string(element, kAXRoleAttribute) != kAXScrollAreaRole else { return nil }
+            log.debug("no window id for a window of \(watcher.bundleID ?? "?", privacy: .public) (role \(AX.string(element, kAXRoleAttribute) ?? "-", privacy: .public))")
+            return nil
+        }
+        guard windows[id] == nil else { return nil }
         guard AX.isStandardWindow(element) else {
             log.debug("skip window of \(watcher.bundleID ?? "?", privacy: .public): role \(AX.string(element, kAXRoleAttribute) ?? "-", privacy: .public) subrole \(AX.string(element, kAXSubroleAttribute) ?? "-", privacy: .public)")
             return nil
@@ -287,7 +302,7 @@ final class WindowManager {
         }
         windows[id] = window
         order.append(id)
-        watcher.watchDestroyed(element)
+        watcher.watch(element)
         log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)")
         return window
     }
@@ -339,6 +354,14 @@ final class WindowManager {
             guard let id = windows.first(where: { $0.value.pid == pid && CFEqual($0.value.element, element) })?.key else { return }
             untrack(id)
             scheduleRetile()
+        case kAXMovedNotification, kAXResizedNotification:
+            // Moved or resized by hand: back to its tile once the mouse is released. Our own
+            // moves land on the target frame, so the retile has nothing to do for them.
+            guard let window = windows.values.first(where: { $0.pid == pid && CFEqual($0.element, element) }),
+                  !window.isFloating, window.hiddenFrame == nil,
+                  // A window that cannot take its tile (a minimum size) must not loop.
+                  Date().timeIntervalSince(window.movedByUs) > 0.5 else { return }
+            scheduleSnapBack()
         case kAXFocusedWindowChangedNotification:
             scheduleFocusUpdate()
         default:
@@ -369,6 +392,21 @@ final class WindowManager {
             followFocus(window)
             notifyWorkspace(focused: window)
         }
+    }
+
+    /// Retiles once no mouse button is held (the user may still be dragging the window).
+    private func scheduleSnapBack() {
+        guard running, !snapBackScheduled else { return }
+        snapBackScheduled = true
+        func check() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self else { return }
+                if NSEvent.pressedMouseButtons != 0 { return check() }
+                snapBackScheduled = false
+                scheduleRetile()
+            }
+        }
+        check()
     }
 
     func retileNow() {
@@ -464,6 +502,7 @@ final class WindowManager {
     private func setFrame(_ window: ManagedWindow, _ frame: CGRect) {
         // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
         // animate every AX resize; switch it off while we move the window.
+        window.movedByUs = Date()
         let app = apps[window.pid]?.element
         let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
         if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", false) }
