@@ -4,7 +4,10 @@ import SwiftUI
 /// Which page of the settings window is shown.
 final class SettingsNavigation: ObservableObject {
     enum Page: Hashable {
-        case keyboard, mouse, tiling, settings
+        case keyboard, mouse, tiling, workspaces, windowRules, shortcuts, settings
+
+        /// Pages whose features stay off without the Accessibility permission.
+        var needsPermission: Bool { self != .keyboard && self != .settings }
     }
 
     @Published var page: Page? = .keyboard {
@@ -19,27 +22,41 @@ struct SettingsRoot: View {
     let keyboard: RemapModel
     let mouse: MouseModel
     let tiling: TilingModel
-    let general: GeneralModel
+    @ObservedObject var general: GeneralModel
 
     var body: some View {
         NavigationSplitView {
             List(selection: $navigation.page) {
-                Label("Keyboard", systemImage: "keyboard").tag(SettingsNavigation.Page.keyboard)
-                Label("Mouse", systemImage: "computermouse").tag(SettingsNavigation.Page.mouse)
-                Label("Tiling", systemImage: "rectangle.split.3x1").tag(SettingsNavigation.Page.tiling)
+                Section("Input") {
+                    Label("Keyboard", systemImage: "keyboard").tag(SettingsNavigation.Page.keyboard)
+                    Label("Mouse", systemImage: "computermouse").tag(SettingsNavigation.Page.mouse)
+                }
+                Section("Windows") {
+                    Label("Tiling", systemImage: "rectangle.split.3x1").tag(SettingsNavigation.Page.tiling)
+                    Label("Workspaces", systemImage: "square.stack.3d.up").tag(SettingsNavigation.Page.workspaces)
+                    Label("Window Rules", systemImage: "macwindow.on.rectangle").tag(SettingsNavigation.Page.windowRules)
+                    Label("Shortcuts", systemImage: "command").tag(SettingsNavigation.Page.shortcuts)
+                }
                 Section {
                     Label("Settings", systemImage: "gearshape").tag(SettingsNavigation.Page.settings)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
             .modifier(NoSidebarToggle())
         } detail: {
-            switch navigation.page ?? .keyboard {
-            case .keyboard: RemapView(model: keyboard).navigationTitle("Keyboard")
-            case .mouse: MouseView(model: mouse).navigationTitle("Mouse")
-            case .tiling: TilingView(model: tiling).navigationTitle("Tiling")
-            case .settings: GeneralView(model: general).navigationTitle("Settings")
+            let page = navigation.page ?? .keyboard
+            Group {
+                switch page {
+                case .keyboard: RemapView(model: keyboard).navigationTitle("Keyboard")
+                case .mouse: MouseView(model: mouse).navigationTitle("Mouse")
+                case .tiling: TilingView(model: tiling).navigationTitle("Tiling")
+                case .workspaces: WorkspacesView(model: tiling).navigationTitle("Workspaces")
+                case .windowRules: WindowRulesView(model: tiling).navigationTitle("Window Rules")
+                case .shortcuts: TilingShortcutsView(model: tiling).navigationTitle("Shortcuts")
+                case .settings: GeneralView(model: general).navigationTitle("Settings")
+                }
             }
+            .environment(\.permissionMissing, page.needsPermission && !general.accessibilityGranted)
         }
         .frame(minWidth: 680, minHeight: 420)
         .modifier(GlassToolbar())
@@ -70,7 +87,7 @@ private struct NoSidebarToggle: ViewModifier {
     }
 }
 
-/// Owns the settings window: sidebar with Keyboard, Mouse and Settings. It is built
+/// Owns the settings window: sidebar with the input, window and app pages. It is built
 /// on demand and torn down on close, so it costs nothing while it is not open.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let remapper: KeyboardRemapper
@@ -125,6 +142,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.mouse = mouse
             self.tiling = tiling
         }
+        // In the Dock and ⌘Tab while the window is open, like a regular app.
+        NSApp.setActivationPolicy(.regular)
         if #available(macOS 14, *) {
             NSApp.activate()
         } else {
@@ -142,5 +161,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         keyboard = nil
         mouse = nil
         tiling = nil
+        NSApp.setActivationPolicy(.accessory)
     }
 }

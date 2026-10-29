@@ -10,24 +10,7 @@ struct RemapView: View {
             } header: {
                 Text("Keyboard Lock")
             } footer: {
-                Text("Every key is ignored, media and brightness keys included, until you unlock it with the mouse — here or from the menu bar — or the chosen time is up. Handy to clean the keyboard. Quitting HyperSpace unlocks it.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-
-            Section {
-                if model.keyboards.isEmpty {
-                    Text("No keyboards found").foregroundStyle(.secondary)
-                }
-                ForEach(model.keyboards, id: \.self) { keyboard in
-                    LabeledContent {
-                        Text(keyboard.builtIn ? "Built-in" : "External").foregroundStyle(.secondary)
-                    } label: {
-                        Label(keyboard.product.isEmpty ? "Keyboard" : keyboard.product,
-                              systemImage: keyboard.builtIn ? "laptopcomputer" : "keyboard")
-                    }
-                }
-            } header: {
-                Text("Connected Keyboards")
+                SectionFooter("Every key is ignored, media and brightness keys included, until you unlock it with the mouse — here or from the menu bar — or the chosen time is up. Handy to clean the keyboard. Quitting HyperSpace unlocks it.")
             }
 
             Section {
@@ -40,8 +23,7 @@ struct RemapView: View {
                 Button {
                     model.addRule()
                 } label: {
-                    Label("Add Remap", systemImage: "plus.circle.fill")
-                        .foregroundStyle(Color.accentColor)
+                    AddLabel(title: "Add Remap")
                 }
                 .buttonStyle(.borderless)
             } header: {
@@ -52,6 +34,7 @@ struct RemapView: View {
                     error: model.saveError
                 )
             }
+
         }
         .formStyle(.grouped)
     }
@@ -103,11 +86,11 @@ private struct RuleRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            KeyCap(text: sourceText, width: 150, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
+            KeyCap(text: sourceText, width: 130, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
                 toggle(.from(rule.id))
             }
             Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-            KeyCap(text: targetText, width: 150, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
+            KeyCap(text: targetText, width: 130, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
                 toggle(.to(rule.id))
             }
             ChoiceMenu(help: "Choose from all keys") {

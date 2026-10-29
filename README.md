@@ -63,9 +63,11 @@ Con il tiling disattivato l'icona nella barra dei menu non c'è (resta solo se c
 tastiera è bloccata): per aprire le impostazioni fai doppio clic sull'app, che funziona anche con l'icona visibile.
 Aperta a mano con il tiling spento mostra subito le impostazioni; all'avvio con il Mac no.
 
-Il menu nella barra in alto elenca i workspace che hanno app aperte, ciascuno con accanto le icone delle sue app (✓ su quelli visibili, titoli delle finestre nel tooltip): un clic mostra il workspace. Sotto, **Lock Keyboard** (che diventa **Unlock Keyboard**), **Copy Debug Info** (copia negli appunti lo stato di monitor, workspace e finestre, con titoli abbreviati, e gli ultimi problemi con le app: da incollare quando qualcosa non va), **Settings…** (⌘,) e **Quit**. La finestra segue lo stile Liquid Glass, si ridimensiona (minimo 680×420, così entra in una colonna) e ha una barra laterale:
-**Keyboard**, **Mouse**, **Tiling** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
-stato del permesso di Accessibilità, Quit).
+Il menu nella barra in alto elenca i workspace che hanno app aperte, ciascuno con accanto le icone delle sue app (✓ su quelli visibili, titoli delle finestre nel tooltip): un clic mostra il workspace. Sotto, **Layout** (sottomenu con i layout, ✓ su quello del monitor col focus; un clic lo cambia), **Lock Keyboard** (che diventa **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copia negli appunti lo stato di monitor, workspace e finestre, con titoli abbreviati, e gli ultimi problemi con le app: da incollare quando qualcosa non va) e **Quit**. Se c'è un problema compare in cima: un clic apre il permesso di Accessibilità o, per un errore di config, il file. Finché la finestra è aperta HyperSpace compare nel Dock e in ⌘Tab, con la sua barra dei menu (⌘W la chiude); chiusa, torna solo nella barra in alto. La finestra segue lo stile Liquid Glass, si ridimensiona (minimo 680×420, così entra in una colonna) e ha una barra laterale:
+**Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) e
+**Settings** (versione, avvio al login, file di config con Edit/Mostra nel Finder, stato del permesso di Accessibilità, Quit).
+Senza il permesso di Accessibilità le pagine che ne hanno bisogno mostrano in cima un avviso con **Open System Settings…**
+(sparisce da solo appena concesso); con il tiling spento le pagine Windows mostrano **Turn On**.
 
 ### Keyboard
 **Blocco tastiera.** In cima alla pagina Keyboard (o dal menu nella barra, **Lock Keyboard**) puoi bloccare la
@@ -82,7 +84,7 @@ non si possono bloccare.
 
 #### Rimappature (`remap`)
 
-Il modo più comodo è **Settings… → Keyboard** (menu bar, ⌘,; la finestra ha una barra laterale con Keyboard, Mouse e Settings): clicchi il campo, premi il tasto
+Il modo più comodo è **Settings… → Keyboard** (menu bar, ⌘,): clicchi il campo, premi il tasto
 fisico, poi scegli la destinazione con **Press Keys…** premendo quello che vuoi ottenere: un tasto,
 una combinazione con tasto (tieni ⌘ e premi Spazio → ⌘ Space) o solo modificatori (tieni ⇧⌃⌥ insieme e
 rilascia → ⌃⌥⇧). In alternativa c'è l'elenco di tutti i tasti. Infine scegli su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
@@ -167,8 +169,10 @@ oppure **Disable Button**. Azioni pronte:
 
 ### Tiling
 
-Dalla pagina **Tiling**: attivazione, layout, spazi; **workspace** (nome, scorciatoia per mostrarlo,
-scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, spostamento, ridimensionamento.
+Dalla pagina **Tiling**: attivazione, layout (scelto da anteprime che mostrano spazi e margini), spazi;
+da **Workspaces** i workspace (nome, scorciatoia per mostrarlo, scorciatoia per spostarci la finestra attiva) e le app
+assegnate; da **Window Rules** app e finestre fluttuanti e app scratchpad; da **Shortcuts** le scorciatoie per focus,
+spostamento, ridimensionamento.
 
 ```json
 "tiling": {
@@ -211,12 +215,12 @@ la prima volta apre l'app (se non è aperta) e la mostra al centro del monitor a
 fuori dal tiling; premuta di nuovo la nasconde, poi la rimostra. Resta visibile anche cambiando workspace finché
 non la nascondi, e se ci arrivi con ⌘Tab si mostra da sola. `move-to-scratchpad` (es. `hyper+x`) manda la finestra
 attiva nello scratchpad o la rimette nel tiling del workspace corrente. La dimensione è una frazione del monitor:
-`"scratchpad": { "width": 0.6, "height": 0.7 }` (predefinita). Le app si gestiscono anche da Settings → Tiling →
+`"scratchpad": { "width": 0.6, "height": 0.7 }` (predefinita). Le app si gestiscono anche da Settings → Window Rules →
 Scratchpad Apps. Lo scratchpad viene ricordato tra i riavvii.
 
 `floating` elenca i bundle ID da non affiancare. `floatingWindows` fa fluttuare solo alcune finestre, in base al
-titolo (contiene il testo, maiuscole indifferenti), di un'app o di tutte; si gestisce anche da Settings → Tiling →
-Floating Windows. Vale anche per le finestre che prendono il titolo un attimo dopo l'apertura:
+titolo (contiene il testo, maiuscole indifferenti), di un'app o di tutte; si gestisce anche da Settings → Window Rules →
+Floating (un'app senza titolo = tutte le sue finestre). Vale anche per le finestre che prendono il titolo un attimo dopo l'apertura:
 
 ```json
 "floatingWindows": [
@@ -260,7 +264,7 @@ Floating Windows. Vale anche per le finestre che prendono il titolo un attimo do
 ```
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permesso), StatusMenu (menu bar)
-├── Settings/   finestra con barra laterale Keyboard/Mouse/Settings (SwiftUI, creata solo quando aperta)
+├── Settings/   finestra con barra laterale Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, Settings (SwiftUI, creata solo quando aperta)
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
 ├── Mouse/      DragController (ponte tap → window manager)

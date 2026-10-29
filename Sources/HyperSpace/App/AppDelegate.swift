@@ -17,8 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remapper: remapper, eventTap: eventTap,
         actions: GeneralModel.Actions(
             openConfig: { [unowned self] in store.openInEditor() },
-            reloadConfig: { [unowned self] in store.reload() },
-            problem: { [unowned self] in statusMenu.problem }
+            problem: { [unowned self] in statusMenu.problem?.text }
         )
     )
     private var statusMenu: StatusMenu!
@@ -45,11 +44,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.make(settings: #selector(showSettings(_:)), target: self)
         statusMenu = StatusMenu(host: StatusMenu.Host(
             openSettings: { [unowned self] in settingsWindow.show() },
+            openConfig: { [unowned self] in store.openInEditor() },
             workspaces: { [unowned self] in windowManager.summaries() },
             showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
             focusWindow: { [unowned self] in windowManager.focusWindow($0) },
+            layout: { [unowned self] in windowManager.activeLayout },
+            setLayout: { [unowned self] in windowManager.setLayout($0) },
             setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) },
             keyboardUnlocksAt: { [unowned self] in eventTap.keyboardUnlocksAt },
             debugInfo: { [unowned self] in debugInfo() }
@@ -70,6 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.start()
     }
 
+    @objc private func showSettings(_ sender: Any?) {
+        settingsWindow.show()
+    }
+
     private func debugInfo() -> String {
         let bundle = Bundle.main
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -80,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "Keyboard: \(eventTap.isKeyboardLocked ? "locked" : "active"); keyboards: " +
                 remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
         ]
-        if let problem = statusMenu.problem { lines.append("Problem: \(problem)") }
+        if let problem = statusMenu.problem { lines.append("Problem: \(problem.text)") }
         lines.append(windowManager.debugReport())
         return lines.joined(separator: "\n")
     }
@@ -93,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Accessibility is granted outside the app; poll cheaply until it shows up.
     private func waitForPermission() {
-        statusMenu.problem = "Accessibility not granted to this build (click to open Settings)"
+        statusMenu.problem = .permission
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
             guard let self, Permissions.isTrusted(prompt: false) else { return }
             timer.invalidate()
@@ -114,13 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             firstConfig = false
             remapper.apply(config.remaps)
             if config.tap.suppressCapsLock { CapsLock.turnOff() }
-            if trusted {
-                applyTrusted(config)
-                statusMenu.problem = nil
-            }
+            if trusted { applyTrusted(config) }
+            // A missing permission stays reported until it is granted.
+            if trusted || statusMenu.problem?.isConfig == true { statusMenu.problem = nil }
             log.info("config applied")
         case .failure(let error):
-            statusMenu.problem = "Config error: \(error.localizedDescription)"
+            statusMenu.problem = .config(error.localizedDescription)
             log.error("config error: \(error.localizedDescription, privacy: .public)")
         }
     }

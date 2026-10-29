@@ -6,7 +6,6 @@ import SwiftUI
 final class GeneralModel: ObservableObject {
     struct Actions {
         var openConfig: () -> Void
-        var reloadConfig: () -> Void
         /// The current problem shown in the menu bar (config error, missing permission).
         var problem: () -> String?
     }
@@ -17,10 +16,20 @@ final class GeneralModel: ObservableObject {
     @Published private(set) var status: (text: String, ok: Bool)?
 
     let actions: Actions
+    private var activation: Any?
 
     init(actions: Actions) {
         self.actions = actions
         refresh()
+        // Back from System Settings: the permission may have just been granted.
+        activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                                            object: nil, queue: .main) { [weak self] _ in
+            self?.accessibilityGranted = Permissions.isTrusted(prompt: false)
+        }
+    }
+
+    deinit {
+        if let activation { NotificationCenter.default.removeObserver(activation) }
     }
 
     func refresh() {
@@ -42,12 +51,6 @@ final class GeneralModel: ObservableObject {
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
-    func reload() {
-        actions.reloadConfig()
-        // The reload is synchronous; show its outcome.
-        status = actions.problem().map { ($0, false) } ?? ("Config reloaded", true)
-    }
-
     var configPath: String {
         (ConfigStore.url.path as NSString).abbreviatingWithTildeInPath
     }
@@ -62,6 +65,21 @@ struct GeneralView: View {
 
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 14) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 48, height: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("HyperSpace").font(.title3.weight(.semibold))
+                        Text("Version \(model.version)").font(.callout).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Quit HyperSpace", role: .destructive) { NSApp.terminate(nil) }
+                }
+                .padding(.vertical, 4)
+            }
+
             Section {
                 Toggle(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) })) {
                     Text("Launch at Login")
@@ -78,7 +96,6 @@ struct GeneralView: View {
                 }
                 HStack {
                     Button("Edit Config…") { model.actions.openConfig() }
-                    Button("Reload Config") { model.reload() }
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.url]) }
                     Spacer()
                 }
@@ -89,8 +106,7 @@ struct GeneralView: View {
             } header: {
                 Text("Configuration")
             } footer: {
-                Text("The file is watched: changes made here or saved in an editor apply automatically. Use Reload if a change did not apply.")
-                    .font(.caption).foregroundStyle(.secondary)
+                SectionFooter("The file is watched: changes made here or saved in an editor apply as soon as they are saved.")
             }
 
             Section {
@@ -104,16 +120,7 @@ struct GeneralView: View {
             } header: {
                 Text("Permission")
             } footer: {
-                Text("Key remapping works without it; shortcuts, mouse buttons and window management need it.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
-                HStack {
-                    Text("HyperSpace \(model.version)").foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Quit HyperSpace", role: .destructive) { NSApp.terminate(nil) }
-                }
+                SectionFooter("Key remapping works without it; shortcuts, mouse buttons and window management need it.")
             }
         }
         .formStyle(.grouped)

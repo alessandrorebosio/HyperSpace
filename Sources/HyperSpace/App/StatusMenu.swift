@@ -4,9 +4,13 @@ import AppKit
 final class StatusMenu: NSObject, NSMenuDelegate {
     struct Host {
         var openSettings: () -> Void
+        var openConfig: () -> Void
         var workspaces: () -> [WorkspaceSummary]
         var showWorkspace: (Int) -> Void
         var focusWindow: (CGWindowID) -> Void
+        /// Layout of the focused display, nil while tiling is off.
+        var layout: () -> LayoutKind?
+        var setLayout: (LayoutKind) -> Void
         var setKeyboardLocked: (Bool) -> Void
         /// When a locked keyboard unlocks by itself.
         var keyboardUnlocksAt: () -> Date?
@@ -19,8 +23,25 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         didSet { updateIcon() }
     }
 
-    /// Shown at the top of the menu (missing permission, config error).
-    var problem: String? {
+    /// Something that keeps HyperSpace from working fully, shown at the top of the menu.
+    enum Problem: Equatable {
+        case permission
+        case config(String)
+
+        var text: String {
+            switch self {
+            case .permission: return "Accessibility not granted to this build"
+            case .config(let message): return "Config error: \(message)"
+            }
+        }
+
+        var isConfig: Bool {
+            if case .config = self { return true }
+            return false
+        }
+    }
+
+    var problem: Problem? {
         didSet { updateIcon() }
     }
 
@@ -85,35 +106,86 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        if let problem {
-            menu.addItem(ClosureMenuItem("⚠︎ \(problem)") { Permissions.openSettings() })
-            menu.addItem(.separator())
-        }
+        if let problem { addProblem(problem, to: menu) }
 
         addWorkspaces(to: menu)
+        addLayouts(to: menu)
 
         // Lock and Unlock share one place, so the mouse finds Unlock where it clicked Lock.
         let locked = keyboardLocked
         let left = locked ? host.keyboardUnlocksAt().map { " (\(KeyboardLock.remaining(until: $0)))" } ?? "" : ""
-        menu.addItem(ClosureMenuItem(locked ? "Unlock Keyboard" + left : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) })
-        menu.addItem(ClosureMenuItem("Copy Debug Info") { [host] in
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(host.debugInfo(), forType: .string)
-        })
+        let lock = ClosureMenuItem(locked ? "Unlock Keyboard" + left : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) }
+        lock.image = Self.symbol(locked ? "lock.open" : "lock")
+        menu.addItem(lock)
+        menu.addItem(.separator())
+
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
+        settings.image = Self.symbol("gearshape")
         menu.addItem(settings)
+        let debug = ClosureMenuItem("Copy Debug Info") { [host] in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(host.debugInfo(), forType: .string)
+        }
+        debug.image = Self.symbol("doc.on.doc")
+        debug.toolTip = "Displays, workspaces and windows, to paste when something goes wrong"
+        menu.addItem(debug)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit HyperSpace", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let quit = NSMenuItem(title: "Quit HyperSpace", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.image = Self.symbol("power")
+        menu.addItem(quit)
+    }
+
+    private static func symbol(_ name: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        image?.isTemplate = true
+        return image
     }
 }
 
 extension StatusMenu {
+    /// The problem and how to fix it: a click opens the Accessibility settings or the config file.
+    private func addProblem(_ problem: Problem, to menu: NSMenu) {
+        let fix: String
+        let item: ClosureMenuItem
+        switch problem {
+        case .permission:
+            fix = "Click to allow HyperSpace in System Settings"
+            item = ClosureMenuItem(problem.text) { Permissions.openSettings() }
+        case .config(let message):
+            fix = "Click to edit the file. The last valid config stays active."
+            item = ClosureMenuItem(problem.text) { [host] in host.openConfig() }
+            item.toolTip = message
+        }
+        let image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Problem")
+        item.image = image?.withSymbolConfiguration(.init(paletteColors: [.systemOrange]))
+        if #available(macOS 14.4, *) { item.subtitle = fix } else { item.toolTip = fix }
+        menu.addItem(item)
+        menu.addItem(.separator())
+    }
+
+    /// The layouts, with a checkmark on the one of the focused display.
+    private func addLayouts(to menu: NSMenu) {
+        guard let current = host.layout() else { return }
+        let submenu = NSMenu()
+        for kind in LayoutKind.allCases {
+            let option = ClosureMenuItem(kind.rawValue.capitalized) { [host] in host.setLayout(kind) }
+            option.state = kind == current ? .on : .off
+            submenu.addItem(option)
+        }
+        let item = NSMenuItem(title: "Layout", action: nil, keyEquivalent: "")
+        item.image = Self.symbol("rectangle.split.3x1")
+        item.submenu = submenu
+        menu.addItem(item)
+        menu.addItem(.separator())
+    }
+
     /// Workspaces that have open windows, one per line: name, then the icons of their
     /// apps. A checkmark marks the ones on screen; a click shows the workspace.
     private func addWorkspaces(to menu: NSMenu) {
         let workspaces = host.workspaces().filter { !$0.windows.isEmpty }
         guard !workspaces.isEmpty else { return }
+        if #available(macOS 14, *) { menu.addItem(.sectionHeader(title: "Workspaces")) }
         let font = NSFont.menuFont(ofSize: 0)
         let nameWidth = workspaces.map { ($0.name as NSString).size(withAttributes: [.font: font.bold]).width }.max() ?? 0
         let tabs = NSMutableParagraphStyle()

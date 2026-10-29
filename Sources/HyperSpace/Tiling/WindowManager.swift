@@ -1229,6 +1229,12 @@ final class WindowManager {
         order.swapAt(i, j)
     }
 
+    /// Layout of the display with the focus, for the menu; nil while tiling is off.
+    var activeLayout: LayoutKind? {
+        guard running, config.enabled, let id = focusedScreen()?.id else { return nil }
+        return state(for: id).layout
+    }
+
     func setLayout(_ kind: LayoutKind) {
         updateActiveScreen { $0.layout = kind }
     }

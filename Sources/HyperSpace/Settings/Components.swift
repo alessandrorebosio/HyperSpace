@@ -35,7 +35,7 @@ final class LocalEventMonitor {
 struct KeyCap: View {
     let text: String
     var symbol: String?
-    /// Fixed width keeps arrows and caps aligned from row to row.
+    /// Fixed width, padding included: keeps arrows and caps aligned from row to row.
     var width: CGFloat?
     var placeholder = false
     var active = false
@@ -51,7 +51,7 @@ struct KeyCap: View {
             .foregroundStyle(active ? Color.accentColor : (placeholder ? Color.secondary : Color.primary))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .frame(width: width.map { $0 - 20 })
+            .frame(width: width)
             .frame(minWidth: 36)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -85,11 +85,15 @@ struct ChoiceMenu<Content: View>: View {
 }
 
 struct RemoveButton: View {
+    /// Fixed, so a header row can leave the same room for it.
+    static let width: CGFloat = 20
+
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                .frame(width: Self.width)
         }
         .buttonStyle(.borderless)
         .help("Remove")
@@ -120,5 +124,84 @@ struct SettingsFooter: View {
             }
         }
         .font(.caption)
+    }
+}
+
+/// A notice at the top of a page: what is wrong and the one button that fixes it.
+struct NoticeRow: View {
+    let symbol: String
+    let color: Color
+    let title: String
+    let detail: String
+    let button: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(color)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Button(button, action: action)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct PermissionMissingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True on pages whose features need the Accessibility permission, while it is missing.
+    var permissionMissing: Bool {
+        get { self[PermissionMissingKey.self] }
+        set { self[PermissionMissingKey.self] = newValue }
+    }
+}
+
+/// First section of a page that needs the Accessibility permission, shown while it is missing.
+struct PermissionNotice: View {
+    @Environment(\.permissionMissing) private var missing
+
+    var body: some View {
+        if missing {
+            Section {
+                NoticeRow(symbol: "lock.shield", color: .orange, title: "Accessibility permission needed",
+                          detail: "Shortcuts, mouse buttons and window management stay off until HyperSpace is allowed in Privacy & Security → Accessibility.",
+                          button: "Open System Settings…") { Permissions.openSettings() }
+            }
+        }
+    }
+}
+
+/// A caption under a section, styled the same on every page.
+struct SectionFooter: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text).font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+/// Label of the add buttons and menus at the end of a list. Only the icon takes the accent
+/// color: a borderless menu draws its text in the primary color whatever the style.
+struct AddLabel: View {
+    let title: String
+
+    var body: some View {
+        Label {
+            Text(title).foregroundStyle(Color.primary)
+        } icon: {
+            Image(systemName: "plus.circle.fill").foregroundStyle(Color.accentColor)
+        }
     }
 }

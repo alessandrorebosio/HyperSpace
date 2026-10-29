@@ -5,6 +5,8 @@ struct MouseView: View {
 
     var body: some View {
         Form {
+            PermissionNotice()
+
             Section {
                 Toggle(isOn: Binding(get: { model.reverseScroll }, set: { model.setReverseScroll($0) })) {
                     Text("Reverse scroll wheel")
@@ -24,8 +26,7 @@ struct MouseView: View {
                 Button {
                     model.addRule()
                 } label: {
-                    Label("Add Button", systemImage: "plus.circle.fill")
-                        .foregroundStyle(Color.accentColor)
+                    AddLabel(title: "Add Button")
                 }
                 .buttonStyle(.borderless)
             } header: {
@@ -47,12 +48,12 @@ private struct MouseRuleRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            KeyCap(text: buttonText, symbol: "computermouse", width: 190, placeholder: rule.button == nil,
+            KeyCap(text: buttonText, symbol: "computermouse", width: 170, placeholder: rule.button == nil,
                    active: model.capturing == .button(rule.id)) {
                 toggle(.button(rule.id))
             }
             Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-            KeyCap(text: actionText, width: 190, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
+            KeyCap(text: actionText, width: 170, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
                 toggle(.action(rule.id))
             }
             ChoiceMenu(help: "Choose an action") {
