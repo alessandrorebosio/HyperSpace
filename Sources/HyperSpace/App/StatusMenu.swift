@@ -40,18 +40,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func updateIcon() {
         guard let button = item.button else { return }
         guard let workspaces else {
-            let symbol = keyboardLocked ? "lock.fill" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
+            let symbol = keyboardLocked ? "lock" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
             let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
             image?.isTemplate = true
             button.image = image
             button.attributedTitle = NSAttributedString()
             return
         }
-        button.image = nil
+        // A thin template lock before the workspaces, drawn like the rest of the menu bar.
+        button.image = keyboardLocked ? Self.lockImage : nil
+        button.imagePosition = .imageLeading
         let size = NSFont.systemFontSize
         let regular: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)]
         let bold: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .bold)]
-        let title = NSMutableAttributedString(string: (keyboardLocked ? "🔒 " : "") + (problem == nil ? "" : "⚠︎ "), attributes: regular)
+        let title = NSMutableAttributedString(string: (keyboardLocked ? " " : "") + (problem == nil ? "" : "⚠︎ "), attributes: regular)
         for (index, name) in workspaces.names.enumerated() {
             if index > 0 { title.append(NSAttributedString(string: " | ", attributes: regular)) }
             // With several displays the focused one is bold.
@@ -60,6 +62,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         button.attributedTitle = title
     }
+
+    private static let lockImage: NSImage? = {
+        let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize - 1, weight: .medium)
+        let image = NSImage(systemSymbolName: "lock", accessibilityDescription: "Keyboard locked")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
+    }()
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
