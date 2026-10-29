@@ -31,7 +31,8 @@ struct SettingsRoot: View {
                     Label("Settings", systemImage: "gearshape").tag(SettingsNavigation.Page.settings)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 180, max: 220)
+            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            .modifier(NoSidebarToggle())
         } detail: {
             switch navigation.page ?? .keyboard {
             case .keyboard: RemapView(model: keyboard).navigationTitle("Keyboard")
@@ -40,7 +41,32 @@ struct SettingsRoot: View {
             case .settings: GeneralView(model: general).navigationTitle("Settings")
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(minWidth: 680, minHeight: 420)
+        .modifier(GlassToolbar())
+    }
+}
+
+/// Liquid Glass: no opaque toolbar band; the content scrolls under the title bar like in
+/// the system apps.
+private struct GlassToolbar: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 14, *) {
+            content.toolbarBackground(.hidden, for: .windowToolbar)
+        } else {
+            content
+        }
+    }
+}
+
+/// The sidebar always stays: without its toggle the window needs no toolbar at all.
+/// Only takes effect on the sidebar column itself.
+private struct NoSidebarToggle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 14, *) {
+            content.toolbar(removing: .sidebarToggle)
+        } else {
+            content
+        }
     }
 }
 
@@ -77,12 +103,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let controller = NSHostingController(rootView: root)
             // Only a minimum size: the preferred size would pin the window and block resizing.
             controller.sizingOptions = [.minSize]
+            // SwiftUI owns the toolbar and the title (the page's), so the sidebar is the system
+            // Liquid Glass one and lines up with the window controls. This only takes when the
+            // controller is set on an existing window, not with NSWindow(contentViewController:).
+            if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
 
-            let window = NSWindow(contentViewController: controller)
-            window.title = "HyperSpace"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            window.toolbar = NSToolbar()
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                  backing: .buffered, defer: false)
+            window.contentViewController = controller
+            if #unavailable(macOS 14) { window.title = "HyperSpace" }
             window.toolbarStyle = .unified
+            window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.setContentSize(NSSize(width: 900, height: 640))
