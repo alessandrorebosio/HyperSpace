@@ -50,16 +50,18 @@ enum AX {
         return AXValueGetValue(value as! AXValue, .cgSize, &size) ? size : nil
     }
 
-    static func setPosition(_ element: AXUIElement, _ point: CGPoint) {
+    @discardableResult
+    static func setPosition(_ element: AXUIElement, _ point: CGPoint) -> AXError {
         var point = point
-        guard let value = AXValueCreate(.cgPoint, &point) else { return }
-        AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
+        guard let value = AXValueCreate(.cgPoint, &point) else { return .failure }
+        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
     }
 
-    static func setSize(_ element: AXUIElement, _ size: CGSize) {
+    @discardableResult
+    static func setSize(_ element: AXUIElement, _ size: CGSize) -> AXError {
         var size = size
-        guard let value = AXValueCreate(.cgSize, &size) else { return }
-        AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
+        guard let value = AXValueCreate(.cgSize, &size) else { return .failure }
+        return AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
     }
 
     static func setBool(_ element: AXUIElement, _ attribute: String, _ flag: Bool) {

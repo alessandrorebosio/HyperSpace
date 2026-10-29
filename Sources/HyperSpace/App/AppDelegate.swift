@@ -51,7 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
             focusWindow: { [unowned self] in windowManager.focusWindow($0) },
             setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) },
-            keyboardUnlocksAt: { [unowned self] in eventTap.keyboardUnlocksAt }
+            keyboardUnlocksAt: { [unowned self] in eventTap.keyboardUnlocksAt },
+            debugInfo: { [unowned self] in debugInfo() }
         ))
         NotificationCenter.default.addObserver(forName: EventTap.keyboardLockDidChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
@@ -67,6 +68,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !trusted { waitForPermission() }
         // Key remapping lives in the HID layer and needs no permission, so it starts right away.
         store.start()
+    }
+
+    private func debugInfo() -> String {
+        let bundle = Bundle.main
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        var lines = [
+            "HyperSpace \(version) — \(Date().formatted(date: .numeric, time: .standard))",
+            "macOS \(ProcessInfo.processInfo.operatingSystemVersionString), up \(Int(ProcessInfo.processInfo.systemUptime / 60)) min",
+            "Accessibility: \(Permissions.isTrusted(prompt: false) ? "granted" : "missing"), launched at login: \(launchedAtLogin)",
+            "Keyboard: \(eventTap.isKeyboardLocked ? "locked" : "active"); keyboards: " +
+                remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
+        ]
+        if let problem = statusMenu.problem { lines.append("Problem: \(problem)") }
+        lines.append(windowManager.debugReport())
+        return lines.joined(separator: "\n")
     }
 
     func applicationWillTerminate(_ notification: Notification) {

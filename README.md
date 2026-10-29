@@ -63,7 +63,7 @@ Con il tiling disattivato l'icona nella barra dei menu non c'è (resta solo se c
 tastiera è bloccata): per aprire le impostazioni fai doppio clic sull'app, che funziona anche con l'icona visibile.
 Aperta a mano con il tiling spento mostra subito le impostazioni; all'avvio con il Mac no.
 
-Il menu nella barra in alto elenca i workspace che hanno app aperte, ciascuno con accanto le icone delle sue app (✓ su quelli visibili, titoli delle finestre nel tooltip): un clic mostra il workspace. Sotto, **Lock Keyboard** (che diventa **Unlock Keyboard**), **Settings…** (⌘,) e **Quit**. La finestra segue lo stile Liquid Glass, si ridimensiona (minimo 680×420, così entra in una colonna) e ha una barra laterale:
+Il menu nella barra in alto elenca i workspace che hanno app aperte, ciascuno con accanto le icone delle sue app (✓ su quelli visibili, titoli delle finestre nel tooltip): un clic mostra il workspace. Sotto, **Lock Keyboard** (che diventa **Unlock Keyboard**), **Copy Debug Info** (copia negli appunti lo stato di monitor, workspace e finestre, con titoli abbreviati, e gli ultimi problemi con le app: da incollare quando qualcosa non va), **Settings…** (⌘,) e **Quit**. La finestra segue lo stile Liquid Glass, si ridimensiona (minimo 680×420, così entra in una colonna) e ha una barra laterale:
 **Keyboard**, **Mouse**, **Tiling** e **Settings** (avvio al login, file di config con Edit/Reload/Mostra nel Finder,
 stato del permesso di Accessibilità, Quit).
 

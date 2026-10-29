@@ -128,6 +128,8 @@ final class WindowManager {
     /// The last state written, without titles, so an unchanged state is not written again.
     private var lastSavedShape: WorkspaceState?
     private let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
+    /// The last problems talking to apps, for the debug report.
+    private var issues: [String] = []
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -306,6 +308,7 @@ final class WindowManager {
             log.debug("watch \(watcher.bundleID ?? "?", privacy: .public): \(watcher.windows.count) window(s)")
             if discover(watcher) { scheduleRetile() }
         } else if attempt < 20 {
+            if attempt == 0 || attempt == 19 { note("cannot watch \(app.bundleIdentifier ?? "?") yet (attempt \(attempt + 1))") }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.addApp(app, attempt: attempt + 1)
             }
@@ -334,6 +337,7 @@ final class WindowManager {
             // The Finder desktop (a scroll area) is listed among its windows: not worth a line.
             guard AX.string(element, kAXRoleAttribute) != kAXScrollAreaRole else { return nil }
             log.debug("no window id for a window of \(watcher.bundleID ?? "?", privacy: .public) (role \(AX.string(element, kAXRoleAttribute) ?? "-", privacy: .public))")
+            note("no window id for a window of \(watcher.bundleID ?? "?") (role \(AX.string(element, kAXRoleAttribute) ?? "-"))")
             return nil
         }
         guard windows[id] == nil else { return nil }
@@ -396,6 +400,51 @@ final class WindowManager {
                 focus(window)
             }
         }
+    }
+
+    // MARK: - Debug report
+
+    private func note(_ issue: String) {
+        let time = Date().formatted(date: .omitted, time: .standard)
+        issues.append("\(time) \(issue)")
+        if issues.count > 30 { issues.removeFirst(issues.count - 30) }
+    }
+
+    /// What the window manager knows, to paste when something goes wrong. Reads titles.
+    func debugReport() -> String {
+        var lines: [String] = []
+        lines.append("Tiling: \(running ? "running" : "stopped"), enabled \(config.enabled), layout \(config.layout.rawValue)")
+        let screens = ScreenInfo.current()
+        let focusedID = focusedScreen()?.id
+        for (i, screen) in screens.enumerated() {
+            let shown = displayed[screen.id].map { "\(name(of: $0)) (#\($0 + 1))" } ?? "none"
+            lines.append("Display \(i + 1): id \(screen.id) \(Self.describe(screen.frame)) shows \(shown)\(screen.id == focusedID ? " [focused]" : "")")
+        }
+        if !homeOverride.isEmpty {
+            lines.append("Moved workspaces: " + homeOverride.sorted { $0.key < $1.key }.map { "\(name(of: $0.key)) → display \($0.value)" }.joined(separator: ", "))
+        }
+        let bounds = onScreenBounds()
+        for workspace in 0..<workspaceCount {
+            let members = order.compactMap { windows[$0] }.filter { $0.workspace == workspace }
+            guard !members.isEmpty else { continue }
+            lines.append("Workspace \(name(of: workspace)) (#\(workspace + 1)):")
+            for window in members {
+                let title = (AX.string(window.element, kAXTitleAttribute) ?? "").prefix(40)
+                var flags: [String] = []
+                if window.isFloating { flags.append("floating") }
+                if window.hiddenFrame != nil { flags.append("parked") }
+                if bounds[window.id] == nil { flags.append("off screen") }
+                lines.append("  \(window.bundleID ?? "?") #\(window.id) “\(title)” \(bounds[window.id].map(Self.describe) ?? "-") \(flags.joined(separator: " "))")
+            }
+        }
+        lines.append("Watched apps: " + apps.values.map { $0.bundleID ?? "\($0.pid)" }.sorted().joined(separator: ", "))
+        lines.append("Recent issues:" + (issues.isEmpty ? " none" : ""))
+        lines += issues.map { "  " + $0 }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func describe(_ rect: CGRect) -> String {
+        "(\(Int(rect.minX)),\(Int(rect.minY)) \(Int(rect.width))×\(Int(rect.height)))"
     }
 
     // MARK: - Saved state
@@ -676,6 +725,7 @@ final class WindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
             log.debug("focus did not take for window \(window.id) (\(window.bundleID ?? "?", privacy: .public)), retrying")
+            self?.note("focus did not take for \(window.bundleID ?? "?") window \(window.id)")
             guard let self else { return }
             ignoreFocusChanges()
             NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
@@ -696,16 +746,23 @@ final class WindowManager {
         guard !steps.isEmpty else { return }
         let app = apps[window.pid]?.element
         let element = window.element
-        writer.perform(window.pid) {
+        let name = window.bundleID ?? "?"
+        writer.perform(window.pid) { [weak self] in
             // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
             // animate every AX resize; switch it off while we move the window.
             let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
             if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", false) }
+            var failure = AXError.success
             for step in steps {
+                let result: AXError
                 switch step {
-                case .size: AX.setSize(element, frame.size)
-                case .position: AX.setPosition(element, frame.origin)
+                case .size: result = AX.setSize(element, frame.size)
+                case .position: result = AX.setPosition(element, frame.origin)
                 }
+                if result != .success { failure = result }
+            }
+            if failure != .success {
+                DispatchQueue.main.async { self?.note("moving a window of \(name) failed: AX error \(failure.rawValue)") }
             }
             if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }
         }

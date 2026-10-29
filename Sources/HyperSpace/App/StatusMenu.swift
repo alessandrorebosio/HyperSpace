@@ -10,6 +10,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var setKeyboardLocked: (Bool) -> Void
         /// When a locked keyboard unlocks by itself.
         var keyboardUnlocksAt: () -> Date?
+        /// A text report of the app's state, copied to paste in a bug report.
+        var debugInfo: () -> String
     }
 
     /// Shows a lock in the menu bar; the menu item turns into Unlock Keyboard.
@@ -94,6 +96,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let locked = keyboardLocked
         let left = locked ? host.keyboardUnlocksAt().map { " (\(KeyboardLock.remaining(until: $0)))" } ?? "" : ""
         menu.addItem(ClosureMenuItem(locked ? "Unlock Keyboard" + left : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) })
+        menu.addItem(ClosureMenuItem("Copy Debug Info") { [host] in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(host.debugInfo(), forType: .string)
+        })
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
