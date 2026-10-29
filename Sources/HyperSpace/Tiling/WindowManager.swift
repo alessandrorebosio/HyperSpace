@@ -60,9 +60,10 @@ private struct DragSession {
 ///   no Screen Recording permission as long as window titles are not requested.
 /// - Frames are only written when they differ from the target, so a retile with
 ///   nothing to do costs a single window-server query.
-/// - Workspaces are virtual (macOS offers no public API to drive Spaces). Each one has a
-///   fixed display: workspace 1 the main display, 2 the second, and so on; the rest live
-///   on the main display. Each display shows one of its workspaces. Every window belongs
+/// - Workspaces are virtual (macOS offers no public API to drive Spaces). Each one lives on
+///   a display: workspace 1 the main display, 2 the second, and so on, the rest on the
+///   main display, until moved to another display. Each display shows one of its
+///   workspaces (or none when all of them were moved away). Every window belongs
 ///   to a workspace; windows of workspaces not shown are parked in the bottom-right
 ///   corner of their screen.
 ///   They are always brought back on quit, when tiling is turned off, and on the next
@@ -87,6 +88,10 @@ final class WindowManager {
 
     /// The workspace each display shows.
     private var displayed: [CGDirectDisplayID: Int] = [:]
+    /// Workspaces moved to another display than their default one.
+    private var homeOverride: [Int: CGDirectDisplayID] = [:]
+    /// The workspace each display showed before the current one.
+    private var shownBefore: [CGDirectDisplayID: Int] = [:]
     /// Column arrangement of each workspace (columns layout).
     private var columns: [Int: ColumnLayout] = [:]
     private var previousWorkspace: Int?
@@ -118,6 +123,8 @@ final class WindowManager {
         }
         // Fewer workspaces than before: their windows join the first one.
         displayed = displayed.filter { $0.value < workspaceCount }
+        homeOverride = homeOverride.filter { $0.key < workspaceCount }
+        shownBefore = shownBefore.filter { $0.value < workspaceCount }
         if let previous = previousWorkspace, previous >= workspaceCount { previousWorkspace = nil }
         for window in windows.values where window.workspace >= workspaceCount { window.workspace = 0 }
         config.enabled ? start() : stop()
@@ -198,6 +205,8 @@ final class WindowManager {
         order.removeAll()
         lastFocused.removeAll()
         displayed.removeAll()
+        homeOverride.removeAll()
+        shownBefore.removeAll()
     }
 
     /// After a crash windows can be left parked off-screen: bring them back.
@@ -378,9 +387,15 @@ final class WindowManager {
         order.compactMap { windows[$0] }.filter { $0.workspace == workspace && !$0.isFloating && bounds[$0.id] != nil }
     }
 
+    /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
+    /// not from the user, and must not switch workspaces.
+    private func ignoreFocusChanges() {
+        followFocusAfter = Date().addingTimeInterval(0.6)
+    }
+
     /// Focuses a window without the resulting focus change switching workspaces.
     private func focus(_ window: ManagedWindow) {
-        followFocusAfter = Date().addingTimeInterval(0.6)
+        ignoreFocusChanges()
         AX.focus(window.element, pid: window.pid)
     }
 
@@ -427,24 +442,33 @@ final class WindowManager {
 
     // MARK: - Workspaces
 
-    /// The display a workspace lives on: workspace n on the n-th display, the rest on the
-    /// main one (displays in `ScreenInfo.current()` order, main first).
+    /// The display a workspace lives on: where it was moved, otherwise workspace n on the
+    /// n-th display and the rest on the main one (displays in `ScreenInfo.current()` order).
     private func home(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
-        screens.isEmpty ? nil : screens[Self.homeIndex(of: workspace, displays: screens.count)]
+        if let id = homeOverride[workspace], let screen = screens.first(where: { $0.id == id }) { return screen }
+        return screens.isEmpty ? nil : screens[Self.homeIndex(of: workspace, displays: screens.count)]
+    }
+
+    /// Shows a workspace on a display, remembering what it replaces.
+    private func show(_ workspace: Int?, on display: CGDirectDisplayID) {
+        if let current = displayed[display], current != workspace { shownBefore[display] = current }
+        displayed[display] = workspace
     }
 
     static func homeIndex(of workspace: Int, displays: Int) -> Int {
         workspace < displays ? workspace : 0
     }
 
-    /// Every display shows one of its own workspaces, by default the one with its number.
+    /// Every display shows one of its own workspaces (the lowest numbered by default), or
+    /// none when no workspace lives there.
     private func syncDisplays() {
         let screens = ScreenInfo.current()
         let ids = Set(screens.map(\.id))
         displayed = displayed.filter { ids.contains($0.key) }
-        for (index, screen) in screens.enumerated() {
+        for screen in screens {
             if let shown = displayed[screen.id], home(of: shown, screens)?.id == screen.id { continue }
-            displayed[screen.id] = index
+            let taken = Set(displayed.values)
+            displayed[screen.id] = (0..<workspaceCount).first { home(of: $0, screens)?.id == screen.id && !taken.contains($0) }
         }
     }
 
@@ -458,13 +482,17 @@ final class WindowManager {
         syncDisplays()
         let screens = ScreenInfo.current()
         guard let screen = home(of: index, screens) else { return }
+        // Even with nothing to focus (an empty workspace), the refocusing caused by hiding
+        // the old windows must not bring the old workspace back.
+        ignoreFocusChanges()
         let focusedWorkspace = focusedScreen().flatMap { displayed[$0.id] }
+        log.debug("switch to workspace \(index) on display \(screen.id) (shown there: \(self.displayed[screen.id] ?? -1), focused: \(focusedWorkspace ?? -1))")
         if let current = focusedWorkspace, current != index {
             previousWorkspace = current
             if let window = focused(), window.workspace == current { lastFocused[current] = window.id }
         }
         if displayed[screen.id] != index {
-            displayed[screen.id] = index
+            show(index, on: screen.id)
             retile()
         }
         focusWindow(in: index)
@@ -479,7 +507,9 @@ final class WindowManager {
     func moveFocusedWindow(toWorkspace index: Int) {
         guard running, (0..<workspaceCount).contains(index), let window = focused(), window.workspace != index else { return }
         let source = window.workspace
+        ignoreFocusChanges()
         window.workspace = index
+        log.debug("move window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
         retile()
         guard display(showing: index) == nil else { return }
         // It went out of sight: focus what is left, and if nothing is, keep its workspace hidden.
@@ -514,6 +544,7 @@ final class WindowManager {
         guard running, let window = focused() else { return }
         if window.id != movedAway { movedAway = nil }
         guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
+        log.debug("follow focus to window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) in workspace \(window.workspace)")
         switchWorkspace(window.workspace)
     }
 
@@ -744,6 +775,28 @@ final class WindowManager {
         if window.isFloating || !running { setFrame(window, next.centered(frame.size)) }
         retile()
         focus(window)
+        notifyWorkspace()
+    }
+
+    /// Moves the focused workspace, windows and arrangement, to the next display, where it
+    /// replaces the workspace shown there (which stays intact, just hidden). The display it
+    /// leaves goes back to the last of its own workspaces it showed, or to none.
+    func moveWorkspaceToNextDisplay() {
+        let screens = ScreenInfo.current()
+        guard running, screens.count > 1, let source = focusedScreen(), let workspace = displayed[source.id],
+              let sourceIndex = screens.firstIndex(where: { $0.id == source.id }) else { return }
+        let target = screens[(sourceIndex + 1) % screens.count]
+        ignoreFocusChanges()
+        if let window = focused(), window.workspace == workspace { lastFocused[workspace] = window.id }
+
+        homeOverride[workspace] = target.id
+        show(workspace, on: target.id)
+        let remaining = (0..<workspaceCount).filter { $0 != workspace && home(of: $0, screens)?.id == source.id }
+        let back = shownBefore[source.id].flatMap { remaining.contains($0) ? $0 : nil } ?? remaining.first
+        show(back, on: source.id)
+        log.debug("move workspace \(workspace) from display \(source.id) to \(target.id); display \(source.id) now shows \(back ?? -1)")
+        retile()
+        focusWindow(in: workspace)
         notifyWorkspace()
     }
 

@@ -184,7 +184,7 @@ scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, sposta
 sono di HyperSpace. Ogni workspace ha il suo monitor: il **1 sul monitor principale** (quello con la barra dei
 menu), il **2 sul secondo**, il 3 sul terzo e così via; tutti gli altri stanno sul principale. Ogni monitor mostra
 uno dei suoi workspace: **Caps+N** mostra N sul suo monitor e ci porta il focus, senza toccare gli altri monitor.
-Spostare una finestra in un altro workspace sposta solo quella. Le finestre dei workspace non mostrati vengono
+Spostare una finestra in un altro workspace sposta solo quella. **Caps+⌘+Tab** (`move-workspace-to-display`) sposta invece l'intero workspace sull'altro monitor, che da lì in poi è il suo: il workspace che quel monitor mostrava resta intatto (nascosto) e il monitor lasciato torna all'ultimo dei suoi workspace. Le finestre dei workspace non mostrati vengono
 parcheggiate nell'angolo in basso a destra del loro schermo (come fa AeroSpace). Se un monitor viene staccato, i
 suoi workspace passano sul principale e tornano al loro posto quando lo riattacchi.
 
@@ -208,6 +208,7 @@ Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero
 | `retile` | Ricalcola subito il layout |
 | `display next` | Sposta la finestra sul monitor successivo |
 | `focus-display` | Focus su una finestra del monitor successivo |
+| `move-workspace-to-display` | Sposta il workspace attivo (finestre e disposizione) sul monitor successivo |
 | `workspace <n>` / `workspace back-and-forth` | Mostra il workspace n / torna al precedente |
 | `move-to-workspace <n>` | Sposta la finestra attiva nel workspace n |
 | `resize width\|height <punti>` | Allarga/restringe la finestra (es. `resize width +50`): nel tiling sposta la divisione master/colonna o cambia la quota della finestra nella colonna |

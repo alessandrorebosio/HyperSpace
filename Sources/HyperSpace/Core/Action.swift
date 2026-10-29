@@ -22,6 +22,8 @@ enum Action {
     case retile
     case moveToNextDisplay
     case focusNextDisplay
+    /// The focused workspace, windows and all, moves to the next display and stays there.
+    case moveWorkspaceToNextDisplay
     /// 0-based workspace index.
     case workspace(Int)
     /// Back to the previously active workspace.
@@ -78,6 +80,7 @@ enum Action {
         case "retile": return .retile
         case "display": return .moveToNextDisplay
         case "focus-display": return .focusNextDisplay
+        case "move-workspace-to-display": return .moveWorkspaceToNextDisplay
         case "workspace":
             if arg.lowercased() == "back-and-forth" { return .workspaceBackAndForth }
             return .workspace(try workspaceIndex())

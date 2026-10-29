@@ -87,6 +87,7 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         for item in MouseModel.presets.flatMap(\.items) { #expect((try? Action.parse(item.action)) != nil, "\(item.action)") }
         for item in TilingModel.shortcutActions.flatMap(\.items) { #expect((try? Action.parse(item.action)) != nil, "\(item.action)") }
         #expect(MouseModel.actionLabel("navigate back") == "Back")
+        #expect("\((try? Action.parse("move-workspace-to-display"))!)" == "moveWorkspaceToNextDisplay")
         #expect(MouseModel.actionLabel("key cmd+left_bracket") == MouseModel.actionLabel("key cmd+["))
     }
 }

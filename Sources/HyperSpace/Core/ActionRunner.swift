@@ -24,6 +24,7 @@ final class ActionRunner {
         case .retile: windowManager.retileNow()
         case .moveToNextDisplay: windowManager.moveToNextDisplay()
         case .focusNextDisplay: windowManager.focusNextDisplay()
+        case .moveWorkspaceToNextDisplay: windowManager.moveWorkspaceToNextDisplay()
         case .workspace(let index): windowManager.switchWorkspace(index)
         case .workspaceBackAndForth: windowManager.switchToPreviousWorkspace()
         case .moveToWorkspace(let index): windowManager.moveFocusedWindow(toWorkspace: index)

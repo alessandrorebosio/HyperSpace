@@ -35,6 +35,7 @@ final class TilingModel: ObservableObject {
         ("Move", [
             ("Move window left", "swap left"), ("Move window down", "swap down"),
             ("Move window up", "swap up"), ("Move window right", "swap right"),
+            ("Move workspace to other display", "move-workspace-to-display"),
             ("Move window to other display", "display next"),
         ]),
         ("Resize", [

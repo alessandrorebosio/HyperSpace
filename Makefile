@@ -17,10 +17,12 @@ endif
 build:
 	swift build -c $(CONFIG)
 
-# Building the tests first avoids a stale-cache "TestingMacros plugin not found" error.
+# With only the Command Line Tools, SwiftPM does not always hand the Swift Testing macro
+# plugin to the compiler ("plugin for module 'TestingMacros' not found"): pass it explicitly.
+TESTING_PLUGIN := $(abspath $(dir $(shell xcrun --find swift))../lib/swift/host/plugins/testing/libTestingMacros.dylib)
+
 test:
-	swift build --build-tests
-	swift test
+	swift test $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-library -Xswiftc $(TESTING_PLUGIN))
 
 app: build
 	rm -rf $(BUNDLE)
