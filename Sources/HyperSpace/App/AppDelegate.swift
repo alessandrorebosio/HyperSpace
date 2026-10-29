@@ -59,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.onChange = { [weak self] in self?.apply($0) }
         windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspaces = $0 }
         windowManager.onEnabledChange = { [weak self] in self?.statusMenu.tilingEnabled = $0 }
+        // At login macOS reopens apps for a while (also after a logout, unlike a boot check).
+        if launchedAtLogin { windowManager.revealAfter = Date().addingTimeInterval(90) }
 
         trusted = Permissions.isTrusted(prompt: true)
         if !trusted { waitForPermission() }

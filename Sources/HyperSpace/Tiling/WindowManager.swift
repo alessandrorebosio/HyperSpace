@@ -77,6 +77,9 @@ final class WindowManager {
     var onWorkspaceChange: (((names: [String], focused: Int)?) -> Void)?
     /// Called when tiling is turned on or off by the toggle-tiling action.
     var onEnabledChange: ((Bool) -> Void)?
+    /// Until then apps opened with a rule do not take you to their workspace: they are the
+    /// apps macOS reopens at login, not ones you open. Set when HyperSpace starts at login.
+    var revealAfter = Date.distantPast
 
     private var running = false
     private var apps: [pid_t: AppWatcher] = [:]
@@ -378,7 +381,7 @@ final class WindowManager {
     /// Shows the workspace of a window just tracked, once tracking is done.
     private func reveal(_ window: ManagedWindow) {
         // Apps opened together with the Mac at login must not flip through their workspaces.
-        guard ProcessInfo.processInfo.systemUptime > 180 else { return }
+        guard Date() > revealAfter else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, windows[window.id] === window, display(showing: window.workspace) == nil else { return }
             log.debug("reveal workspace \(window.workspace) for opened app \(window.bundleID ?? "?", privacy: .public)")
