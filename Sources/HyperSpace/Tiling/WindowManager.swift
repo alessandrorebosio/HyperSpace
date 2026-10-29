@@ -363,25 +363,33 @@ final class WindowManager {
         // one the app was opened from (you may have moved on while it loaded), or the one
         // shown where it appears.
         let launch = launches.workspace(for: watcher.pid)
-        if let assigned = watcher.bundleID.flatMap({ config.assignments[$0] }), assigned < workspaceCount {
-            window.workspace = assigned
-            // An app with a rule you just opened takes you to its workspace, however its first
-            // window was found (an app slow to answer is picked up by a later look).
-            if launch != nil, restored == nil { reveal(window) }
-        } else if let restored, restored.workspace < workspaceCount {
-            window.workspace = restored.workspace
-        } else if let launch, launch < workspaceCount {
-            window.workspace = launch
-        } else if let origin = AX.position(element), let size = AX.size(element), case let screens = ScreenInfo.current(), !screens.isEmpty {
-            window.workspace = displayed[screens[screens.index(for: CGRect(origin: origin, size: size))].id] ?? 0
-        } else {
-            window.workspace = focusedScreen().flatMap { displayed[$0.id] } ?? 0
+        let assigned = watcher.bundleID.flatMap { config.assignments[$0] }
+        window.workspace = Self.newWindowWorkspace(assigned: assigned, restored: restored?.workspace, launch: launch,
+                                                   workspaces: workspaceCount) { [self] in
+            if let origin = AX.position(element), let size = AX.size(element), case let screens = ScreenInfo.current(), !screens.isEmpty {
+                return displayed[screens[screens.index(for: CGRect(origin: origin, size: size))].id]
+            }
+            return focusedScreen().flatMap { displayed[$0.id] }
         }
+        // An app with a rule you just opened takes you to its workspace, however its first
+        // window was found (an app slow to answer is picked up by a later look).
+        if let assigned, assigned < workspaceCount, launch != nil, restored == nil { reveal(window) }
         windows[id] = window
         order.append(id)
         watcher.watch(element)
         log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)")
         return window
+    }
+
+    /// The workspace of a new window: its app's rule, the one it had before a restart, the one
+    /// its app was opened from, else the one shown where it appears (`whereItAppears`, only
+    /// asked then). Out-of-range choices are skipped.
+    static func newWindowWorkspace(assigned: Int?, restored: Int?, launch: Int?, workspaces: Int,
+                                   whereItAppears: () -> Int?) -> Int {
+        for choice in [assigned, restored, launch] {
+            if let choice, choice < workspaces { return choice }
+        }
+        return whereItAppears() ?? 0
     }
 
     /// Shows the workspace of a window just tracked, once tracking is done.
@@ -825,8 +833,14 @@ final class WindowManager {
     /// The display a workspace lives on: where it was moved, otherwise workspace n on the
     /// n-th display and the rest on the main one (displays in `ScreenInfo.current()` order).
     private func home(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
-        if let id = homeOverride[workspace], let screen = screens.first(where: { $0.id == id }) { return screen }
-        return screens.isEmpty ? nil : screens[Self.homeIndex(of: workspace, displays: screens.count)]
+        let id = Self.homeDisplay(of: workspace, movedTo: homeOverride[workspace], displays: screens.map(\.id))
+        return screens.first { $0.id == id }
+    }
+
+    /// `displays` in `ScreenInfo.current()` order; a move to a display no longer there is ignored.
+    static func homeDisplay(of workspace: Int, movedTo: CGDirectDisplayID?, displays: [CGDirectDisplayID]) -> CGDirectDisplayID? {
+        if let movedTo, displays.contains(movedTo) { return movedTo }
+        return displays.isEmpty ? nil : displays[homeIndex(of: workspace, displays: displays.count)]
     }
 
     /// Shows a workspace on a display, remembering what it replaces.
@@ -842,14 +856,21 @@ final class WindowManager {
     /// Every display shows one of its own workspaces (the lowest numbered by default), or
     /// none when no workspace lives there.
     private func syncDisplays() {
-        let screens = ScreenInfo.current()
-        let ids = Set(screens.map(\.id))
-        displayed = displayed.filter { ids.contains($0.key) }
-        for screen in screens {
-            if let shown = displayed[screen.id], home(of: shown, screens)?.id == screen.id { continue }
-            let taken = Set(displayed.values)
-            displayed[screen.id] = (0..<workspaceCount).first { home(of: $0, screens)?.id == screen.id && !taken.contains($0) }
+        let ids = ScreenInfo.current().map(\.id)
+        displayed = Self.syncedDisplays(displayed, displays: ids, workspaces: workspaceCount) { [homeOverride] in
+            Self.homeDisplay(of: $0, movedTo: homeOverride[$0], displays: ids)
         }
+    }
+
+    static func syncedDisplays(_ displayed: [CGDirectDisplayID: Int], displays: [CGDirectDisplayID], workspaces: Int,
+                               home: (Int) -> CGDirectDisplayID?) -> [CGDirectDisplayID: Int] {
+        var result = displayed.filter { displays.contains($0.key) }
+        for display in displays {
+            if let shown = result[display], home(shown) == display { continue }
+            let taken = Set(result.values)
+            result[display] = (0..<workspaces).first { home($0) == display && !taken.contains($0) }
+        }
+        return result
     }
 
     private func display(showing workspace: Int) -> CGDirectDisplayID? {
@@ -1180,12 +1201,18 @@ final class WindowManager {
         homeOverride[workspace] = target.id
         show(workspace, on: target.id)
         let remaining = (0..<workspaceCount).filter { $0 != workspace && home(of: $0, screens)?.id == source.id }
-        let back = shownBefore[source.id].flatMap { remaining.contains($0) ? $0 : nil } ?? remaining.first
+        let back = Self.workspaceLeftBehind(remaining: remaining, shownBefore: shownBefore[source.id])
         show(back, on: source.id)
         log.debug("move workspace \(workspace) from display \(source.id) to \(target.id); display \(source.id) now shows \(back ?? -1)")
         retile()
         focusWindow(in: workspace)
         notifyWorkspace()
+    }
+
+    /// What a display shows once its workspace moved away: the last of its own it showed, or
+    /// its first, or nothing when no workspace lives there any more.
+    static func workspaceLeftBehind(remaining: [Int], shownBefore: Int?) -> Int? {
+        shownBefore.flatMap { remaining.contains($0) ? $0 : nil } ?? remaining.first
     }
 
     /// Focuses the workspace shown on the next display.

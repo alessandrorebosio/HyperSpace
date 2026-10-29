@@ -222,3 +222,94 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(!tiling.floats(app: "com.apple.Safari", title: nil))
     }
 }
+
+@Suite struct WorkspaceLogicTests {
+    typealias W = WindowManager
+    let main: CGDirectDisplayID = 1
+    let top: CGDirectDisplayID = 2
+
+    @Test func homes() {
+        #expect(W.homeDisplay(of: 0, movedTo: nil, displays: [main, top]) == main)
+        #expect(W.homeDisplay(of: 1, movedTo: nil, displays: [main, top]) == top)
+        #expect(W.homeDisplay(of: 5, movedTo: nil, displays: [main, top]) == main)
+        #expect(W.homeDisplay(of: 0, movedTo: top, displays: [main, top]) == top)
+        // Moved to a display that was unplugged: back on its own.
+        #expect(W.homeDisplay(of: 1, movedTo: 9, displays: [main]) == main)
+        #expect(W.homeDisplay(of: 0, movedTo: nil, displays: []) == nil)
+    }
+
+    private func sync(_ displayed: [CGDirectDisplayID: Int], _ displays: [CGDirectDisplayID],
+                      moved: [Int: CGDirectDisplayID] = [:], workspaces: Int = 8) -> [CGDirectDisplayID: Int] {
+        W.syncedDisplays(displayed, displays: displays, workspaces: workspaces) {
+            W.homeDisplay(of: $0, movedTo: moved[$0], displays: displays)
+        }
+    }
+
+    @Test func eachDisplayShowsOneOfItsOwn() {
+        #expect(sync([:], [main, top]) == [main: 0, top: 1])
+        // A workspace of the main display (5) stays; a foreign one is replaced.
+        #expect(sync([main: 4, top: 1], [main, top]) == [main: 4, top: 1])
+        #expect(sync([main: 1, top: 1], [main, top]) == [main: 0, top: 1])
+        // Unplugging the top display: its entry goes, the main one keeps its workspace.
+        #expect(sync([main: 3, top: 1], [main]) == [main: 3])
+    }
+
+    @Test func movedWorkspaces() {
+        // Workspace 1 moved to the top display, which is the only home of workspace 2 too.
+        #expect(sync([main: 0, top: 1], [main, top], moved: [0: top]) == [main: 2, top: 1])
+        // Every workspace lives on the top display: the main one shows none, the top its lowest.
+        #expect(sync([main: 0], [main, top], moved: [0: top], workspaces: 2) == [top: 0])
+    }
+
+    @Test func leftBehind() {
+        #expect(W.workspaceLeftBehind(remaining: [0, 2, 3], shownBefore: 3) == 3)
+        #expect(W.workspaceLeftBehind(remaining: [0, 2], shownBefore: 5) == 0)
+        #expect(W.workspaceLeftBehind(remaining: [], shownBefore: 1) == nil)
+    }
+
+    @Test func newWindows() {
+        var asked = false
+        func appears() -> Int? { asked = true; return 4 }
+        #expect(W.newWindowWorkspace(assigned: 6, restored: 2, launch: 1, workspaces: 8, whereItAppears: appears) == 6)
+        #expect(W.newWindowWorkspace(assigned: nil, restored: 2, launch: 1, workspaces: 8, whereItAppears: appears) == 2)
+        #expect(W.newWindowWorkspace(assigned: nil, restored: nil, launch: 1, workspaces: 8, whereItAppears: appears) == 1)
+        #expect(!asked)
+        #expect(W.newWindowWorkspace(assigned: 9, restored: nil, launch: nil, workspaces: 8, whereItAppears: appears) == 4)
+        #expect(asked)
+        #expect(W.newWindowWorkspace(assigned: nil, restored: nil, launch: nil, workspaces: 8) { nil } == 0)
+    }
+}
+
+@Suite struct WorkspaceStateTests {
+    @Test func restorerMatchesByTitleThenApp() {
+        let state = WorkspaceState(windows: [
+            .init(app: "com.apple.Safari", title: "GitHub", workspace: 1),
+            .init(app: "com.apple.Safari", title: "Mail", workspace: 2),
+            .init(app: "com.spotify.client", title: "Spotify", workspace: 7, floating: true),
+        ])
+        var restorer = WorkspaceRestorer(state)
+        #expect(restorer.claim(app: "com.apple.Safari", title: "Mail") == 1)
+        // The tab changed: the next saved Safari window.
+        #expect(restorer.claim(app: "com.apple.Safari", title: "Apple") == 0)
+        #expect(restorer.claim(app: "com.apple.Safari", title: "GitHub") == nil)
+        #expect(restorer.claim(app: "com.microsoft.VSCode", title: nil) == nil)
+        #expect(restorer.unclaimed == [state.windows[2]])
+        #expect(restorer.window(1).workspace == 2)
+    }
+
+    @Test func roundTrip() throws {
+        var state = WorkspaceState(windows: [.init(app: "a", title: "t", workspace: 3)],
+                                   columns: ["3": [[0]]], displayed: ["1": 3], homeOverride: ["3": 2])
+        state.savedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        #expect(try decoder.decode(WorkspaceState.self, from: encoder.encode(state)) == state)
+    }
+
+    @Test func savedColumns() {
+        let layout = ColumnLayout(columns: [[10, 11], [], [12]])
+        #expect(layout.columns.map(\.windows) == [[10, 11], [12]])
+    }
+}
