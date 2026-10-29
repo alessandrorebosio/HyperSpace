@@ -180,16 +180,13 @@ scorciatoia per spostarci la finestra attiva) e le scorciatoie per focus, sposta
 
 `workspace` è il nome (o il numero) del workspace; rinominandolo dalla pagina Tiling le regole lo seguono.
 
-**Workspace virtuali, uno per monitor (come i3).** macOS non ha API pubbliche per gestire gli Spaces, quindi i
-workspace sono di HyperSpace: ogni monitor mostra un workspace, ogni finestra appartiene a un workspace e quelle
-dei workspace non mostrati vengono parcheggiate nell'angolo in basso a destra dello schermo (come fa AeroSpace).
-Mostrare un workspace già visibile su un altro monitor sposta il focus lì; altrimenti prende il posto di quello
-del monitor attivo. All'avvio il monitor più a sinistra mostra il workspace 1, il successivo il 2, e così via. Tornano al loro posto quando cambi
-workspace, quando esci da HyperSpace o spegni il tiling, e al lancio successivo dopo un crash. Se con ⌘Tab
-(o un clic) attivi una finestra di un altro workspace, HyperSpace passa a quel workspace. Nella barra dei menu,
-al posto dell'icona, compare il workspace di ogni monitor da sinistra a destra (`1 | 3`), quello col focus in grassetto.
-Layout per schermo: `columns` (default, come i3: colonne affiancate, ognuna può contenere più finestre una
-sopra l'altra), `tall` (master a sinistra), `wide` (master in alto), `monocle`.
+**Workspace virtuali con monitor fisso.** macOS non ha API pubbliche per gestire gli Spaces, quindi i workspace
+sono di HyperSpace. Ogni workspace ha il suo monitor: il **1 sul monitor principale** (quello con la barra dei
+menu), il **2 sul secondo**, il 3 sul terzo e così via; tutti gli altri stanno sul principale. Ogni monitor mostra
+uno dei suoi workspace: **Caps+N** mostra N sul suo monitor e ci porta il focus, senza toccare gli altri monitor.
+Spostare una finestra in un altro workspace sposta solo quella. Le finestre dei workspace non mostrati vengono
+parcheggiate nell'angolo in basso a destra del loro schermo (come fa AeroSpace). Se un monitor viene staccato, i
+suoi workspace passano sul principale e tornano al loro posto quando lo riattacchi.
 
 In `columns`, spostando una finestra (`swap`): **giù/su** la scambia con quella sotto/sopra nella colonna,
 oppure, se è da sola, la impila nella colonna accanto; **sinistra/destra** la fa uscire dalla colonna in una

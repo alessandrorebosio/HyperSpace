@@ -134,6 +134,13 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(abs(1000 * weight / (weight + 1) - 550) < 0.001)
     }
 
+    /// Workspace n lives on display n; the others on the main display (index 0).
+    @Test func workspaceHomes() {
+        #expect((0..<6).map { WindowManager.homeIndex(of: $0, displays: 2) } == [0, 1, 0, 0, 0, 0])
+        #expect((0..<4).map { WindowManager.homeIndex(of: $0, displays: 3) } == [0, 1, 2, 0])
+        #expect(WindowManager.homeIndex(of: 1, displays: 1) == 0)
+    }
+
     @Test func centered() {
         let screen = ScreenInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 800, height: 600),
                                 visible: CGRect(x: 0, y: 25, width: 800, height: 575))

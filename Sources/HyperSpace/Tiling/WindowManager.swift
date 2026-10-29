@@ -60,9 +60,11 @@ private struct DragSession {
 ///   no Screen Recording permission as long as window titles are not requested.
 /// - Frames are only written when they differ from the target, so a retile with
 ///   nothing to do costs a single window-server query.
-/// - Workspaces are virtual (macOS offers no public API to drive Spaces) and, as in i3,
-///   each display shows one of them. Every window belongs to a workspace; windows of
-///   workspaces not shown anywhere are parked in the bottom-right corner of their screen.
+/// - Workspaces are virtual (macOS offers no public API to drive Spaces). Each one has a
+///   fixed display: workspace 1 the main display, 2 the second, and so on; the rest live
+///   on the main display. Each display shows one of its workspaces. Every window belongs
+///   to a workspace; windows of workspaces not shown are parked in the bottom-right
+///   corner of their screen.
 ///   They are always brought back on quit, when tiling is turned off, and on the next
 ///   launch after a crash.
 final class WindowManager {
@@ -91,6 +93,9 @@ final class WindowManager {
     private var lastFocused: [Int: CGWindowID] = [:]
     /// Focus changes we cause ourselves must not switch workspace back.
     private var followFocusAfter = Date.distantPast
+    /// A window just moved to a hidden workspace that still has focus: it must not drag
+    /// its workspace onto the screen. Cleared as soon as focus goes elsewhere.
+    private var movedAway: CGWindowID?
     /// Last value sent to `onWorkspaceChange`, so the menu bar is redrawn only on change.
     private var lastNotice: (names: [String], focused: Int)??
 
@@ -422,14 +427,24 @@ final class WindowManager {
 
     // MARK: - Workspaces
 
-    /// Every display shows a workspace; new displays take the first free one.
+    /// The display a workspace lives on: workspace n on the n-th display, the rest on the
+    /// main one (displays in `ScreenInfo.current()` order, main first).
+    private func home(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
+        screens.isEmpty ? nil : screens[Self.homeIndex(of: workspace, displays: screens.count)]
+    }
+
+    static func homeIndex(of workspace: Int, displays: Int) -> Int {
+        workspace < displays ? workspace : 0
+    }
+
+    /// Every display shows one of its own workspaces, by default the one with its number.
     private func syncDisplays() {
         let screens = ScreenInfo.current()
         let ids = Set(screens.map(\.id))
         displayed = displayed.filter { ids.contains($0.key) }
-        for screen in screens where displayed[screen.id] == nil {
-            let used = Set(displayed.values)
-            displayed[screen.id] = (0..<workspaceCount).first { !used.contains($0) } ?? 0
+        for (index, screen) in screens.enumerated() {
+            if let shown = displayed[screen.id], home(of: shown, screens)?.id == screen.id { continue }
+            displayed[screen.id] = index
         }
     }
 
@@ -437,21 +452,21 @@ final class WindowManager {
         displayed.first { $0.value == workspace }?.key
     }
 
-    /// Shows a workspace. Already on a display: focus moves there (as in i3); otherwise
-    /// it replaces the workspace of the focused display.
+    /// Shows a workspace on its own display and focuses it; the other displays keep theirs.
     func switchWorkspace(_ index: Int) {
         guard running, (0..<workspaceCount).contains(index) else { return }
         syncDisplays()
-        if display(showing: index) != nil {
-            focusWindow(in: index)
-            notifyWorkspace()
-            return
+        let screens = ScreenInfo.current()
+        guard let screen = home(of: index, screens) else { return }
+        let focusedWorkspace = focusedScreen().flatMap { displayed[$0.id] }
+        if let current = focusedWorkspace, current != index {
+            previousWorkspace = current
+            if let window = focused(), window.workspace == current { lastFocused[current] = window.id }
         }
-        guard let screen = focusedScreen(), let current = displayed[screen.id] else { return }
-        if let window = focused(), window.workspace == current { lastFocused[current] = window.id }
-        displayed[screen.id] = index
-        previousWorkspace = current
-        retile()
+        if displayed[screen.id] != index {
+            displayed[screen.id] = index
+            retile()
+        }
         focusWindow(in: index)
         notifyWorkspace()
     }
@@ -460,12 +475,16 @@ final class WindowManager {
         if let previousWorkspace { switchWorkspace(previousWorkspace) }
     }
 
+    /// Moves only the focused window; the displays keep showing what they show.
     func moveFocusedWindow(toWorkspace index: Int) {
         guard running, (0..<workspaceCount).contains(index), let window = focused(), window.workspace != index else { return }
         let source = window.workspace
         window.workspace = index
         retile()
-        if display(showing: index) == nil { focusWindow(in: source) }
+        guard display(showing: index) == nil else { return }
+        // It went out of sight: focus what is left, and if nothing is, keep its workspace hidden.
+        movedAway = window.id
+        focusWindow(in: source)
     }
 
     /// Parks a window in the bottom-right corner of its screen, nearly all of it off-screen.
@@ -492,8 +511,9 @@ final class WindowManager {
 
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
     private func followFocus() {
-        guard running, Date() > followFocusAfter, let window = focused(),
-              display(showing: window.workspace) == nil else { return }
+        guard running, let window = focused() else { return }
+        if window.id != movedAway { movedAway = nil }
+        guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
         switchWorkspace(window.workspace)
     }
 
