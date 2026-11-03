@@ -1,6 +1,6 @@
 # 6. Tiling
 
-Tiling is implemented by `Tiling/WindowManager.swift`, `Layout.swift` and `ColumnLayout.swift`. Enable it with `tiling.enabled` (default `true`) or the *Tile windows* switch.
+Tiling is implemented by `Tiling/WindowManager.swift` (and its `WindowManager+*.swift` extensions), `Layout.swift` and `ColumnLayout.swift`. Enable it with `tiling.enabled` (default `true`) or the *Tile windows* switch.
 When it is off, HyperSpace stops observing apps, brings every parked window back and discards its window state.
 
 ## What gets tiled

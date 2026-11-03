@@ -1,7 +1,7 @@
 # 8. Scratchpad
 
 Like i3's scratchpad: a window that lives **out of the tiling and out of the workspaces**, shown on demand centred above everything else. Implemented in `WindowManager`
-(`toggleScratchpad`, `moveToScratchpad`, `showScratchpad`, `hideScratchpad`).
+(`toggleScratchpad`, `moveToScratchpad`, `showScratchpad`, `hideScratchpad`), in `Tiling/WindowManager+Scratchpad.swift`.
 
 ## Shortcuts
 

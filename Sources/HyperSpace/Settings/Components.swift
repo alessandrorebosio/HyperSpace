@@ -5,17 +5,6 @@ import SwiftUI
 // with a PageHero; lists put their add button in the section header (SectionHeader); keys and
 // shortcuts are KeyCaps; anything that needs attention is a NoticeRow at the top.
 
-extension Modifiers {
-    init(_ flags: NSEvent.ModifierFlags) {
-        var mods: Modifiers = []
-        if flags.contains(.command) { mods.insert(.cmd) }
-        if flags.contains(.option) { mods.insert(.alt) }
-        if flags.contains(.control) { mods.insert(.ctrl) }
-        if flags.contains(.shift) { mods.insert(.shift) }
-        self = mods
-    }
-}
-
 /// An NSEvent local monitor for key or button capture. The handler returns true when
 /// it consumed the event; the monitor is removed on `stop` or when released.
 final class LocalEventMonitor {

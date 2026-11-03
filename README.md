@@ -203,7 +203,7 @@ moving, resizing.
 ]
 ```
 
-`workspace` is the name (or the number) of the workspace; renaming it from the Tiling page, the rules follow it.
+`workspace` is the name (or the number) of the workspace; renaming it from the Workspaces page, the rules follow it.
 
 **Virtual workspaces with a fixed display.** macOS has no public API to manage Spaces, so workspaces
 belong to HyperSpace. Each workspace has its display: **1 on the main display** (the one with the menu
@@ -279,12 +279,13 @@ Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
 ├── Settings/   window with a Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
 ├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions,
-│               KeyCodes, RemapTarget, AppLauncher, Peripherals, Permissions
+│               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),
 │               KeyboardLayout, CapsLock, KeyboardLock
 ├── Mouse/      DragController (tap → window manager bridge)
-└── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), AXWriter (per-app writes),
-                WorkspaceState (saved workspaces), LaunchTracker, Layout, DisplayMonitor, FocusAnchor, AX helpers
+└── Tiling/     WindowManager (+ Scratchpad, SavedState, Workspaces, Commands, Debug extensions), ManagedWindow,
+                ColumnLayout, AppWatcher (AXObserver), AXWriter (per-app writes), WorkspaceState (saved workspaces),
+                LaunchTracker, Layout, ScreenInfo, DisplayMonitor, FocusAnchor, AX helpers
 ```
 
 Choices made for performance and minimal permissions:

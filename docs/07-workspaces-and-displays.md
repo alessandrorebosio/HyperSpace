@@ -1,7 +1,7 @@
 # 7. Workspaces and displays
 
 macOS has no public API to manage Spaces, so HyperSpace's workspaces are **virtual**: every window belongs to a workspace, and the windows of workspaces that are not shown
-are parked off-screen. Everything below lives in `Tiling/WindowManager.swift`.
+are parked off-screen. Everything below lives in `Tiling/WindowManager.swift` and `WindowManager+Workspaces.swift`.
 
 ## Defining workspaces
 

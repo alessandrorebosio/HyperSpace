@@ -22,6 +22,11 @@ The repository README and these pages were compared with the code (a second, ful
 - *Copy Debug Info* also reports the devices, each display's UUID and visible frame, and displays left out.
 - The README mentions the migration of the config from `~/.config/hyperspace/`, and the `--render-settings` option (page 10).
 
+## Fixed in the cleanup pass
+
+- The README now says renaming a workspace happens on the **Workspaces** page (it said Tiling), and its architecture tree lists the files split out of `WindowManager.swift` (`WindowManager+*.swift`, `ManagedWindow.swift`, `ScreenInfo.swift`, `Modifiers.swift`).
+- Re-checked against the code, all the points above hold: App Rules on Workspaces; Caps+N and Caps+⌘+Tab only if created; resize moves the split only in `tall`/`wide`; the menu lists workspaces only with more than one configured; no `scripts/bundle.sh`; no stale layout hint on the Tiling page.
+
 ## Still only in the code / these pages
 
 - With more than one workspace configured, the menu bar icon is replaced by the workspace shown on each display (`1 2`, the focused display's workspace in a filled box).

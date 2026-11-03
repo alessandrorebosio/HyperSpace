@@ -29,7 +29,7 @@ The menu is rebuilt only when it opens (`menuNeedsUpdate`).
 - Opened from the menu (**Settings…**, ⌘,) or by double-clicking the app.
 - Built on demand and **destroyed on close**, so it costs nothing while closed. While open, HyperSpace becomes a regular app (Dock icon, ⌘Tab, its own menu bar: `MainMenu`, ⌘W closes the window); when closed it goes back to being a menu bar-only app.
 - Resizable (minimum 720×460, default 900×640, frame remembered), Liquid Glass sidebar and toolbar on macOS 26.
-- Every change is written to `config.json` at once (see [Configuration](02-configuration.md)); a save error replaces the footer of the section it came from. The pages never mention the file, except General.
+- Every change is written to `config.json` at once (see [Configuration](02-configuration.md)); a save error replaces the footer of the section it came from. The pages never mention the file, except General. Gap and padding read from the file are clamped to 0–64 like the sliders; a title rule listed twice shows once; a workspace with no (or an empty) name shows its position, as the config reads it.
 - Switching page stops any key or button recording in progress.
 
 ### Layout
@@ -107,7 +107,7 @@ While recording, key bindings are suspended (so an existing shortcut reaches the
 | File | Contents |
 |---|---|
 | `SettingsWindowController.swift` | `SettingsNavigation` (pages: names, icons, colors, summaries), `SettingsRoot` (sidebar and status bar), the window controller |
-| `Components.swift` | The shared components above |
+| `Components.swift` | The shared components above, and `CaptureModel` (the key-cap click shared by the three models: `toggleCapture`) |
 | `RemapView.swift`, `MouseView.swift` | Keyboard and Mouse pages |
 | `TilingView.swift` | Tiling page, layout thumbnails, accordion preview, `TilingOffNotice` |
 | `WorkspacesView.swift`, `WindowRulesView.swift`, `ShortcutsView.swift` | The other window pages |

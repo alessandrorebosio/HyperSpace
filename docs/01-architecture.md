@@ -29,7 +29,7 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 - **`DefaultConfig.swift`**, **`ConfigStore.swift`** (load, watch, reload), **`ConfigWriter.swift`** (rewrites the file for the settings UI).
 - **`Action.swift`** (text → `Action`), **`ActionRunner.swift`** (runs on the main thread), **`SystemActions.swift`** (`Navigation`, `SystemAction`, `MediaKey`, `Pointer`), **`AppLauncher.swift`**, **`Peripherals.swift`** (battery of wireless keyboards, mice, trackpads).
 - **`EventTap.swift`**: the single active `CGEventTap`, shared by keyboard and mouse.
-- **`KeyCodes.swift`**: key table (name ↔ virtual keycode ↔ HID usage), `Modifiers`, `KeyCombo`.
+- **`KeyCodes.swift`**: key table (name ↔ virtual keycode ↔ HID usage; the modifier key codes come from it). **`Modifiers.swift`**: `Modifiers` and `KeyCombo` with the one parser for modifier lists (also used by `RemapTarget`), and the conversions from `CGEventFlags` and `NSEvent.ModifierFlags`.
 - **`RemapTarget.swift`**: remap destination (single key or combination) and `CarrierPool`.
 - **`Permissions.swift`**: Accessibility check and opening the settings pane.
 
@@ -41,8 +41,8 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 `DragController`: carries modifier+drag from the tap thread to the main thread, keeping only the latest position.
 
 ### `Tiling/`
-- **`WindowManager`** (~1900 lines): state of windows, workspaces, displays, scratchpad; commands; save/restore.
-- **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `ScreenInfo`), **`ColumnLayout`** (i3-style columns).
+- **`WindowManager`** (class, stored state, command scope, lifecycle, tracking, layout, mouse drag) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow` and `WorkspaceSummary`.
+- **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `CGRect.centered`), **`ScreenInfo`** (a display's frames, UUID, relocating and centering), **`ColumnLayout`** (i3-style columns).
 - **`AppWatcher`** (one `AXObserver` per app), **`AXWriter`** (per-app serial queues), **`AX`** (Accessibility API helpers, `AX.probe`).
 - **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible window HyperSpace clicks on an empty workspace's display, so HyperSpace becomes the active app there and that display the active one).
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
