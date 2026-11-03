@@ -196,7 +196,19 @@ final class WindowManager {
         // Fewer workspaces than before: their windows join the first one.
         let count = workspaceCount
         displayed = displayed.filter { $0.value < count }
-        homeOverride = homeOverride.filter { $0.key < count }
+        // A pin in the config replaces a move made by hand.
+        homeOverride = homeOverride.filter { $0.key < count && config.pins[$0.key] == nil }
+        // A workspace on screen that was just pinned to another display goes there now.
+        if running {
+            let screens = currentScreens()
+            for workspace in config.pins.keys.sorted() where workspace < count {
+                guard let shownOn = display(showing: workspace), let pinned = pinnedDisplay(of: workspace, screens),
+                      pinned.id != shownOn else { continue }
+                displayed[shownOn] = nil
+                showWorkspace(workspace, on: pinned.id)
+                carryFloating(windows.values.filter { $0.workspace == workspace }, screens: screens)
+            }
+        }
         accordionWorkspaces = accordionWorkspaces.filter { $0 < count }
         shownBefore = shownBefore.filter { $0.value < count }
         if let previous = previousWorkspace, previous >= count { previousWorkspace = nil }

@@ -55,6 +55,8 @@ struct ShortcutsView: View {
 struct ShortcutGrid<Rows: View>: View {
     let columns: [String]
     var leading = ""
+    /// Caption of a column after the shortcuts (rows then add that cell), if any.
+    var after: String?
     var trailing: CGFloat = 0
     @ViewBuilder let rows: () -> Rows
 
@@ -66,6 +68,7 @@ struct ShortcutGrid<Rows: View>: View {
                 ForEach(columns, id: \.self) { title in
                     caption(title).frame(width: ShortcutCap.width, alignment: .leading)
                 }
+                if let after { caption(after) }
                 if trailing > 0 {
                     Spacer(minLength: 0)
                     Color.clear.frame(width: trailing, height: 1)

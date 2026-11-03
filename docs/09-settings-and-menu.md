@@ -77,7 +77,7 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 - **Focus**: *Pointer follows focus*.
 
 ### Workspaces
-- **Workspaces** (*+ Add Workspace*): a grid with **Name** (renames are saved 0.5 s after typing and carry the app rules along), **Show workspace** and **Move window here** shortcuts, remove.
+- **Workspaces** (*+ Add Workspace*): a grid with **Name** (renames are saved 0.5 s after typing and carry the app rules along), **Show workspace** and **Move window here** shortcuts, **Display** (*Any display*, *Main display*, or a connected monitor by name: pins the workspace there), remove.
 - **App Rules** (*+ Add App*: running apps, or *Other App…*; needs a workspace first): app → the workspace its new windows open in.
 
 ### Window Rules

@@ -26,6 +26,11 @@ extension WindowManager {
         if !homeOverride.isEmpty {
             lines.append("Moved workspaces: " + homeOverride.sorted { $0.key < $1.key }.map { "\(name(of: $0.key)) → display \($0.value)" }.joined(separator: ", "))
         }
+        if !config.pins.isEmpty {
+            lines.append("Pinned workspaces: " + config.pins.sorted { $0.key < $1.key }.map { workspace, pin in
+                "\(name(of: workspace)) → \(pin) (\(pinnedDisplay(of: workspace, screens).map { "display \($0.id)" } ?? "not connected"))"
+            }.joined(separator: ", "))
+        }
         if !DisplayMonitor.absent.isEmpty {
             lines.append("Displays left out (asleep or on another input): " + DisplayMonitor.absent.sorted().map(String.init).joined(separator: ", "))
         }

@@ -5,16 +5,24 @@ import ApplicationServices
 extension WindowManager {
     // MARK: - Workspaces
 
-    /// The display a workspace lives on: where it was moved, otherwise workspace n on the
-    /// n-th display and the rest on the main one (displays in `ScreenInfo.current()` order).
+    /// The display a workspace lives on: the one it is pinned to in the config, else where it
+    /// was moved, otherwise workspace n on the n-th display and the rest on the main one
+    /// (displays in `ScreenInfo.current()` order). A pin to a display not connected is ignored
+    /// until that display is back.
     func home(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
         let id = Self.homeDisplay(of: workspace, movedTo: movedTo(workspace, screens), displays: screens.map(\.id))
         return screens.first { $0.id == id }
     }
 
-    /// The connected display a workspace was moved to, if any.
+    /// The connected display a workspace is pinned to, if any.
+    func pinnedDisplay(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
+        config.pins[workspace].flatMap { ScreenInfo.pinned($0, among: screens) }
+    }
+
+    /// The connected display a workspace is pinned or was moved to, if any.
     private func movedTo(_ workspace: Int, _ screens: [ScreenInfo]) -> CGDirectDisplayID? {
-        homeOverride[workspace].flatMap { uuid in screens.first { $0.uuid == uuid }?.id }
+        pinnedDisplay(of: workspace, screens)?.id
+            ?? homeOverride[workspace].flatMap { uuid in screens.first { $0.uuid == uuid }?.id }
     }
 
     /// `displays` in `ScreenInfo.current()` order; a move to a display no longer there is ignored.

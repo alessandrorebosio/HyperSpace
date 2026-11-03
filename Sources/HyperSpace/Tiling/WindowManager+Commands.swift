@@ -269,6 +269,12 @@ extension WindowManager {
         guard running, screens.count > 1, let source = focusedScreen(), let workspace = displayed[source.id],
               let sourceIndex = screens.firstIndex(where: { $0.id == source.id }) else { return }
         let target = screens[(sourceIndex + 1) % screens.count]
+        // Pinned in the config: it stays on its display.
+        if pinnedDisplay(of: workspace, screens) != nil {
+            log.debug("workspace \(workspace) is pinned to display \(source.id): not moved")
+            NSSound.beep()
+            return
+        }
         ignoreFocusChanges()
         if let window = focused(), window.workspace == workspace { lastFocused[workspace] = window.id }
 

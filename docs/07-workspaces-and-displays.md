@@ -14,7 +14,7 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift` an
 }
 ```
 
-- `name` (default: 1-based position), `switch` = shortcut that shows the workspace, `move` = shortcut that moves the focused window there (Settings calls it *Move window here*).
+- `name` (default: 1-based position), `switch` = shortcut that shows the workspace, `move` = shortcut that moves the focused window there (Settings calls it *Move window here*), `display` = the display it is pinned to (see [Pinned workspaces](#pinned-workspaces)).
 - Workspace count: `max(1, configured workspaces, number of displays)`. Workspaces past the configured ones are named with their 1-based number and have no shortcuts.
 - Fewer workspaces than before (after a reload): windows of removed ones join the first workspace.
 - Actions: `workspace n`, `workspace back-and-forth`, `move-to-workspace n` ([Actions](05-actions.md)).
@@ -26,6 +26,23 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift` an
 - `workspace n` (**`switchWorkspace`**) shows n on *its* display, remembers what it replaced, and focuses its last focused window (or the first one; with no windows, it moves the pointer to the display
   centre and makes that display the active one through the focus anchor, see [Empty workspaces](#empty-workspaces)). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
 - Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
+
+## Pinned workspaces
+
+A workspace can be fixed to a display with `"display"` (Settings → Workspaces → *Display*):
+
+```json
+"workspaces": [
+  { "name": "code", "display": "LG UltraFine" },
+  { "name": "chat", "display": "main" },
+  { "name": "web",  "display": "2" }
+]
+```
+
+- The value is `"main"` (the display with the menu bar), a number (1 = main display, then left to right, as above), the monitor's **name** (exact, else the first display whose name contains it, case-insensitive) or its **UUID** (what Settings writes when two connected monitors have the same name). Empty or missing = not pinned.
+- While that display is connected the pin is the workspace's home, before any `move-workspace-to-display` move and before the default rule; `move-workspace-to-display` does nothing on a pinned workspace (a beep). A pin in the config clears a move made by hand for that workspace.
+- While that display is not connected (unplugged, asleep for a while) the pin is ignored: the workspace lives where it would without it, and goes back to its display as soon as it returns.
+- `ScreenInfo.pinned(_:among:)` resolves a pin; the debug report lists the pins and the display each one resolves to.
 
 ## Empty workspaces
 

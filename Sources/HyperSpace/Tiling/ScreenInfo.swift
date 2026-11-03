@@ -5,6 +5,8 @@ struct ScreenInfo {
     let frame: CGRect
     /// `NSScreen.visibleFrame` (no menu bar, no Dock), flipped: the only area windows are laid out in.
     let visible: CGRect
+    /// The monitor's name ("LG UltraFine", "Built-in Retina Display").
+    var name = ""
 
     /// Screens in a stable order: the main display (with the menu bar) first, then the
     /// others left to right. NSScreen uses bottom-left coordinates; AX and CGWindowList top-left,
@@ -18,7 +20,7 @@ struct ScreenInfo {
         func flip(_ r: CGRect) -> CGRect { CGRect(x: r.minX, y: height - r.maxY, width: r.width, height: r.height) }
         let all = screens.map { screen in
             let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
-            return ScreenInfo(id: id, frame: flip(screen.frame), visible: flip(screen.visibleFrame))
+            return ScreenInfo(id: id, frame: flip(screen.frame), visible: flip(screen.visibleFrame), name: screen.localizedName)
         }
         let present = all.filter { !DisplayMonitor.absent.contains($0.id) }
         return (present.isEmpty ? all : present)
@@ -62,6 +64,29 @@ extension ScreenInfo {
     /// A frame of `size` (shrunk to fit) centered in the visible area.
     func centered(_ size: CGSize) -> CGRect {
         visible.centered(CGSize(width: min(size.width, visible.width), height: min(size.height, visible.height)))
+    }
+}
+
+extension ScreenInfo {
+    /// The display a workspace pinned to `pin` lives on, among `screens` (in `current()`
+    /// order): "main" is the first; a number n the n-th; otherwise the display with that UUID,
+    /// else the one with that name, else the one whose name contains it (case-insensitive).
+    /// Nil when no such display is connected.
+    static func pinned(_ pin: String, among screens: [ScreenInfo]) -> ScreenInfo? {
+        let text = pin.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, !screens.isEmpty else { return nil }
+        if text.lowercased() == "main" { return screens.first }
+        if let number = Int(text) { return screens.indices.contains(number - 1) ? screens[number - 1] : nil }
+        if let screen = screens.first(where: { $0.uuid.caseInsensitiveCompare(text) == .orderedSame }) { return screen }
+        if let screen = screens.first(where: { $0.name.caseInsensitiveCompare(text) == .orderedSame }) { return screen }
+        return screens.first { !$0.name.isEmpty && $0.name.range(of: text, options: .caseInsensitive) != nil }
+    }
+
+    /// What Settings writes to pin a workspace to this display: its name, or its UUID when
+    /// another connected display has the same name (two identical monitors).
+    func pinValue(among screens: [ScreenInfo]) -> String {
+        let twins = screens.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        return name.isEmpty || twins.count > 1 ? uuid : name
     }
 }
 

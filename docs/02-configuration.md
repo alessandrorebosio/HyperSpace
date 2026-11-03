@@ -88,7 +88,7 @@ Every section and key is optional.
 | `scratchpad.width` / `.height` | number | `0.6` / `0.7` | fractions of the display's visible area, clamped to 0.2…1 |
 | `floating` | `[string]` | `[]` | Bundle ids that are never tiled |
 | `floatingWindows[]` | `{ app?, title }` | `[]` | `title` required and non-empty (entries with an empty title are dropped); `app` absent or empty = any app |
-| `workspaces[]` | `{ name?, switch?, move? }` | `[]` | missing/empty `name` = 1-based position; empty `switch`/`move` = no shortcut |
+| `workspaces[]` | `{ name?, switch?, move?, display? }` | `[]` | missing/empty `name` = 1-based position; empty `switch`/`move` = no shortcut; `display` pins the workspace to a display: `"main"`, a number, a monitor name or UUID (see [Workspaces](07-workspaces-and-displays.md#pinned-workspaces)) |
 | `assign[]` | `{ app, workspace }` | `[]` | `workspace` is a name or a 1-based number; if it does not exist → error |
 
 The UI moves gap and padding in steps of 2; both are limited to 0–64 in the file as well (a larger or smaller value is clamped).

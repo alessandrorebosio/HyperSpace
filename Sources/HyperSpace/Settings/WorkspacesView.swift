@@ -14,7 +14,8 @@ struct WorkspacesView: View {
                 if model.workspaces.isEmpty {
                     EmptyRow(symbol: "square.stack.3d.up", text: "No workspaces: every window shares one")
                 } else {
-                    ShortcutGrid(columns: ["Show workspace", "Move window here"], leading: "Name", trailing: RemoveButton.width) {
+                    ShortcutGrid(columns: ["Show workspace", "Move window here"], leading: "Name", after: "Display",
+                                 trailing: RemoveButton.width) {
                         ForEach(model.workspaces) { workspace in
                             GridRow {
                                 TextField("Name", text: Binding(get: { workspace.name }, set: { model.rename(workspace.id, to: $0) }))
@@ -23,6 +24,15 @@ struct WorkspacesView: View {
                                     .frame(width: 120)
                                 ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
                                 ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
+                                Picker("Display", selection: Binding(get: { workspace.display },
+                                                                     set: { model.setDisplay($0, for: workspace.id) })) {
+                                    ForEach(model.displayOptions(for: workspace), id: \.self) { option in
+                                        Text(option.label).tag(option.value)
+                                    }
+                                }
+                                .labelsHidden()
+                                .fixedSize()
+                                .help("Pin the workspace to a display: it always shows there while that display is connected")
                                 Spacer(minLength: 0)
                                 RemoveButton { model.removeWorkspace(workspace.id) }
                             }
@@ -35,7 +45,7 @@ struct WorkspacesView: View {
                 }
             } footer: {
                 SettingsFooter(
-                    hint: "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off.",
+                    hint: "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one.",
                     error: model.saveError
                 )
             }

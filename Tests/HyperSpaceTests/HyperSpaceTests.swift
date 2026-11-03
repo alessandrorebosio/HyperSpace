@@ -37,6 +37,14 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(config.tiling.assignments["com.spotify.client"] == 1)
     }
 
+    @Test func workspacePins() throws {
+        let config = try config(#"""
+        { "tiling": { "workspaces": [ { "name": "code", "display": "LG" }, { "name": "web", "display": " " },
+                                      { "name": "chat", "display": "main" } ] } }
+        """#)
+        #expect(config.tiling.pins == [0: "LG", 2: "main"])
+    }
+
     /// Binding the same shortcut twice keeps one action: the last (no orphan left in the list).
     @Test func lastBindingWins() throws {
         let config = try config(#"""
@@ -310,6 +318,28 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         // Moved to a display that was unplugged: back on its own.
         #expect(W.homeDisplay(of: 1, movedTo: 9, displays: [main]) == main)
         #expect(W.homeDisplay(of: 0, movedTo: nil, displays: []) == nil)
+    }
+
+    @Test func pinnedDisplay() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let builtIn = ScreenInfo(id: 1, frame: rect, visible: rect, name: "Built-in Retina Display")
+        let lg = ScreenInfo(id: 2, frame: rect, visible: rect, name: "LG UltraFine")
+        let dell = ScreenInfo(id: 3, frame: rect, visible: rect, name: "DELL U2720Q")
+        let screens = [builtIn, lg, dell]
+        #expect(ScreenInfo.pinned("main", among: screens)?.id == 1)
+        #expect(ScreenInfo.pinned("2", among: screens)?.id == 2)
+        #expect(ScreenInfo.pinned("4", among: screens) == nil)
+        #expect(ScreenInfo.pinned("dell u2720q", among: screens)?.id == 3)
+        #expect(ScreenInfo.pinned("ultrafine", among: screens)?.id == 2)
+        #expect(ScreenInfo.pinned("Samsung", among: screens) == nil)
+        #expect(ScreenInfo.pinned("", among: screens) == nil)
+        #expect(lg.pinValue(among: screens) == "LG UltraFine")
+        // Two identical monitors: the name alone cannot tell them apart.
+        let twin = ScreenInfo(id: 4, frame: rect, visible: rect, name: "LG UltraFine")
+        #expect(lg.pinValue(among: screens + [twin]) == lg.uuid)
+        // A pin wins over the default home, and is ignored while its display is unplugged.
+        #expect(W.homeDisplay(of: 0, movedTo: ScreenInfo.pinned("3", among: screens)?.id, displays: [1, 2, 3]) == 3)
+        #expect(W.homeDisplay(of: 1, movedTo: ScreenInfo.pinned("DELL", among: [builtIn, lg])?.id, displays: [1, 2]) == 2)
     }
 
     private func sync(_ displayed: [CGDirectDisplayID: Int], _ displays: [CGDirectDisplayID],

@@ -10,6 +10,14 @@ final class TilingModel: ObservableObject {
         var switchKeys: String
         /// Shortcut that moves the focused window there.
         var moveKeys: String
+        /// The display it is pinned to ("" for automatic): see `ScreenInfo.pinned`.
+        var display = ""
+    }
+
+    /// A choice in a workspace's display menu: the value written to the config and its label.
+    struct DisplayOption: Hashable {
+        let value: String
+        let label: String
     }
 
     /// A window-management action with an editable shortcut (stored in keyboard.bindings).
@@ -155,6 +163,30 @@ final class TilingModel: ObservableObject {
     func addWorkspace() {
         workspaces.append(Workspace(name: TilingConfig.workspaceName(nil, at: workspaces.count), switchKeys: "", moveKeys: ""))
         save()
+    }
+
+    func setDisplay(_ display: String, for id: UUID) {
+        guard let index = workspaces.firstIndex(where: { $0.id == id }) else { return }
+        workspaces[index].display = display
+        save()
+    }
+
+    /// The display choices for a workspace: automatic, the main display, every connected
+    /// display by name, and the workspace's own pin even when that display is not connected.
+    func displayOptions(for workspace: Workspace) -> [DisplayOption] {
+        let screens = ScreenInfo.current()
+        var options = [DisplayOption(value: "", label: "Any display"), DisplayOption(value: "main", label: "Main display")]
+        for (index, screen) in screens.enumerated() {
+            let name = screen.name.isEmpty ? "Display \(index + 1)" : screen.name
+            options.append(DisplayOption(value: screen.pinValue(among: screens), label: name))
+        }
+        if !workspace.display.isEmpty, !options.contains(where: { $0.value == workspace.display }) {
+            let connected = ScreenInfo.pinned(workspace.display, among: screens)
+            let label = connected.map { $0.name.isEmpty ? workspace.display : $0.name }
+                ?? "\(workspace.display) (not connected)"
+            options.append(DisplayOption(value: workspace.display, label: label))
+        }
+        return options
     }
 
     func removeWorkspace(_ id: UUID) {
@@ -406,7 +438,8 @@ final class TilingModel: ObservableObject {
         workspaces = (tiling["workspaces"] as? [[String: Any]] ?? []).enumerated().map { index, entry in
             Workspace(name: TilingConfig.workspaceName(entry["name"] as? String, at: index),
                       switchKeys: entry["switch"] as? String ?? "",
-                      moveKeys: entry["move"] as? String ?? "")
+                      moveKeys: entry["move"] as? String ?? "",
+                      display: entry["display"] as? String ?? "")
         }
 
         let bindings = (root["keyboard"] as? [String: Any])?["bindings"] as? [[String: Any]] ?? []
@@ -452,6 +485,7 @@ final class TilingModel: ObservableObject {
                 var entry: [String: Any] = ["name": workspace.name]
                 if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }
                 if !workspace.moveKeys.isEmpty { entry["move"] = workspace.moveKeys }
+                if !workspace.display.isEmpty { entry["display"] = workspace.display }
                 return entry
             }
             root["tiling"] = tiling

@@ -69,9 +69,12 @@ struct RawConfig: Decodable {
         var switchKeys: String?
         /// Shortcut that moves the focused window there.
         var move: String?
+        /// The display the workspace is pinned to: "main", a number (1 = main display, then
+        /// left to right), or the monitor's name or UUID.
+        var display: String?
 
         enum CodingKeys: String, CodingKey {
-            case name, move
+            case name, move, display
             case switchKeys = "switch"
         }
     }
@@ -198,6 +201,8 @@ struct TilingConfig {
     var workspaces: [String] = []
     /// Bundle id → workspace index for windows to open in.
     var assignments: [String: Int] = [:]
+    /// Workspace index → the display it is pinned to (see `ScreenInfo.pinned`).
+    var pins: [Int: String] = [:]
     /// Moving the focus to another display brings the pointer along.
     var mouseFollowsFocus = TilingConfig.defaultMouseFollowsFocus
     /// Scratchpad windows' size, as fractions of the display's visible area.
@@ -359,6 +364,9 @@ struct Config {
             tiling.workspaces.append(TilingConfig.workspaceName(workspace.name, at: index))
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }
             if let keys = workspace.move, !keys.isEmpty { shortcuts.append((keys, .moveToWorkspace(index))) }
+            if let display = workspace.display?.trimmingCharacters(in: .whitespaces), !display.isEmpty {
+                tiling.pins[index] = display
+            }
         }
         let names = tiling.workspaces
         for rule in raw.assign ?? [] {
