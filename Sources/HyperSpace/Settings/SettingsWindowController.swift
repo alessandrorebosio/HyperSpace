@@ -3,11 +3,77 @@ import SwiftUI
 
 /// Which page of the settings window is shown.
 final class SettingsNavigation: ObservableObject {
-    enum Page: Hashable {
+    enum Page: Hashable, CaseIterable {
         case keyboard, mouse, tiling, workspaces, windowRules, shortcuts, settings
 
         /// Pages whose features stay off without the Accessibility permission.
         var needsPermission: Bool { self != .keyboard && self != .settings }
+
+        var title: String {
+            switch self {
+            case .keyboard: return "Keyboard"
+            case .mouse: return "Mouse"
+            case .tiling: return "Tiling"
+            case .workspaces: return "Workspaces"
+            case .windowRules: return "Window Rules"
+            case .shortcuts: return "Shortcuts"
+            case .settings: return "General"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .keyboard: return "keyboard.fill"
+            case .mouse: return "computermouse.fill"
+            case .tiling: return "rectangle.split.3x1.fill"
+            case .workspaces: return "square.stack.3d.up.fill"
+            case .windowRules: return "macwindow.on.rectangle"
+            case .shortcuts: return "command"
+            case .settings: return "gearshape.fill"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .keyboard, .settings: return Color(red: 0.49, green: 0.50, blue: 0.54)
+            case .mouse: return Color(red: 0.10, green: 0.48, blue: 0.96)
+            case .tiling: return Color(red: 0.31, green: 0.33, blue: 0.90)
+            case .workspaces: return Color(red: 0.58, green: 0.30, blue: 0.88)
+            case .windowRules: return Color(red: 0.97, green: 0.53, blue: 0.05)
+            case .shortcuts: return Color(red: 0.93, green: 0.23, blue: 0.36)
+            }
+        }
+
+        /// One line under the page's title, like the panes of System Settings.
+        var summary: String {
+            switch self {
+            case .keyboard: return "Remap keys on each keyboard, and lock the keyboard while you clean it."
+            case .mouse: return "Give extra mouse buttons an action, and choose the scroll direction."
+            case .tiling: return "Arrange windows side by side, in columns or as an accordion, inside each display's visible area."
+            case .workspaces: return "Virtual workspaces on every display, their shortcuts, and the apps that open in each."
+            case .windowRules: return "Windows that float above the tiling, and apps that live in the scratchpad."
+            case .shortcuts: return "Keys to move the focus and windows, resize, change display and more."
+            case .settings: return "Startup, the configuration file and permissions."
+            }
+        }
+
+        /// Extra words the sidebar search matches.
+        var keywords: String {
+            switch self {
+            case .keyboard: return "remap lock keys caps hyper"
+            case .mouse: return "buttons scroll reverse drag"
+            case .tiling: return "layout gap margin padding accordion columns tall wide monocle focus pointer"
+            case .workspaces: return "apps rules assign spaces"
+            case .windowRules: return "floating scratchpad title"
+            case .shortcuts: return "keys focus move resize display float accordion"
+            case .settings: return "login startup config file permission accessibility quit version"
+            }
+        }
+
+        func matches(_ query: String) -> Bool {
+            let query = query.trimmingCharacters(in: .whitespaces)
+            return query.isEmpty || "\(title) \(keywords)".localizedCaseInsensitiveContains(query)
+        }
     }
 
     @Published var page: Page? = .keyboard {
@@ -15,6 +81,8 @@ final class SettingsNavigation: ObservableObject {
         didSet { if page != oldValue { onSwitch?() } }
     }
     var onSwitch: (() -> Void)?
+    /// The sidebar search.
+    @Published var query = ""
 }
 
 struct SettingsRoot: View {
@@ -23,43 +91,221 @@ struct SettingsRoot: View {
     let mouse: MouseModel
     let tiling: TilingModel
     @ObservedObject var general: GeneralModel
+    private var query: String { navigation.query }
+
+    private typealias Page = SettingsNavigation.Page
 
     var body: some View {
         NavigationSplitView {
             List(selection: $navigation.page) {
-                Section("Input") {
-                    Label("Keyboard", systemImage: "keyboard").tag(SettingsNavigation.Page.keyboard)
-                    Label("Mouse", systemImage: "computermouse").tag(SettingsNavigation.Page.mouse)
-                }
-                Section("Windows") {
-                    Label("Tiling", systemImage: "rectangle.split.3x1").tag(SettingsNavigation.Page.tiling)
-                    Label("Workspaces", systemImage: "square.stack.3d.up").tag(SettingsNavigation.Page.workspaces)
-                    Label("Window Rules", systemImage: "macwindow.on.rectangle").tag(SettingsNavigation.Page.windowRules)
-                    Label("Shortcuts", systemImage: "command").tag(SettingsNavigation.Page.shortcuts)
-                }
-                Section {
-                    Label("Settings", systemImage: "gearshape").tag(SettingsNavigation.Page.settings)
-                }
+                sidebarSection("Input", [.keyboard, .mouse])
+                sidebarSection("Windows", [.tiling, .workspaces, .windowRules, .shortcuts])
+                sidebarSection(nil, [.settings])
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
+            .searchable(text: $navigation.query, placement: .sidebar, prompt: "Search")
+            .frame(minWidth: 200)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
             .modifier(NoSidebarToggle())
         } detail: {
             let page = navigation.page ?? .keyboard
             Group {
                 switch page {
-                case .keyboard: RemapView(model: keyboard).navigationTitle("Keyboard")
-                case .mouse: MouseView(model: mouse).navigationTitle("Mouse")
-                case .tiling: TilingView(model: tiling).navigationTitle("Tiling")
-                case .workspaces: WorkspacesView(model: tiling).navigationTitle("Workspaces")
-                case .windowRules: WindowRulesView(model: tiling).navigationTitle("Window Rules")
-                case .shortcuts: TilingShortcutsView(model: tiling).navigationTitle("Shortcuts")
-                case .settings: GeneralView(model: general).navigationTitle("Settings")
+                case .keyboard: RemapView(model: keyboard)
+                case .mouse: MouseView(model: mouse)
+                case .tiling: TilingView(model: tiling)
+                case .workspaces: WorkspacesView(model: tiling)
+                case .windowRules: WindowRulesView(model: tiling)
+                case .shortcuts: TilingShortcutsView(model: tiling)
+                case .settings: GeneralView(model: general)
                 }
             }
+            .navigationTitle(page.title)
             .environment(\.permissionMissing, page.needsPermission && !general.accessibilityGranted)
+            .environment(\.settingsPage, page)
         }
-        .frame(minWidth: 680, minHeight: 420)
+        .frame(minWidth: 720, minHeight: 460)
         .modifier(GlassToolbar())
+    }
+
+    @ViewBuilder
+    private func sidebarSection(_ title: String?, _ pages: [Page]) -> some View {
+        let shown = pages.filter { $0.matches(query) }
+        if !shown.isEmpty {
+            if let title {
+                Section(title) { ForEach(shown, id: \.self) { SidebarItem(page: $0).tag($0) } }
+            } else {
+                Section { ForEach(shown, id: \.self) { SidebarItem(page: $0).tag($0) } }
+            }
+        }
+    }
+}
+
+private struct SettingsPageKey: EnvironmentKey {
+    static let defaultValue: SettingsNavigation.Page? = nil
+}
+
+extension EnvironmentValues {
+    /// The page being shown, for its header.
+    var settingsPage: SettingsNavigation.Page? {
+        get { self[SettingsPageKey.self] }
+        set { self[SettingsPageKey.self] = newValue }
+    }
+}
+
+/// First section of every page, like the panes of System Settings: the page's icon large,
+/// its name and what it is for, centered.
+struct PageHeader: View {
+    @Environment(\.settingsPage) private var page
+
+    var body: some View {
+        if let page {
+            Section {
+                VStack(spacing: 8) {
+                    SidebarIcon(symbol: page.symbol, color: page.color, size: 54)
+                    Text(page.title).font(.title2.weight(.bold))
+                    Text(page.summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 420)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+}
+
+/// A row title with a small colored icon on its left, as in the lists of System Settings.
+struct IconLabel: View {
+    let title: String
+    var detail: String?
+    let symbol: String
+    let color: Color
+
+    init(_ title: String, detail: String? = nil, symbol: String, color: Color) {
+        self.title = title
+        self.detail = detail
+        self.symbol = symbol
+        self.color = color
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            SidebarIcon(symbol: symbol, color: color, size: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let detail {
+                    Text(detail).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+/// A sidebar row like System Settings: a white symbol on a small rounded square with a soft
+/// top-to-bottom gradient, a hairline edge and a faint shadow.
+private struct SidebarItem: View {
+    let page: SettingsNavigation.Page
+
+    var body: some View {
+        Label {
+            Text(page.title)
+        } icon: {
+            SidebarIcon(symbol: page.symbol, color: page.color)
+        }
+    }
+}
+
+/// A white symbol on a rounded square, as in System Settings. Drawn as vectors (sharp at any
+/// size and scale) with explicit colors, so the sidebar does not tint it. Every symbol is scaled
+/// to fit the same box, so wide ones (keyboard) and tall ones (mouse) look the same size and sit
+/// in the middle; the square has a vertical gradient, a soft highlight on top and a hairline edge.
+struct SidebarIcon: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 20
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
+        let glyph = size * Self.glyphShare(symbol)
+        ZStack {
+            shape.fill(LinearGradient(colors: [color.mix(with: .white, by: 0.28), color, color.mix(with: .black, by: 0.12)],
+                                      startPoint: .top, endPoint: .bottom))
+            // A soft sheen on the upper half, like the system's icons.
+            shape.fill(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0)],
+                                      startPoint: .top, endPoint: .center))
+            shape.strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
+            if let ink = SymbolInk.image(symbol) {
+                // Cropped to what the symbol really draws, so fitting it centers the drawing
+                // itself, not the symbol's box (most symbols have uneven blank space in it).
+                Image(nsImage: ink)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: glyph, height: glyph)
+                    .shadow(color: .black.opacity(0.18), radius: size * 0.02, y: size * 0.02)
+            }
+        }
+        .frame(width: size, height: size)
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.12), radius: size * 0.03, y: size * 0.025)
+        .accessibilityHidden(true)
+    }
+
+    /// The box each symbol fits in, as a share of the icon: symbols that fill their box (a gear,
+    /// ⌘) get a little less room than airy ones, so they read the same.
+    private static func glyphShare(_ symbol: String) -> CGFloat {
+        switch symbol {
+        case "keyboard.fill", "rectangle.split.3x1.fill", "macwindow.on.rectangle": return 0.64
+        case "gearshape.fill", "command": return 0.56
+        default: return 0.58
+        }
+    }
+}
+
+/// A white SF Symbol cropped to its drawn pixels, rendered large (512 px) so it stays sharp when
+/// scaled down. Cached per symbol.
+enum SymbolInk {
+    private static var cache: [String: NSImage] = [:]
+
+    static func image(_ symbol: String) -> NSImage? {
+        if let image = cache[symbol] { return image }
+        let config = NSImage.SymbolConfiguration(pointSize: 300, weight: .semibold).applying(.init(paletteColors: [.white]))
+        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else { return nil }
+        let width = Int(glyph.size.width.rounded(.up)), height = Int(glyph.size.height.rounded(.up))
+        guard width > 0, height > 0,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        glyph.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+        // The box of the pixels drawn (alpha above a trace).
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.02 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= minX, maxY >= minY,
+              let cropped = rep.cgImage?.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)) else { return nil }
+        let image = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
+        image.isTemplate = false
+        cache[symbol] = image
+        return image
+    }
+}
+
+private extension Color {
+    /// `self` blended toward `other` (macOS 15's `mix` is not available back to 13).
+    func mix(with other: NSColor, by amount: CGFloat) -> Color {
+        let base = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
+        return Color(nsColor: base.blended(withFraction: amount, of: other) ?? base)
     }
 }
 

@@ -8,9 +8,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var workspaces: () -> [WorkspaceSummary]
         var showWorkspace: (Int) -> Void
         var focusWindow: (CGWindowID) -> Void
-        /// Layout of the focused display, nil while tiling is off.
-        var layout: () -> LayoutKind?
-        var setLayout: (LayoutKind) -> Void
+        /// Turns the tiling engine on or off (saved in the config).
+        var setTilingEnabled: (Bool) -> Void
+        /// Wireless keyboards, mice and trackpads with their battery level.
+        var batteries: () -> [PeripheralBattery]
         var setKeyboardLocked: (Bool) -> Void
         /// When a locked keyboard unlocks by itself.
         var keyboardUnlocksAt: () -> Date?
@@ -45,8 +46,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         didSet { updateIcon() }
     }
 
-    /// With tiling off the menu bar item is gone (double-click the app to open Settings),
-    /// unless there is a problem to report or the keyboard is locked and needs Unlock.
+    /// With tiling off the icon is drawn dimmed; the menu turns it back on.
     var tilingEnabled = true {
         didSet { updateIcon() }
     }
@@ -69,8 +69,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private func updateIcon() {
-        item.isVisible = tilingEnabled || problem != nil || keyboardLocked
         guard let button = item.button else { return }
+        button.appearsDisabled = !tilingEnabled && problem == nil && !keyboardLocked
+        button.toolTip = tilingEnabled ? "HyperSpace" : "HyperSpace — tiling is off"
         guard let workspaces else {
             let symbol = keyboardLocked ? "lock" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
             let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
@@ -150,38 +151,139 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         if let problem { addProblem(problem, to: menu) }
 
+        let enabled = tilingEnabled
+        let tiling = ClosureMenuItem("Tiling") { [host] in host.setTilingEnabled(!enabled) }
+        tiling.state = enabled ? .on : .off
+        let hint = enabled ? "Windows are arranged in workspaces" : "Windows are left where you put them"
+        let symbol = enabled ? "rectangle.split.3x1.fill" : "rectangle.split.3x1"
+        tiling.styled = { Self.title("Tiling", subtitle: hint, symbol: symbol, highlighted: $0) }
+        menu.addItem(tiling)
+        menu.addItem(.separator())
+
         addWorkspaces(to: menu)
-        addLayouts(to: menu)
+        addBatteries(to: menu)
 
         // Lock and Unlock share one place, so the mouse finds Unlock where it clicked Lock.
         let locked = keyboardLocked
         let left = locked ? host.keyboardUnlocksAt().map { " (\(KeyboardLock.remaining(until: $0)))" } ?? "" : ""
         let lock = ClosureMenuItem(locked ? "Unlock Keyboard" + left : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) }
-        lock.image = Self.symbol(locked ? "lock.open" : "lock")
+        lock.attributedTitle = Self.title(lock.title, symbol: locked ? "lock.open" : "lock")
         menu.addItem(lock)
         menu.addItem(.separator())
 
         let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
-        settings.image = Self.symbol("gearshape")
+        settings.attributedTitle = Self.title(settings.title, symbol: "gearshape")
         menu.addItem(settings)
         let debug = ClosureMenuItem("Copy Debug Info") { [host] in
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(host.debugInfo(), forType: .string)
         }
-        debug.image = Self.symbol("doc.on.doc")
+        debug.attributedTitle = Self.title(debug.title, symbol: "doc.on.doc")
         debug.toolTip = "Displays, workspaces and windows, to paste when something goes wrong"
         menu.addItem(debug)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit HyperSpace", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        quit.image = Self.symbol("power")
+        quit.attributedTitle = Self.title(quit.title, symbol: "power")
         menu.addItem(quit)
     }
 
-    private static func symbol(_ name: String) -> NSImage? {
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        image?.isTemplate = true
-        return image
+    /// Where the text of every item starts: the symbols sit in the slot before it.
+    static let textIndent: CGFloat = 34
+    private static let iconSlot: CGFloat = 24
+    private static let wideIconSlot: CGFloat = 28
+
+    /// macOS 27 no longer draws `NSMenuItem.image` in this menu, so the symbol goes at the
+    /// start of the title, in a fixed-width slot that keeps the text of every item aligned.
+    static func title(_ text: String, symbol: String, color: NSColor = .labelColor,
+                      attributes: [NSAttributedString.Key: Any] = [:]) -> NSMutableAttributedString {
+        let font = NSFont.menuFont(ofSize: 0)
+        let title = NSMutableAttributedString()
+        if let icon = symbolImage(symbol, color: color, pointSize: font.pointSize,
+                                  slot: NSSize(width: iconSlot, height: 16)) {
+            title.append(attachment(icon, y: (font.capHeight - icon.size.height) / 2))
+        }
+        title.append(NSAttributedString(string: text, attributes: [.font: font].merging(attributes) { $1 }))
+        return title
+    }
+
+    /// A title with a smaller line under it, both starting where the other items' text starts,
+    /// and the symbol as tall as the two lines. An attachment cannot reach past its own line
+    /// without making it taller, so the symbol is cut in two: each line holds its half and is
+    /// fixed to its usual height, and the halves meet with no gap. The item stays as tall as
+    /// one with a system subtitle.
+    /// Its colors are set by hand, so `highlighted` turns them white under the selection.
+    static func title(_ text: String, subtitle: String, symbol: String, highlighted: Bool) -> NSAttributedString {
+        let font = NSFont.menuFont(ofSize: 0)
+        let small = NSFont.menuFont(ofSize: NSFont.smallSystemFontSize)
+        let primary: NSColor = highlighted ? .selectedMenuItemTextColor : .labelColor
+        let secondary: NSColor = highlighted ? .selectedMenuItemTextColor : .secondaryLabelColor
+        let lineHeight = { (font: NSFont) in ceil(font.ascender - font.descender + font.leading) }
+        let top = lineHeight(font), bottom = lineHeight(small)
+        let icon = symbolImage(symbol, color: primary, pointSize: top + bottom,
+                               slot: NSSize(width: wideIconSlot, height: top + bottom - 2))
+
+        func line(_ string: String, font: NSFont, color: NSColor, height: CGFloat, iconFrom y: CGFloat) -> NSAttributedString {
+            let line = NSMutableAttributedString()
+            if let icon {
+                let half = NSImage(size: NSSize(width: textIndent, height: height), flipped: false) { rect in
+                    let x = (iconSlot - icon.size.width) / 2, offset = (top + bottom - icon.size.height) / 2
+                    icon.draw(in: NSRect(x: x, y: offset - y, width: icon.size.width, height: icon.size.height))
+                    return true
+                }
+                let attachment = NSTextAttachment()
+                attachment.image = half
+                attachment.bounds = CGRect(x: 0, y: font.descender, width: textIndent, height: height)
+                line.append(NSAttributedString(attachment: attachment))
+            }
+            let style = NSMutableParagraphStyle()
+            style.minimumLineHeight = height
+            style.maximumLineHeight = height
+            line.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
+            line.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: line.length))
+            return line
+        }
+
+        let title = NSMutableAttributedString()
+        title.append(line(text + "\n", font: font, color: primary, height: top, iconFrom: bottom))
+        title.append(line(subtitle, font: small, color: secondary, height: bottom, iconFrom: 0))
+        return title
+    }
+
+    /// The icon in a box `textIndent` wide, so the text after it starts at the indent.
+    private static func attachment(_ icon: NSImage, y: CGFloat) -> NSAttributedString {
+        let attachment = NSTextAttachment()
+        let box = NSImage(size: NSSize(width: textIndent, height: icon.size.height), flipped: false) { _ in
+            // Centered under the narrow slot of the other items, so all the symbols line up.
+            icon.draw(at: NSPoint(x: (iconSlot - icon.size.width) / 2, y: 0), from: .zero, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        attachment.image = box
+        attachment.bounds = CGRect(x: 0, y: y, width: box.size.width, height: box.size.height)
+        return NSAttributedString(attachment: attachment)
+    }
+
+    /// The symbol fit and centered in `slot`, never drawn larger than `pointSize`, tinted
+    /// when drawn so it follows light and dark menus.
+    private static func symbolImage(_ name: String, color: NSColor, pointSize: CGFloat, slot: NSSize) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        let scale = min(1, slot.width / symbol.size.width, slot.height / symbol.size.height)
+        let size = NSSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
+        let height = max(slot.height, size.height)
+        return NSImage(size: NSSize(width: slot.width, height: height), flipped: false) { rect in
+            let origin = NSPoint(x: (rect.width - size.width) / 2, y: (rect.height - size.height) / 2)
+            symbol.draw(in: NSRect(origin: origin, size: size))
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+    }
+
+    /// Items whose colors are drawn by hand get them back in white while highlighted.
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        for case let styled as ClosureMenuItem in menu.items { styled.drawnHighlighted = styled === item }
     }
 }
 
@@ -199,27 +301,47 @@ extension StatusMenu {
             item = ClosureMenuItem(problem.text) { [host] in host.openConfig() }
             item.toolTip = message
         }
-        let image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Problem")
-        item.image = image?.withSymbolConfiguration(.init(paletteColors: [.systemOrange]))
+        item.attributedTitle = Self.title(problem.text, symbol: "exclamationmark.triangle.fill", color: .systemOrange)
         if #available(macOS 14.4, *) { item.subtitle = fix } else { item.toolTip = fix }
         menu.addItem(item)
         menu.addItem(.separator())
     }
 
-    /// The layouts, with a checkmark on the one of the focused display.
-    private func addLayouts(to menu: NSMenu) {
-        guard let current = host.layout() else { return }
-        let submenu = NSMenu()
-        for kind in LayoutKind.allCases {
-            let option = ClosureMenuItem(kind.rawValue.capitalized) { [host] in host.setLayout(kind) }
-            option.state = kind == current ? .on : .off
-            submenu.addItem(option)
+    /// Wireless input devices and their battery; a click opens the Bluetooth settings.
+    private func addBatteries(to menu: NSMenu) {
+        let batteries = host.batteries()
+        guard !batteries.isEmpty else { return }
+        if #available(macOS 14, *) { menu.addItem(.sectionHeader(title: "Devices")) }
+        for battery in batteries {
+            let item = ClosureMenuItem("\(battery.name)\t\(battery.percent)%") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") { NSWorkspace.shared.open(url) }
+            }
+            let tabs = NSMutableParagraphStyle()
+            tabs.tabStops = [NSTextTab(textAlignment: .right, location: 230)]
+            let symbol = battery.isLow ? Self.batterySymbol(battery.percent) : battery.symbol
+            let title = Self.title(battery.name + "\t", symbol: symbol, color: battery.isLow ? .systemOrange : .labelColor,
+                                   attributes: [.paragraphStyle: tabs])
+            let level = (battery.charging ? "⚡︎ " : "") + "\(battery.percent)%"
+            title.append(NSAttributedString(string: level, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+                .foregroundColor: battery.isLow ? NSColor.systemOrange : NSColor.secondaryLabelColor,
+                .paragraphStyle: tabs,
+            ]))
+            item.attributedTitle = title
+            item.toolTip = battery.isLow ? "Battery low" : nil
+            menu.addItem(item)
         }
-        let item = NSMenuItem(title: "Layout", action: nil, keyEquivalent: "")
-        item.image = Self.symbol("rectangle.split.3x1")
-        item.submenu = submenu
-        menu.addItem(item)
         menu.addItem(.separator())
+    }
+
+    private static func batterySymbol(_ percent: Int) -> String {
+        switch percent {
+        case ..<13: return "battery.0percent"
+        case ..<38: return "battery.25percent"
+        case ..<63: return "battery.50percent"
+        case ..<88: return "battery.75percent"
+        default: return "battery.100percent"
+        }
     }
 
     /// Workspaces that have open windows, one per line: name, then the icons of their
@@ -231,12 +353,12 @@ extension StatusMenu {
         let font = NSFont.menuFont(ofSize: 0)
         let nameWidth = workspaces.map { ($0.name as NSString).size(withAttributes: [.font: font.bold]).width }.max() ?? 0
         let tabs = NSMutableParagraphStyle()
-        tabs.tabStops = [NSTextTab(textAlignment: .left, location: nameWidth + 16)]
+        tabs.tabStops = [NSTextTab(textAlignment: .left, location: Self.textIndent + nameWidth + 16)]
 
         for workspace in workspaces {
             let item = ClosureMenuItem(workspace.name) { [host] in host.showWorkspace(workspace.index) }
-            let title = NSMutableAttributedString(string: workspace.name + "\t",
-                                                  attributes: [.font: font.bold, .paragraphStyle: tabs])
+            let title = Self.title(workspace.name + "\t", symbol: "macwindow",
+                                   attributes: [.font: font.bold, .paragraphStyle: tabs])
             // One icon per app, in tiling order.
             var seen = Set<String>()
             for window in workspace.windows where seen.insert(window.app).inserted {
@@ -265,6 +387,15 @@ private extension NSFont {
 
 private final class ClosureMenuItem: NSMenuItem {
     private let handler: () -> Void
+
+    /// A title that depends on whether the item is highlighted.
+    var styled: ((Bool) -> NSAttributedString)? {
+        didSet { drawnHighlighted = false; attributedTitle = styled?(false) }
+    }
+
+    var drawnHighlighted = false {
+        didSet { if oldValue != drawnHighlighted, let styled { attributedTitle = styled(drawnHighlighted) } }
+    }
 
     init(_ title: String, handler: @escaping () -> Void) {
         self.handler = handler

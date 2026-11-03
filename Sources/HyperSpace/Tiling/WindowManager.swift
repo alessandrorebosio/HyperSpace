@@ -7,8 +7,10 @@ final class ManagedWindow {
     let pid: pid_t
     let bundleID: String?
     var isFloating = false
-    /// A dialog-like window (no zoom, no full screen): always floats unless toggled by hand.
+    /// A dialog (or dialog-like window: no zoom, no full screen): always floats unless toggled by hand.
     var isDialog = false
+    /// The window a dialog belongs to: it shares its workspace and comes to the front with it.
+    var parent: CGWindowID?
     /// Set once the user toggles floating by hand; config reloads then leave it alone.
     var userOverride = false
     var workspace = 0
@@ -92,7 +94,8 @@ final class WindowManager {
     private var windows: [CGWindowID: ManagedWindow] = [:]
     /// Tiling order; the first window of each screen is the master.
     private var order: [CGWindowID] = []
-    private var screenStates: [CGDirectDisplayID: ScreenState] = [:]
+    /// Layout and ratio per display, by display UUID (they survive unplugging it).
+    private var screenStates: [String: ScreenState] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var retileScheduled = false
@@ -101,12 +104,25 @@ final class WindowManager {
 
     /// The workspace each display shows.
     private var displayed: [CGDirectDisplayID: Int] = [:]
-    /// Workspaces moved to another display than their default one.
-    private var homeOverride: [Int: CGDirectDisplayID] = [:]
+    /// Workspaces moved to another display than their default one, by display UUID (a
+    /// monitor plugged in again may get another id).
+    private var homeOverride: [Int: String] = [:]
+    /// What each display that went away (unplugged, asleep) showed, by UUID: shown again
+    /// when it comes back.
+    private var departed: [String: Int] = [:]
+    private let displayMonitor = DisplayMonitor()
+    /// An invisible window of HyperSpace's own that takes the key focus on a display with
+    /// nothing to focus, so macOS treats that display as the active one.
+    private lazy var focusAnchor = FocusAnchor()
+    /// The app focused last, to bring dialogs forward only when their app comes to the front.
+    private var lastFrontPID: pid_t?
     /// The workspace each display showed before the current one.
     private var shownBefore: [CGDirectDisplayID: Int] = [:]
-    /// Column arrangement of each workspace (columns layout).
+    /// Column arrangement of each workspace (columns layout), accordions included.
     private var columns: [Int: ColumnLayout] = [:]
+    /// Workspaces stacked as an accordion on top of a tall, wide or monocle layout (in columns
+    /// the accordion is a column of `ColumnLayout`).
+    private var accordionWorkspaces: Set<Int> = []
     private var previousWorkspace: Int?
     private var lastFocused: [Int: CGWindowID] = [:]
     /// Focus changes we cause ourselves must not switch workspace back.
@@ -140,6 +156,9 @@ final class WindowManager {
     private var pendingScratchpad: [String: Date] = [:]
     /// The size a scratchpad window took instead of the one asked for `target`.
     private var scratchpadFitted: (target: CGRect, size: CGSize)?
+    /// Window lookups still running on the apps' AX queues, and what waits for them.
+    private var pendingDiscoveries = 0
+    private var afterDiscoveries: [() -> Void] = []
 
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -163,6 +182,7 @@ final class WindowManager {
         // Fewer workspaces than before: their windows join the first one.
         displayed = displayed.filter { $0.value < workspaceCount }
         homeOverride = homeOverride.filter { $0.key < workspaceCount }
+        accordionWorkspaces = accordionWorkspaces.filter { $0 < workspaceCount }
         shownBefore = shownBefore.filter { $0.value < workspaceCount }
         if let previous = previousWorkspace, previous >= workspaceCount { previousWorkspace = nil }
         for window in windows.values where window.workspace >= workspaceCount { window.workspace = 0 }
@@ -202,6 +222,7 @@ final class WindowManager {
             guard let self, let app else { return }
             noteLaunch(app)
             addApp(app)
+            lookAgainAfterLaunch(app.processIdentifier)
         }
         observe(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
             guard let self, let app else { return }
@@ -215,7 +236,7 @@ final class WindowManager {
             // it finished launching, for some apps after their first window).
             noteLaunch(app)
             if let watcher = apps[app.processIdentifier] {
-                if discover(watcher) { scheduleRetile() }
+                discover(watcher)
             } else {
                 addApp(app)
             }
@@ -226,11 +247,9 @@ final class WindowManager {
         observe(NSWorkspace.activeSpaceDidChangeNotification) { [weak self] _ in self?.rescan() }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.syncDisplays()
-            self?.scheduleRetile()
-            self?.notifyWorkspace()
-        }
+        ) { [weak self] _ in self?.displaysChanged() }
+        displayMonitor.onChange = { [weak self] in self?.displaysChanged() }
+        displayMonitor.start()
 
         // Window elements use the global AX timeout (6 s by default): an app still busy
         // launching at login must not stall the window manager that long.
@@ -252,6 +271,24 @@ final class WindowManager {
         }
     }
 
+    private func displaysChanged() {
+        syncDisplays()
+        scheduleRetile()
+        notifyWorkspace()
+    }
+
+    /// Some apps create their first window before AX describes it (no subrole yet) or without
+    /// announcing it: look again a few times, so an app with a rule goes to its workspace
+    /// right away instead of when it is focused.
+    private func lookAgainAfterLaunch(_ pid: pid_t) {
+        for delay in [0.5, 1.5, 3.0, 6.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, let watcher = apps[pid] else { return }
+                discover(watcher)
+            }
+        }
+    }
+
     /// Remembers the workspace an app is being opened from, the first time it is seen.
     private func noteLaunch(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
@@ -266,10 +303,14 @@ final class WindowManager {
     private func adopt(_ pending: ArraySlice<NSRunningApplication>) {
         guard running else { return }
         guard let app = pending.first else {
-            adopting = false
-            applyRestoredLayout()
-            rescueStrandedWindows()
-            scheduleRetile()
+            // Once every window found has been looked at (AX answers come back asynchronously).
+            whenDiscovered { [weak self] in
+                guard let self, running, adopting else { return }
+                adopting = false
+                applyRestoredLayout()
+                rescueStrandedWindows()
+                scheduleRetile()
+            }
             return
         }
         addApp(app)
@@ -284,6 +325,9 @@ final class WindowManager {
         workspaceObservers.removeAll()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
+        displayMonitor.onChange = nil
+        displayMonitor.stop()
+        focusAnchor.dismiss()
         apps.values.forEach { $0.invalidate() }
         apps.removeAll()
         launches.removeAll()
@@ -293,8 +337,12 @@ final class WindowManager {
         lastFocused.removeAll()
         displayed.removeAll()
         homeOverride.removeAll()
+        departed.removeAll()
         shownBefore.removeAll()
         activeDisplay = nil
+        lastFrontPID = nil
+        pendingDiscoveries = 0
+        afterDiscoveries.removeAll()
     }
 
     /// After a crash windows can be left parked off-screen: bring them back.
@@ -316,8 +364,8 @@ final class WindowManager {
         guard running, app.activationPolicy == .regular, pid != getpid(), apps[pid] == nil, !app.isTerminated else { return }
         if let watcher = AppWatcher(app: app, refcon: refcon) {
             apps[pid] = watcher
-            log.debug("watch \(watcher.bundleID ?? "?", privacy: .public): \(watcher.windows.count) window(s)")
-            if discover(watcher) { scheduleRetile() }
+            log.debug("watch \(watcher.bundleID ?? "?", privacy: .public)")
+            discover(watcher)
         } else if attempt < 20 {
             if attempt == 0 || attempt == 19 { note("cannot watch \(app.bundleIdentifier ?? "?") yet (attempt \(attempt + 1))") }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -333,37 +381,73 @@ final class WindowManager {
         scheduleRetile()
     }
 
-    /// Returns true if new windows were found.
-    @discardableResult
-    private func discover(_ watcher: AppWatcher) -> Bool {
-        var found = false
-        for element in watcher.windows where track(element, in: watcher) != nil { found = true }
-        return found
+    /// Looks for windows not tracked yet. The app is asked on its own AX queue (a slow app
+    /// does not hold up the others or the shortcuts); new windows are tracked on the main
+    /// thread and retiled.
+    private func discover(_ watcher: AppWatcher, then done: (() -> Void)? = nil) {
+        let pid = watcher.pid
+        let app = watcher.element
+        pendingDiscoveries += 1
+        writer.read(pid, {
+            AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid) }
+        }, then: { [weak self] probes in
+            guard let self else { return }
+            var found = false
+            if running, apps[pid] === watcher {
+                for probe in probes where track(probe, in: watcher) != nil { found = true }
+            }
+            if found { scheduleRetile() }
+            done?()
+            discoveryFinished()
+        })
     }
 
-    /// Starts managing a window; nil when it is already known or not a standard window.
+    private func discoveryFinished() {
+        pendingDiscoveries = max(0, pendingDiscoveries - 1)
+        guard pendingDiscoveries == 0, !afterDiscoveries.isEmpty else { return }
+        let waiting = afterDiscoveries
+        afterDiscoveries.removeAll()
+        waiting.forEach { $0() }
+    }
+
+    /// Runs `block` once the window lookups in flight are done (at most 3 s later: a hung app
+    /// must not keep the others from tiling).
+    private func whenDiscovered(_ block: @escaping () -> Void) {
+        guard pendingDiscoveries > 0 else { return block() }
+        var ran = false
+        let once = { if !ran { ran = true; block() } }
+        afterDiscoveries.append(once)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: once)
+    }
+
+    /// Starts managing a window; nil when it is already known or not a window to manage.
     @discardableResult
-    private func track(_ element: AXUIElement, in watcher: AppWatcher) -> ManagedWindow? {
-        guard let id = AX.windowID(element) else {
+    private func track(_ probe: AX.WindowProbe, in watcher: AppWatcher) -> ManagedWindow? {
+        let element = probe.element
+        guard let id = probe.id else {
             // The Finder desktop (a scroll area) is listed among its windows: not worth a line.
-            guard AX.string(element, kAXRoleAttribute) != kAXScrollAreaRole else { return nil }
-            log.debug("no window id for a window of \(watcher.bundleID ?? "?", privacy: .public) (role \(AX.string(element, kAXRoleAttribute) ?? "-", privacy: .public))")
-            note("no window id for a window of \(watcher.bundleID ?? "?") (role \(AX.string(element, kAXRoleAttribute) ?? "-"))")
+            guard probe.role != kAXScrollAreaRole, probe.kind != .pending else { return nil }
+            log.debug("no window id for a window of \(watcher.bundleID ?? "?", privacy: .public) (role \(probe.role ?? "-", privacy: .public))")
+            note("no window id for a window of \(watcher.bundleID ?? "?") (role \(probe.role ?? "-"))")
             return nil
         }
         guard windows[id] == nil else { return nil }
-        guard AX.isStandardWindow(element) else {
-            log.debug("skip window of \(watcher.bundleID ?? "?", privacy: .public): role \(AX.string(element, kAXRoleAttribute) ?? "-", privacy: .public) subrole \(AX.string(element, kAXSubroleAttribute) ?? "-", privacy: .public)")
+        guard probe.kind == .standard || probe.kind == .dialog else {
+            log.debug("skip window of \(watcher.bundleID ?? "?", privacy: .public): role \(probe.role ?? "-", privacy: .public) subrole \(probe.subrole ?? "-", privacy: .public)")
             return nil
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
-        window.isDialog = AX.isDialogLike(element)
+        window.isDialog = probe.kind == .dialog || probe.dialogLike
         window.isFloating = window.isDialog
-            || config.floats(app: watcher.bundleID, title: config.floatingWindows.isEmpty ? nil : AX.string(element, kAXTitleAttribute))
+            || config.floats(app: watcher.bundleID, title: config.floatingWindows.isEmpty ? nil : probe.title)
+        // A dialog belongs to the window it was opened from: the app's main window, else the
+        // app's window focused last, else any of its windows.
+        let parent = window.isDialog ? dialogParent(of: watcher.pid, main: probe.mainWindow, excluding: id) : nil
+        window.parent = parent?.id
         // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
         var restored: WorkspaceState.Window?
-        if restorer != nil, let app = watcher.bundleID,
-           let index = restorer?.claim(app: app, title: AX.string(element, kAXTitleAttribute)) {
+        if restorer != nil, parent == nil, let app = watcher.bundleID,
+           let index = restorer?.claim(app: app, title: probe.title) {
             restored = restorer?.window(index)
             restoredIndex[id] = index
             if let floating = restored?.floating {
@@ -373,33 +457,45 @@ final class WindowManager {
             window.scratchpad = restored?.scratchpad ?? false
         }
         // The app was opened by its scratchpad shortcut: this window is the scratchpad one.
-        if let app = watcher.bundleID, let until = pendingScratchpad[app] {
+        if parent == nil, let app = watcher.bundleID, let until = pendingScratchpad[app] {
             pendingScratchpad[app] = nil
             if Date() < until {
                 window.scratchpad = true
                 DispatchQueue.main.async { [weak self] in self?.showScratchpad(window) }
             }
         }
-        // A window joins its app's assigned workspace, the one it had before a restart, the
-        // one the app was opened from (you may have moved on while it loaded), or the one
-        // shown where it appears.
+        // A window joins its parent's workspace (a dialog), its app's assigned workspace, the
+        // one it had before a restart, the one the app was opened from (you may have moved on
+        // while it loaded), or the one shown where it appears.
         let launch = launches.workspace(for: watcher.pid)
         let assigned = watcher.bundleID.flatMap { config.assignments[$0] }
-        window.workspace = Self.newWindowWorkspace(assigned: assigned, restored: restored?.workspace, launch: launch,
-                                                   workspaces: workspaceCount) { [self] in
-            if let origin = AX.position(element), let size = AX.size(element), case let screens = ScreenInfo.current(), !screens.isEmpty {
-                return displayed[screens[screens.index(for: CGRect(origin: origin, size: size))].id]
+        if let parent {
+            window.workspace = parent.workspace
+        } else {
+            window.workspace = Self.newWindowWorkspace(assigned: assigned, restored: restored?.workspace, launch: launch,
+                                                       workspaces: workspaceCount) { [self] in
+                if let frame = probe.frame, case let screens = ScreenInfo.current(), !screens.isEmpty {
+                    return displayed[screens[screens.index(for: frame)].id]
+                }
+                return focusedScreen().flatMap { displayed[$0.id] }
             }
-            return focusedScreen().flatMap { displayed[$0.id] }
         }
         // An app with a rule you just opened takes you to its workspace, however its first
         // window was found (an app slow to answer is picked up by a later look).
-        if let assigned, assigned < workspaceCount, launch != nil, restored == nil, !window.scratchpad { reveal(window) }
+        if parent == nil, let assigned, assigned < workspaceCount, launch != nil, restored == nil, !window.scratchpad { reveal(window) }
         windows[id] = window
         order.append(id)
         watcher.watch(element)
-        log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)")
+        log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)\(parent.map { " dialog of \($0.id)" } ?? "")")
         return window
+    }
+
+    /// The window a new dialog of `pid` belongs to.
+    private func dialogParent(of pid: pid_t, main: CGWindowID?, excluding id: CGWindowID) -> ManagedWindow? {
+        let mine = order.compactMap { windows[$0] }.filter { $0.pid == pid && $0.id != id && $0.parent == nil }
+        if let main, let window = mine.first(where: { $0.id == main }) { return window }
+        if let window = mine.first(where: { lastFocused[$0.workspace] == $0.id && display(showing: $0.workspace) != nil }) { return window }
+        return mine.first { display(showing: $0.workspace) != nil } ?? mine.first
     }
 
     /// The workspace of a new window: its app's rule, the one it had before a restart, the one
@@ -538,7 +634,8 @@ final class WindowManager {
                 AX.setPosition(element, centered.origin)
             }
         }
-        focus(window)
+        // Where it is going, not the corner it was parked in (another display maybe).
+        focus(window, at: frame)
         notifyWorkspace()
     }
 
@@ -546,10 +643,12 @@ final class WindowManager {
         ignoreFocusChanges()
         window.scratchpadShown = false
         let screens = ScreenInfo.current()
-        if let frame = onScreenBounds()[window.id] { hide(window, from: frame, screens: screens) }
+        let frame = onScreenBounds()[window.id]
+        if let frame { hide(window, from: frame, screens: screens) }
         log.debug("hide scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public))")
-        // Back to what you were doing.
-        if let workspace = activeDisplay.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
+        // Back to what you were doing, on the display it was shown on: the pointer stays there.
+        let here = frame.flatMap { screens.isEmpty ? nil : screens[screens.index(for: $0)].id } ?? activeDisplay
+        if let workspace = here.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
             focusWindow(in: workspace)
         }
     }
@@ -584,10 +683,13 @@ final class WindowManager {
         let focusedID = focusedScreen()?.id
         for (i, screen) in screens.enumerated() {
             let shown = displayed[screen.id].map { "\(name(of: $0)) (#\($0 + 1))" } ?? "none"
-            lines.append("Display \(i + 1): id \(screen.id) \(Self.describe(screen.frame)) shows \(shown)\(screen.id == focusedID ? " [focused]" : "")")
+            lines.append("Display \(i + 1): id \(screen.id) \(screen.uuid) \(Self.describe(screen.frame)) visible \(Self.describe(screen.visible)) shows \(shown)\(screen.id == focusedID ? " [focused]" : "")")
         }
         if !homeOverride.isEmpty {
             lines.append("Moved workspaces: " + homeOverride.sorted { $0.key < $1.key }.map { "\(name(of: $0.key)) → display \($0.value)" }.joined(separator: ", "))
+        }
+        if !DisplayMonitor.absent.isEmpty {
+            lines.append("Displays left out (asleep or on another input): " + DisplayMonitor.absent.sorted().map(String.init).joined(separator: ", "))
         }
         let bounds = onScreenBounds()
         for workspace in 0..<workspaceCount {
@@ -620,12 +722,31 @@ final class WindowManager {
     /// windows are matched as they are found, for a minute.
     private func loadSavedState() {
         guard let state = WorkspaceState.load() else { return }
-        let ids = Set(ScreenInfo.current().map(\.id))
-        for (key, display) in state.homeOverride {
-            if let workspace = Int(key), workspace < workspaceCount, ids.contains(display) { homeOverride[workspace] = display }
+        let screens = ScreenInfo.current()
+        let ids = Set(screens.map(\.id))
+        let byUUID = Dictionary(screens.map { ($0.uuid, $0.id) }, uniquingKeysWith: { a, _ in a })
+        // Displays by UUID (any display the monitor was plugged into); older states by id.
+        if let moved = state.moved {
+            for (key, uuid) in moved {
+                if let workspace = Int(key), workspace < workspaceCount { homeOverride[workspace] = uuid }
+            }
+        } else {
+            for (key, display) in state.homeOverride {
+                if let workspace = Int(key), workspace < workspaceCount, ids.contains(display) { homeOverride[workspace] = ScreenInfo.uuid(of: display) }
+            }
         }
-        for (key, workspace) in state.displayed {
-            if let display = CGDirectDisplayID(key), ids.contains(display), workspace < workspaceCount { displayed[display] = workspace }
+        if let shown = state.displays {
+            for (uuid, workspace) in shown where workspace < workspaceCount {
+                if let display = byUUID[uuid] { displayed[display] = workspace } else { departed[uuid] = workspace }
+            }
+        } else {
+            for (key, workspace) in state.displayed {
+                if let display = CGDirectDisplayID(key), ids.contains(display), workspace < workspaceCount { displayed[display] = workspace }
+            }
+        }
+        accordionWorkspaces = Set((state.accordionWorkspaces ?? []).filter { $0 < workspaceCount })
+        for (uuid, saved) in state.layouts ?? [:] {
+            if let kind = LayoutKind(rawValue: saved.layout) { screenStates[uuid] = ScreenState(layout: kind, ratio: CGFloat(saved.ratio)) }
         }
         restoredState = state
         restorer = WorkspaceRestorer(state)
@@ -646,7 +767,8 @@ final class WindowManager {
         let idByIndex = Dictionary(restoredIndex.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
         for (key, saved) in state.columns {
             guard let workspace = Int(key) else { continue }
-            columns[workspace] = ColumnLayout(columns: saved.map { $0.compactMap { idByIndex[$0] } })
+            columns[workspace] = ColumnLayout(columns: saved.map { $0.compactMap { idByIndex[$0] } },
+                                              accordions: Set(state.accordions?[key] ?? []))
         }
     }
 
@@ -662,12 +784,24 @@ final class WindowManager {
                                        floating: window.userOverride ? window.isFloating : nil,
                                        scratchpad: window.scratchpad ? true : nil))
         }
+        var accordions: [String: [Int]] = [:]
         for (workspace, layout) in columns {
-            let saved = layout.columns.map { $0.windows.compactMap { index[$0] } }.filter { !$0.isEmpty }
+            let kept = layout.columns.filter { !$0.windows.compactMap { index[$0] }.isEmpty }
+            let saved = kept.map { $0.windows.compactMap { index[$0] } }
             if !saved.isEmpty { state.columns[String(workspace)] = saved }
+            let stacked = kept.indices.filter { kept[$0].accordion }
+            if !stacked.isEmpty { accordions[String(workspace)] = stacked }
         }
-        for (display, workspace) in displayed { state.displayed[String(display)] = workspace }
-        for (workspace, display) in homeOverride { state.homeOverride[String(workspace)] = display }
+        state.accordions = accordions.isEmpty ? nil : accordions
+        state.accordionWorkspaces = accordionWorkspaces.isEmpty ? nil : accordionWorkspaces.sorted()
+        var shown = departed
+        for (display, workspace) in displayed {
+            state.displayed[String(display)] = workspace
+            shown[ScreenInfo.uuid(of: display)] = workspace
+        }
+        state.displays = shown
+        state.moved = Dictionary(uniqueKeysWithValues: homeOverride.map { (String($0.key), $0.value) })
+        state.layouts = screenStates.mapValues { .init(layout: $0.layout.rawValue, ratio: Double($0.ratio)) }
         return (state, list.map(\.element))
     }
 
@@ -715,8 +849,10 @@ final class WindowManager {
         )
         for id in windows.keys where !alive.contains(id) { untrack(id) }
         for watcher in apps.values { discover(watcher) }
-        applyRestoredLayout()
-        scheduleRetile()
+        whenDiscovered { [weak self] in
+            self?.applyRestoredLayout()
+            self?.scheduleRetile()
+        }
     }
 
     func handle(_ notification: String, element: AXUIElement) {
@@ -724,30 +860,7 @@ final class WindowManager {
         let pid = AX.pid(element)
         switch notification {
         case kAXWindowCreatedNotification:
-            guard let watcher = apps[pid], let window = track(element, in: watcher) else { return }
-            // A scratchpad window is shown where you are, whatever its workspace.
-            if window.scratchpad { return }
-            if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
-                lastFocused[window.workspace] = window.id
-                if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
-                    // An app you just opened shows its assigned workspace, so its window is visible.
-                    switchWorkspace(window.workspace)
-                } else {
-                    // It finished loading after you left its workspace: it stays there, and
-                    // the focus stays where you are.
-                    log.debug("window \(window.id) (\(watcher.bundleID ?? "?", privacy: .public)) opened in hidden workspace \(window.workspace)")
-                    let here = activeDisplay.flatMap { displayed[$0] }
-                    ignoreFocusChanges()
-                    movedAway = window.id
-                    retile()
-                    if let here { focusWindow(in: here) }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
-                }
-                return
-            }
-            scheduleRetile()
-            // Some apps put the window on screen a moment after announcing it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+            windowCreated(element, pid: pid)
         case kAXUIElementDestroyedNotification:
             guard let id = managed(element, pid: pid)?.id else { return }
             untrack(id)
@@ -776,6 +889,49 @@ final class WindowManager {
         }
     }
 
+    /// A new window: described on its app's AX queue, then tracked. A window AX does not
+    /// describe yet (no subrole) is looked at again a few times.
+    private func windowCreated(_ element: AXUIElement, pid: pid_t, attempt: Int = 0) {
+        writer.read(pid, { AX.probe(element, pid: pid) }, then: { [weak self] probe in
+            guard let self, running, let watcher = apps[pid] else { return }
+            if probe.kind == .pending, attempt < 5 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 * Double(1 << attempt)) { [weak self] in
+                    self?.windowCreated(element, pid: pid, attempt: attempt + 1)
+                }
+                return
+            }
+            guard let window = track(probe, in: watcher) else { return }
+            windowTracked(window, watcher: watcher)
+        })
+    }
+
+    private func windowTracked(_ window: ManagedWindow, watcher: AppWatcher) {
+        let pid = watcher.pid
+        // A scratchpad window is shown where you are, whatever its workspace.
+        if window.scratchpad { return }
+        if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+            lastFocused[window.workspace] = window.id
+            if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
+                // An app you just opened shows its assigned workspace, so its window is visible.
+                switchWorkspace(window.workspace)
+            } else {
+                // It finished loading after you left its workspace: it stays there, and
+                // the focus stays where you are.
+                log.debug("window \(window.id) (\(watcher.bundleID ?? "?", privacy: .public)) opened in hidden workspace \(window.workspace)")
+                let here = activeDisplay.flatMap { displayed[$0] }
+                ignoreFocusChanges()
+                movedAway = window.id
+                retile()
+                if let here { focusWindow(in: here) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+            }
+            return
+        }
+        scheduleRetile()
+        // Some apps put the window on screen a moment after announcing it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+    }
+
     /// The tracked window of an AX element, compared locally (asking the app for the
     /// window id would be a round trip, and a destroyed element has none left).
     private func managed(_ element: AXUIElement, pid: pid_t) -> ManagedWindow? {
@@ -802,6 +958,12 @@ final class WindowManager {
             guard let self else { return }
             focusUpdateScheduled = false
             let window = focused()
+            if let window, window.pid != lastFrontPID {
+                // Its app came to the front (⌘Tab, a click, the Dock): its dialogs come along.
+                let dialogs = dialogs(of: window)
+                if !dialogs.isEmpty { writer.perform(window.pid) { dialogs.forEach(AX.raise) } }
+            }
+            lastFrontPID = window?.pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
             followFocus(window)
             notifyWorkspace(focused: window)
         }
@@ -845,7 +1007,7 @@ final class WindowManager {
             if !shown.contains(window.workspace) {
                 if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
             } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
-                show(window, on: screen)
+                show(window, on: screen, screens)
             }
         }
 
@@ -861,12 +1023,14 @@ final class WindowManager {
             let frames: [CGWindowID: CGRect]
             if state.layout == .columns {
                 var layout = columns[workspace] ?? ColumnLayout()
-                layout.sync(with: tiled.map(\.id))
+                layout.sync(with: tiled.map(\.id), focused: lastFocused[workspace])
                 columns[workspace] = layout
-                frames = layout.frames(in: area(of: screen), gap: config.gap) { windows[$0]?.weight ?? 1 }
+                frames = layout.frames(in: area(of: screen), gap: config.gap, peek: config.accordionPadding) { windows[$0]?.weight ?? 1 }
             } else {
-                let list = Layout.frames(state.layout, weights: tiled.map(\.weight), in: area(of: screen),
-                                         gap: config.gap, ratio: state.ratio)
+                let focusedIndex = tiled.firstIndex { $0.id == lastFocused[workspace] } ?? 0
+                let kind = accordionWorkspaces.contains(workspace) ? .accordion : state.layout
+                let list = Layout.frames(kind, weights: tiled.map(\.weight), in: area(of: screen),
+                                         gap: config.gap, ratio: state.ratio, focused: focusedIndex, peek: config.accordionPadding)
                 frames = Dictionary(uniqueKeysWithValues: zip(tiled.map(\.id), list))
             }
             for window in tiled {
@@ -878,8 +1042,11 @@ final class WindowManager {
         scheduleSave()
     }
 
+    /// The display's visible frame (no menu bar, no Dock) less the padding: every layout
+    /// works inside it, never in absolute screen coordinates of its own.
     private func area(of screen: ScreenInfo) -> CGRect {
-        screen.visible.insetBy(dx: config.padding, dy: config.padding)
+        let area = screen.visible.insetBy(dx: config.padding, dy: config.padding)
+        return area.width > 0 && area.height > 0 ? area : screen.visible
     }
 
     /// Tiled windows of a workspace that are on screen, in tiling order.
@@ -901,13 +1068,20 @@ final class WindowManager {
     /// Focuses a window without the resulting focus change switching workspaces. Crossing
     /// to another display brings the pointer along (if enabled), and as macOS sometimes
     /// ignores a background app raising a window on another display, it checks and retries.
-    private func focus(_ window: ManagedWindow) {
+    /// `frame` is where the window is going, when we just moved it (the move is not done yet).
+    private func focus(_ window: ManagedWindow, at frame: CGRect? = nil) {
         ignoreFocusChanges()
         focusRequest += 1
         let request = focusRequest
-        writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
+        focusAnchor.dismiss()
+        let dialogs = dialogs(of: window)
+        writer.perform(window.pid) {
+            AX.focus(window.element, pid: window.pid)
+            dialogs.forEach(AX.raise)
+        }
+        lastFrontPID = window.pid
         let screens = ScreenInfo.current()
-        if let frame = onScreenBounds()[window.id], !screens.isEmpty {
+        if let frame = frame ?? onScreenBounds()[window.id], !screens.isEmpty {
             let screen = screens[screens.index(for: frame)]
             activeDisplay = screen.id
             bringPointer(to: frame.center, on: screen, screens)
@@ -923,6 +1097,11 @@ final class WindowManager {
             NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
             writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
         }
+    }
+
+    /// The dialogs of a window that are on screen: they come to the front with it.
+    private func dialogs(of window: ManagedWindow) -> [AXUIElement] {
+        windows.values.filter { $0.parent == window.id && $0.hiddenFrame == nil && !$0.scratchpad }.map(\.element)
     }
 
     /// Moves the pointer to `point` when it is on another display than `screen`.
@@ -1001,14 +1180,18 @@ final class WindowManager {
     }
 
     private func state(for screen: CGDirectDisplayID?) -> ScreenState {
-        screen.flatMap { screenStates[$0] } ?? ScreenState(layout: config.layout, ratio: config.masterRatio)
+        screen.flatMap { screenStates[ScreenInfo.uuid(of: $0)] } ?? ScreenState(layout: config.layout, ratio: config.masterRatio)
+    }
+
+    private func setState(_ state: ScreenState, for screen: CGDirectDisplayID) {
+        screenStates[ScreenInfo.uuid(of: screen)] = state
     }
 
     private func updateActiveScreen(_ change: (inout ScreenState) -> Void) {
         guard let id = focusedScreen()?.id else { return }
         var state = state(for: id)
         change(&state)
-        screenStates[id] = state
+        setState(state, for: id)
         scheduleRetile()
     }
 
@@ -1017,8 +1200,13 @@ final class WindowManager {
     /// The display a workspace lives on: where it was moved, otherwise workspace n on the
     /// n-th display and the rest on the main one (displays in `ScreenInfo.current()` order).
     private func home(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
-        let id = Self.homeDisplay(of: workspace, movedTo: homeOverride[workspace], displays: screens.map(\.id))
+        let id = Self.homeDisplay(of: workspace, movedTo: movedTo(workspace, screens), displays: screens.map(\.id))
         return screens.first { $0.id == id }
+    }
+
+    /// The connected display a workspace was moved to, if any.
+    private func movedTo(_ workspace: Int, _ screens: [ScreenInfo]) -> CGDirectDisplayID? {
+        homeOverride[workspace].flatMap { uuid in screens.first { $0.uuid == uuid }?.id }
     }
 
     /// `displays` in `ScreenInfo.current()` order; a move to a display no longer there is ignored.
@@ -1039,11 +1227,25 @@ final class WindowManager {
 
     /// Every display shows one of its own workspaces (the lowest numbered by default), or
     /// none when no workspace lives there.
+    /// A display that went away remembers what it showed (by UUID), and shows it again when
+    /// it comes back, so a monitor plugged in again finds its workspace and windows as they were.
     private func syncDisplays() {
-        let ids = ScreenInfo.current().map(\.id)
-        displayed = Self.syncedDisplays(displayed, displays: ids, workspaces: workspaceCount) { [homeOverride] in
-            Self.homeDisplay(of: $0, movedTo: homeOverride[$0], displays: ids)
+        let screens = ScreenInfo.current()
+        let ids = screens.map(\.id)
+        // Looked up while connected: a display gone may have no UUID to ask for any more.
+        for screen in screens { _ = screen.uuid }
+        for (display, workspace) in displayed where !ids.contains(display) {
+            departed[ScreenInfo.uuid(of: display)] = workspace
         }
+        let home = { [self] (workspace: Int) in Self.homeDisplay(of: workspace, movedTo: movedTo(workspace, screens), displays: ids) }
+        for screen in screens where displayed[screen.id] == nil {
+            guard let workspace = departed.removeValue(forKey: screen.uuid), workspace < workspaceCount,
+                  home(workspace) == screen.id else { continue }
+            log.debug("display \(screen.id) is back: shows workspace \(workspace) again")
+            for (display, shown) in displayed where shown == workspace { displayed[display] = nil }
+            displayed[screen.id] = workspace
+        }
+        displayed = Self.syncedDisplays(displayed, displays: ids, workspaces: workspaceCount, home: home)
     }
 
     static func syncedDisplays(_ displayed: [CGDirectDisplayID: Int], displays: [CGDirectDisplayID], workspaces: Int,
@@ -1095,8 +1297,12 @@ final class WindowManager {
         guard running, (0..<workspaceCount).contains(index), let window = focused(), window.workspace != index else { return }
         let source = window.workspace
         ignoreFocusChanges()
-        window.workspace = index
+        // Its dialogs go along.
+        let moving = [window] + windows.values.filter { $0.parent == window.id }
+        moving.forEach { $0.workspace = index }
         log.debug("move window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
+        // A floating window going to a workspace shown on another display keeps its place there.
+        carryFloating(moving, screens: ScreenInfo.current())
         retile()
         guard display(showing: index) == nil else { return }
         // It went out of sight: focus what is left, and if nothing is, keep its workspace hidden.
@@ -1115,10 +1321,30 @@ final class WindowManager {
 
     /// A floating window returns to its frame, on the display now showing its workspace;
     /// tiled ones are placed by the retile.
-    private func show(_ window: ManagedWindow, on screen: ScreenInfo) {
+    private func show(_ window: ManagedWindow, on screen: ScreenInfo, _ screens: [ScreenInfo]) {
         guard let frame = window.hiddenFrame else { return }
-        setFrame(window, screen.frame.contains(frame.center) ? frame : screen.centered(frame.size))
+        setFrame(window, Self.place(frame, on: screen, screens))
         window.hiddenFrame = nil
+    }
+
+    /// `frame` on `screen`: as it is when already there, else moved from the display it is on
+    /// keeping its position and size as shares of the visible area.
+    static func place(_ frame: CGRect, on screen: ScreenInfo, _ screens: [ScreenInfo]) -> CGRect {
+        guard !screens.isEmpty else { return frame }
+        let from = screens[screens.index(for: frame)]
+        return from.id == screen.id ? frame : from.relocate(frame, to: screen)
+    }
+
+    /// Floating windows of `workspaces` on screen but on another display than the one showing
+    /// their workspace (it was just moved, or the window was): carried over, proportionally.
+    private func carryFloating(_ members: [ManagedWindow], screens: [ScreenInfo]) {
+        let bounds = onScreenBounds()
+        for window in members where window.isFloating && !window.scratchpad && window.hiddenFrame == nil {
+            guard let frame = bounds[window.id], let id = display(showing: window.workspace),
+                  let screen = screens.first(where: { $0.id == id }) else { continue }
+            let target = Self.place(frame, on: screen, screens)
+            if !target.isClose(to: frame) { setFrame(window, target, from: frame, screens: screens) }
+        }
     }
 
     /// Focuses the workspace: its last focused window, or with no windows, its display.
@@ -1140,9 +1366,13 @@ final class WindowManager {
             // another display it would keep typing there). HyperSpace has no window to show.
             // Through AX like any other app: NSApp.activate is ignored from the background.
             // Off the main thread, which has to answer the request.
+            // An invisible window of ours on that display takes the key focus, so macOS makes
+            // it the active display too (menu bar, new windows, Spotlight open there).
             focusRequest += 1
+            focusAnchor.show(on: screen)
             let me = getpid()
             writer.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.focusAnchor.takeKey() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 log.debug("empty workspace \(workspace): frontmost \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "-", privacy: .public)")
             }
@@ -1158,7 +1388,17 @@ final class WindowManager {
             if !window.scratchpadShown, Date() > followFocusAfter { showScratchpad(window) }
             return
         }
-        if window.hiddenFrame == nil, let id = display(showing: window.workspace) { activeDisplay = id }
+        if window.hiddenFrame == nil, let id = display(showing: window.workspace) {
+            activeDisplay = id
+            if lastFocused[window.workspace] != window.id {
+                lastFocused[window.workspace] = window.id
+                // An accordion brings the focused window to the front, in the middle.
+                if !window.isFloating, inAccordion(window, layout: state(for: id).layout) {
+                    columns[window.workspace]?.setFront(window.id)
+                    scheduleRetile()
+                }
+            }
+        }
         if window.id != movedAway { movedAway = nil }
         guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
         log.debug("follow focus to window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) in workspace \(window.workspace)")
@@ -1250,8 +1490,64 @@ final class WindowManager {
     func focus(_ direction: Direction) {
         let bounds = onScreenBounds()
         guard let current = focused(), let origin = bounds[current.id] else { return }
+        // Accordion: left and right go through the stack in order (the windows overlap, so
+        // their centers say little); past either end, on to the next display.
+        if let next = accordionNeighbor(of: current, direction, bounds) {
+            focus(next)
+            return
+        }
         let candidates = visible(bounds).filter { $0.0.id != current.id }
         if let target = Layout.neighbor(of: origin, direction, among: candidates) { focus(target) }
+    }
+
+    /// The previous or next tiled window of an accordion, for left and right.
+    private func accordionNeighbor(of window: ManagedWindow, _ direction: Direction, _ bounds: [CGWindowID: CGRect]) -> ManagedWindow? {
+        let kind = layout(of: window.workspace)
+        guard direction == .left || direction == .right, !window.isFloating, !window.scratchpad,
+              inAccordion(window, layout: kind) else { return nil }
+        if kind == .columns {
+            return columns[window.workspace]?.accordionNeighbor(of: window.id, direction == .right ? 1 : -1)
+                .flatMap { windows[$0] }.flatMap { bounds[$0.id] == nil ? nil : $0 }
+        }
+        let tiled = tiledWindows(in: window.workspace, bounds: bounds)
+        guard let index = tiled.firstIndex(where: { $0 === window }) else { return nil }
+        let next = index + (direction == .right ? 1 : -1)
+        return tiled.indices.contains(next) ? tiled[next] : nil
+    }
+
+    /// Whether a tiled window is shown in an accordion: the accordion layout, a workspace
+    /// stacked with `accordion`, or (columns) an accordion column.
+    private func inAccordion(_ window: ManagedWindow, layout kind: LayoutKind) -> Bool {
+        switch kind {
+        case .accordion: return true
+        case .columns: return columns[window.workspace]?.isInAccordion(window.id) ?? false
+        case .tall, .wide, .monocle: return accordionWorkspaces.contains(window.workspace)
+        }
+    }
+
+    /// Stacks the focused window's workspace as an accordion, or unstacks it. In columns the
+    /// windows become one accordion column: move a window left or right (`swap`) to take it
+    /// out into a column of its own, up or down to reorder the stack. In tall, wide and monocle
+    /// the whole workspace is stacked, and any move puts it back in its layout.
+    func toggleAccordion() {
+        let bounds = onScreenBounds()
+        guard running, let window = focused(), !window.isFloating, !window.scratchpad, bounds[window.id] != nil else { return }
+        let workspace = window.workspace
+        lastFocused[workspace] = window.id
+        switch layout(of: workspace) {
+        case .accordion:
+            return
+        case .columns:
+            var layout = columns[workspace] ?? ColumnLayout()
+            layout.sync(with: tiledWindows(in: workspace, bounds: bounds).map(\.id))
+            let on = layout.toggleAccordion(around: window.id)
+            columns[workspace] = layout
+            log.debug("accordion \(on ? "on" : "off") in workspace \(workspace)")
+        case .tall, .wide, .monocle:
+            if accordionWorkspaces.remove(workspace) == nil { accordionWorkspaces.insert(workspace) }
+        }
+        retile()
+        focus(window)
     }
 
     /// The layout of the display showing a workspace.
@@ -1266,6 +1562,18 @@ final class WindowManager {
             // Columns: stack, unstack and reorder (see ColumnLayout.move); new arrangement, even shares.
             columns[current.workspace]?.move(current.id, direction)
             current.weight = 1
+            retile()
+            return
+        }
+        if accordionWorkspaces.contains(current.workspace), layout(of: current.workspace) != .columns {
+            // Stacked on top of tall, wide or monocle: a move puts the windows back in the layout.
+            accordionWorkspaces.remove(current.workspace)
+            retile()
+            return
+        }
+        if let neighbor = accordionNeighbor(of: current, direction, bounds) {
+            swapOrder(current.id, neighbor.id)
+            Swift.swap(&current.weight, &neighbor.weight)
             retile()
             return
         }
@@ -1291,12 +1599,6 @@ final class WindowManager {
     private func swapOrder(_ a: CGWindowID, _ b: CGWindowID) {
         guard let i = order.firstIndex(of: a), let j = order.firstIndex(of: b) else { return }
         order.swapAt(i, j)
-    }
-
-    /// Layout of the display with the focus, for the menu; nil while tiling is off.
-    var activeLayout: LayoutKind? {
-        guard running, config.enabled, let id = focusedScreen()?.id else { return nil }
-        return state(for: id).layout
     }
 
     func setLayout(_ kind: LayoutKind) {
@@ -1334,7 +1636,7 @@ final class WindowManager {
                 // Across the master/stack split: the master grows, a stack window grows by shrinking it.
                 let change = delta / (splitIsHorizontal ? area.width : area.height)
                 state.ratio = min(0.9, max(0.1, state.ratio + (position == 0 ? change : -change)))
-                screenStates[screen.id] = state
+                setState(state, for: screen.id)
             } else {
                 // Along the stack; the master always spans the whole length.
                 guard position > 0, tiled.count > 2 else { return }
@@ -1354,7 +1656,7 @@ final class WindowManager {
                 guard stack.count > 1 else { return }
                 window.weight = Self.weight(at: r, of: stack.map(\.weight), growingBy: delta, length: area.height, gap: config.gap)
             }
-        case .monocle:
+        case .monocle, .accordion:
             return
         }
         retile()
@@ -1391,12 +1693,13 @@ final class WindowManager {
         ignoreFocusChanges()
         if let window = focused(), window.workspace == workspace { lastFocused[workspace] = window.id }
 
-        homeOverride[workspace] = target.id
+        homeOverride[workspace] = target.uuid
         show(workspace, on: target.id)
         let remaining = (0..<workspaceCount).filter { $0 != workspace && home(of: $0, screens)?.id == source.id }
         let back = Self.workspaceLeftBehind(remaining: remaining, shownBefore: shownBefore[source.id])
         show(back, on: source.id)
         log.debug("move workspace \(workspace) from display \(source.id) to \(target.id); display \(source.id) now shows \(back ?? -1)")
+        carryFloating(windows.values.filter { $0.workspace == workspace }, screens: screens)
         retile()
         let focusedWindow = focusWindow(in: workspace)
         notifyWorkspace(focused: .some(focusedWindow))
@@ -1471,10 +1774,10 @@ final class WindowManager {
             switch state.layout {
             case .tall: delta = (point.x - session.start.x) / screen.visible.width
             case .wide: delta = (point.y - session.start.y) / screen.visible.height
-            case .columns, .monocle: delta = 0
+            case .columns, .monocle, .accordion: delta = 0
             }
             state.ratio = min(0.9, max(0.1, state.ratio + (isMaster ? delta : -delta)))
-            screenStates[screen.id] = state
+            setState(state, for: screen.id)
         }
         scheduleRetile()
     }

@@ -125,6 +125,35 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
     }
 }
 
+@Suite struct ColumnAccordionTests {
+    /// Two windows side by side → one accordion → moving one out puts them side by side again.
+    @Test func toggleAndMoveOut() {
+        var layout = ColumnLayout(columns: [[1], [2]])
+        let on = layout.toggleAccordion(around: 2)
+        #expect(on)
+        #expect(layout.columns.map(\.windows) == [[1, 2]])
+        #expect(layout.columns[0].accordion && layout.columns[0].front == 2)
+        let frames = layout.frames(in: CGRect(x: 0, y: 0, width: 1000, height: 600), gap: 10, peek: 30) { _ in 1 }
+        #expect(frames[1] == CGRect(x: 0, y: 0, width: 970, height: 600))
+        #expect(frames[2] == CGRect(x: 30, y: 0, width: 970, height: 600))
+        layout.move(2, .right)
+        #expect(layout.columns.map(\.windows) == [[1], [2]])
+        #expect(!layout.columns[0].accordion)
+    }
+
+    @Test func toggleOffAndNewWindows() {
+        var layout = ColumnLayout(columns: [[1], [2, 3]])
+        layout.toggleAccordion(around: 1)
+        // A new window opened while the accordion has the focus joins it.
+        layout.sync(with: [1, 2, 3, 4], focused: 1)
+        #expect(layout.columns.map(\.windows) == [[1, 4, 2, 3]])
+        #expect(layout.accordionNeighbor(of: 4, 1) == 2)
+        let still = layout.toggleAccordion(around: 4)
+        #expect(!still)
+        #expect(layout.columns.map(\.windows) == [[1], [4], [2], [3]])
+    }
+}
+
 @Suite struct LayoutTests {
     @Test func weightedTall() {
         let frames = Layout.frames(.tall, weights: [1, 1, 2], in: CGRect(x: 0, y: 0, width: 1000, height: 610), gap: 10, ratio: 0.5)
@@ -148,6 +177,30 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         let screen = ScreenInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 800, height: 600),
                                 visible: CGRect(x: 0, y: 25, width: 800, height: 575))
         #expect(screen.centered(CGSize(width: 1000, height: 300)) == CGRect(x: 0, y: 162.5, width: 800, height: 300))
+    }
+
+    /// Same-size windows; the ones before the focused one on the left edge, after it on the right.
+    @Test func accordion() {
+        let area = CGRect(x: 0, y: 0, width: 1000, height: 600)
+        let middle = Layout.frames(.accordion, weights: [1, 1, 1], in: area, gap: 10, ratio: 0.5, focused: 1, peek: 30)
+        #expect(middle == [CGRect(x: 0, y: 0, width: 940, height: 600),
+                           CGRect(x: 30, y: 0, width: 940, height: 600),
+                           CGRect(x: 60, y: 0, width: 940, height: 600)])
+        let first = Layout.frames(.accordion, weights: [1, 1], in: area, gap: 10, ratio: 0.5, focused: 0, peek: 30)
+        #expect(first == [CGRect(x: 0, y: 0, width: 970, height: 600), CGRect(x: 30, y: 0, width: 970, height: 600)])
+        #expect(Layout.frames(.accordion, weights: [1], in: area, gap: 10, ratio: 0.5, focused: 0, peek: 30) == [area])
+    }
+
+    /// Moving to another display keeps position and size as shares of the visible area.
+    @Test func relocate() {
+        let small = ScreenInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 600),
+                               visible: CGRect(x: 0, y: 0, width: 1000, height: 600))
+        let large = ScreenInfo(id: 2, frame: CGRect(x: 1000, y: -200, width: 2000, height: 1225),
+                               visible: CGRect(x: 1000, y: -175, width: 2000, height: 1200))
+        #expect(small.relocate(CGRect(x: 250, y: 150, width: 500, height: 300), to: large)
+                == CGRect(x: 1500, y: 125, width: 1000, height: 600))
+        // Too big for the destination: shrunk and kept inside it.
+        #expect(large.relocate(CGRect(x: 1000, y: -175, width: 2000, height: 1200), to: small) == small.visible)
     }
 }
 

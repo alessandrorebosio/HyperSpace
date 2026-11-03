@@ -5,7 +5,7 @@ enum Direction: String {
 }
 
 enum LayoutKind: String, CaseIterable {
-    case tall, wide, columns, monocle
+    case tall, wide, columns, monocle, accordion
 }
 
 /// Everything a key binding or mouse button can trigger.
@@ -18,6 +18,8 @@ enum Action {
     case adjustRatio(Double)
     case toggleFloat
     case toggleTiling
+    /// Stacks the focused workspace's windows as an accordion, or unstacks them.
+    case toggleAccordion
     case retile
     case focusNextDisplay
     /// The focused workspace, windows and all, moves to the next display and stays there.
@@ -80,6 +82,7 @@ enum Action {
             return .adjustRatio(delta)
         case "float": return .toggleFloat
         case "tiling": return .toggleTiling
+        case "accordion": return .toggleAccordion
         case "retile": return .retile
         case "focus-display": return .focusNextDisplay
         case "move-workspace-to-display": return .moveWorkspaceToNextDisplay

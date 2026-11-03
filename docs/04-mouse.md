@@ -73,6 +73,6 @@ On release, for a window **in the tiling** (not floating, tiling on):
 | Move and drop **on another display** (not on a window) | the window joins the workspace shown on that display |
 | Move and drop elsewhere | it returns to its place |
 | Resize (`tall`/`wide` layout) | moves the master/stack split: the ratio changes by `Δ / display width` (or height), in the right direction for the master or a stack window |
-| Resize (`columns`/`monocle` layout) | no effect on the layout: the window returns to its place |
+| Resize (`columns`/`monocle`/`accordion` layout) | no effect on the layout: the window returns to its place |
 
 A **floating window** stays where you leave it. See also [Tiling](06-tiling.md#drag-and-drop-and-snap-back).

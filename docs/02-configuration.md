@@ -2,7 +2,7 @@
 
 ## File, creation and reload
 
-- **Path**: `~/.config/hyperspace/config.json` (`ConfigStore.url`).
+- **Path**: `~/.hyperspace/config.json` (`ConfigStore.url`). A config left in the old place, `~/.config/hyperspace/config.json`, is moved here at the first start (only if the new file does not exist yet); the old folder is removed when nothing else is left in it (a Finder `.DS_Store` does not count).
 - **Creation**: on first launch (or from *Edit Config…*) if the file is missing, the default config (`DefaultConfig.json`) is written.
 - **Automatic reload**: the file is watched with a kqueue `DispatchSource` (`write`, `extend`, `delete`, `rename`), at zero cost while untouched. Several events per save
   are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is briefly missing it retries after 1 s.
@@ -79,11 +79,12 @@ Every section and key is optional.
 | Key | Type | Default | Validation |
 |---|---|---|---|
 | `enabled` | bool | `true` | — |
-| `layout` | string | `columns` | `tall`, `wide`, `columns`, `monocle` (case-insensitive); anything else → error |
+| `layout` | string | `columns` | `tall`, `wide`, `columns`, `monocle`, `accordion` (case-insensitive); anything else → error |
 | `gap` | number | `8` | minimum 0 |
 | `padding` | number | `8` | minimum 0 |
 | `masterRatio` | number | `0.55` | clamped to 0.1…0.9 |
 | `mouseFollowsFocus` | bool | `true` | — |
+| `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (Settings: 0–120). Written only when not the default |
 | `scratchpad.width` / `.height` | number | `0.6` / `0.7` | fractions of the display's visible area, clamped to 0.2…1 |
 | `floating` | `[string]` | `[]` | Bundle ids that are never tiled |
 | `floatingWindows[]` | `{ app?, title }` | `[]` | `title` required and non-empty (entries with an empty title are dropped); `app` absent or empty = any app |
@@ -180,7 +181,8 @@ Three workspaces, assigned apps, a scratchpad and a few remaps:
 
 - **Keyboard lock duration**: a Mac preference (`UserDefaults`, key `keyboardLockMinutes`; choices 1/3/5/10 minutes or never; default 3).
 - **Workspace state**: `~/Library/Application Support/HyperSpace/workspaces.json` ([page 7](07-workspaces-and-displays.md#saved-state-and-restore)).
-- **Per-display layout and master ratio, tiling on/off at runtime**: changed by actions (`layout …`, `ratio …`, `tiling`) or the menu; they stay in memory and are **not written** to the file.
-  A reload that changes `layout`/`masterRatio` clears the per-display values. The `tiling` action does not change `tiling.enabled` in the file: a reload brings back the file's value.
+- **Per-display layout and master ratio**: changed by actions (`layout …`, `ratio …`); they are **not written** to the file but are kept per display UUID in `workspaces.json`, so they survive a restart and unplugging the monitor.
+  A reload that changes `layout`/`masterRatio` clears the per-display values.
+- **Tiling on/off**: the menu bar's *Tiling* item writes `tiling.enabled` (like the Settings switch). The `tiling` action only toggles at runtime: a reload brings back the file's value.
 - **Settings window frame**: saved by AppKit (`HyperSpaceSettings`).
 - **Launch at login**: handled by `SMAppService.mainApp`.

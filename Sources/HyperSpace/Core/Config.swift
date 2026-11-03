@@ -46,6 +46,7 @@ struct RawConfig: Decodable {
         var assign: [Assignment]?
         var mouseFollowsFocus: Bool?
         var scratchpad: Scratchpad?
+        var accordionPadding: Double?
     }
     /// Size of scratchpad windows, as fractions of the display.
     struct Scratchpad: Decodable {
@@ -169,6 +170,8 @@ struct TilingConfig {
     var mouseFollowsFocus = true
     /// Scratchpad windows' size, as fractions of the display's visible area.
     var scratchpadSize = CGSize(width: 0.6, height: 0.7)
+    /// Accordion layout: how much of the windows behind the focused one shows on each side.
+    var accordionPadding: CGFloat = 30
 }
 
 /// Windows that float by title (a dialog, an app's own settings), of one app or any.
@@ -286,6 +289,7 @@ struct Config {
         tiling.floatingWindows = (raw.floatingWindows ?? []).filter { !$0.title.isEmpty }
             .map { FloatingWindowRule(app: $0.app.flatMap { $0.isEmpty ? nil : $0 }, title: $0.title) }
         tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? true
+        tiling.accordionPadding = CGFloat(min(200, max(0, raw.accordionPadding ?? 30)))
         func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat(min(1, max(0.2, $0))) } ?? fallback }
         tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, 0.6), height: fraction(raw.scratchpad?.height, 0.7))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {

@@ -8,9 +8,8 @@ The repository README (in Italian) was compared with the code. The code wins; th
 |---|---|---|
 | 1 | Per-app workspace rules are edited in "Tiling → App Rules" | The **App Rules** section is on the **Workspaces** page |
 | 2 | **Caps+N** shows workspace N, **Caps+⌘+Tab** runs `move-workspace-to-display` | Neither is in the default config (it defines no workspaces and no display shortcuts); they exist only if you create them (Settings → Workspaces / Shortcuts → Displays) |
-| 3 | Modifier-drag resize of a tiled window "moves the master/stack split" | Only in `tall`/`wide`. In `columns` and `monocle` the delta is 0: the layout is unchanged and the window returns to its tile |
+| 3 | Modifier-drag resize of a tiled window "moves the master/stack split" | Only in `tall`/`wide`. In `columns`, `monocle` and `accordion` the delta is 0: the layout is unchanged and the window returns to its tile |
 | 4 | The menu lists the workspaces that have open apps | Only when **more than one workspace is configured** (`summaries()` returns nothing otherwise) |
-| 5 | — (the Settings → Tiling footer, not the README) | The footer still says "Next layout in Shortcuts cycles through them on the fly", referring to the removed `layout next` action: stale UI text in `TilingView.swift` |
 
 ## Undocumented in the README
 

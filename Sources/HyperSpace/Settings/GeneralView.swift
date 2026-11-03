@@ -65,34 +65,31 @@ struct GeneralView: View {
 
     var body: some View {
         Form {
+            PageHeader()
+
             Section {
-                HStack(spacing: 14) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 48, height: 48)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("HyperSpace").font(.title3.weight(.semibold))
-                        Text("Version \(model.version)").font(.callout).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Quit HyperSpace", role: .destructive) { NSApp.terminate(nil) }
+                LabeledContent {
+                    Text(model.version).foregroundStyle(.secondary)
+                } label: {
+                    IconLabel("Version", symbol: "info", color: .gray)
                 }
-                .padding(.vertical, 4)
             }
 
             Section {
                 Toggle(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) })) {
-                    Text("Launch at Login")
-                    Text("Start HyperSpace automatically when you log in.")
+                    IconLabel("Launch at Login", detail: "Start HyperSpace automatically when you log in.",
+                              symbol: "power", color: .green)
                 }
             } header: {
                 Text("Startup")
             }
 
             Section {
-                LabeledContent("File") {
+                LabeledContent {
                     Text(model.configPath).font(.system(.body, design: .monospaced)).foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                } label: {
+                    IconLabel("File", symbol: "doc.text.fill", color: .blue)
                 }
                 HStack {
                     Button("Edit Config…") { model.actions.openConfig() }
@@ -110,17 +107,25 @@ struct GeneralView: View {
             }
 
             Section {
-                LabeledContent("Accessibility") {
+                LabeledContent {
                     if model.accessibilityGranted {
                         Label("Granted", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                     } else {
                         Button("Open System Settings…") { Permissions.openSettings() }
                     }
+                } label: {
+                    IconLabel("Accessibility", symbol: "accessibility", color: .blue)
                 }
             } header: {
                 Text("Permission")
             } footer: {
                 SectionFooter("Key remapping works without it; shortcuts, mouse buttons and window management need it.")
+            }
+
+            Section {
+                Button(role: .destructive) { NSApp.terminate(nil) } label: {
+                    Text("Quit HyperSpace").frame(maxWidth: .infinity)
+                }
             }
         }
         .formStyle(.grouped)

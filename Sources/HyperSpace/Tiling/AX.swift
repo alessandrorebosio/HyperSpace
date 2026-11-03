@@ -79,13 +79,54 @@ enum AX {
         return pid
     }
 
-    /// Only regular, movable app windows are tiled: no dialogs, sheets, panels or popovers.
-    static func isStandardWindow(_ element: AXUIElement) -> Bool {
-        guard string(element, kAXRoleAttribute) == kAXWindowRole,
-              string(element, kAXSubroleAttribute) == kAXStandardWindowSubrole else { return false }
+    /// Everything tracking a window needs, read in one go off the main thread.
+    struct WindowProbe {
+        enum Kind {
+            /// A regular, movable app window: tiled.
+            case standard
+            /// A movable dialog (alert, detached panel): floats in its parent's workspace.
+            case dialog
+            /// Not ready yet (no role or subrole): apps fill them in a moment after creating the window.
+            case pending
+            /// Anything else (sheets, popovers, the Finder desktop): left alone.
+            case other
+        }
+
+        let element: AXUIElement
+        let id: CGWindowID?
+        let role: String?
+        let subrole: String?
+        let kind: Kind
+        /// A standard window that behaves as a dialog (see `isDialogLike`).
+        let dialogLike: Bool
+        let title: String?
+        let frame: CGRect?
+        /// The app's main window, the likely parent of a dialog.
+        let mainWindow: CGWindowID?
+    }
+
+    static func probe(_ element: AXUIElement, pid: pid_t) -> WindowProbe {
+        let role = string(element, kAXRoleAttribute)
+        let subrole = string(element, kAXSubroleAttribute)
         var settable: DarwinBoolean = false
-        return AXUIElementIsAttributeSettable(element, kAXPositionAttribute as CFString, &settable) == .success
-            && settable.boolValue
+        let movable = AXUIElementIsAttributeSettable(element, kAXPositionAttribute as CFString, &settable) == .success && settable.boolValue
+        let kind: WindowProbe.Kind
+        switch (role, subrole) {
+        case (kAXWindowRole, kAXStandardWindowSubrole): kind = movable ? .standard : .other
+        case (kAXWindowRole, kAXDialogSubrole), (kAXWindowRole, kAXSystemDialogSubrole): kind = movable ? .dialog : .other
+        case (nil, _), (kAXWindowRole, nil), (kAXWindowRole, kAXUnknownSubrole): kind = .pending
+        default: kind = .other
+        }
+        let frame = position(element).flatMap { origin in size(element).map { CGRect(origin: origin, size: $0) } }
+        let main = kind == .other ? nil : self.element(AXUIElementCreateApplication(pid), kAXMainWindowAttribute).flatMap(windowID)
+        return WindowProbe(element: element, id: windowID(element), role: role, subrole: subrole, kind: kind,
+                           dialogLike: kind == .standard && isDialogLike(element),
+                           title: kind == .other ? nil : string(element, kAXTitleAttribute), frame: frame, mainWindow: main)
+    }
+
+    /// Raises a window above its app's others, without focusing it.
+    static func raise(_ window: AXUIElement) {
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
     }
 
     /// A standard window that is really a dialog, like the Finder's Empty Trash or Copy

@@ -20,6 +20,7 @@ final class ActionRunner {
         case .adjustRatio(let delta): windowManager.adjustRatio(CGFloat(delta))
         case .toggleFloat: windowManager.toggleFloat()
         case .toggleTiling: windowManager.toggleEnabled()
+        case .toggleAccordion: windowManager.toggleAccordion()
         case .retile: windowManager.retileNow()
         case .focusNextDisplay: windowManager.focusNextDisplay()
         case .moveWorkspaceToNextDisplay: windowManager.moveWorkspaceToNextDisplay()

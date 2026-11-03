@@ -46,6 +46,7 @@ final class TilingModel: ObservableObject {
         ("More", [
             ("Previous workspace", "workspace back-and-forth"),
             ("Toggle floating", "float"),
+            ("Stack windows as an accordion", "accordion"),
             ("Move window to or from the scratchpad", "move-to-scratchpad"),
         ]),
     ]
@@ -55,6 +56,7 @@ final class TilingModel: ObservableObject {
     @Published private(set) var gap = 8
     @Published private(set) var padding = 8
     @Published private(set) var mouseFollowsFocus = true
+    @Published private(set) var accordionPadding = 30
     @Published var workspaces: [Workspace] = []
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
@@ -89,12 +91,20 @@ final class TilingModel: ObservableObject {
     private let monitor = LocalEventMonitor()
     private var pendingSave: DispatchWorkItem?
 
+    /// Posted (with the new value) when tiling is turned on or off from the menu bar.
+    static let enabledDidChange = Notification.Name("HyperSpace.tilingEnabledDidChange")
+    private var enabledObserver: NSObjectProtocol?
+
     init(eventTap: EventTap) {
         self.eventTap = eventTap
         load()
+        enabledObserver = NotificationCenter.default.addObserver(forName: Self.enabledDidChange, object: nil, queue: .main) { [weak self] note in
+            if let on = note.object as? Bool { self?.enabled = on }
+        }
     }
 
     deinit {
+        if let enabledObserver { NotificationCenter.default.removeObserver(enabledObserver) }
         stopCapture()
         // A rename typed just before closing the window is still saved.
         if pendingSave != nil { save() }
@@ -104,9 +114,15 @@ final class TilingModel: ObservableObject {
 
     func setEnabled(_ on: Bool) { enabled = on; save() }
     func setLayout(_ kind: LayoutKind) { layout = kind; save() }
-    func setGap(_ value: Int) { gap = max(0, min(64, value)); save() }
-    func setPadding(_ value: Int) { padding = max(0, min(64, value)); save() }
+    /// `commit` false while a slider is being dragged: the value shows at once, the config is
+    /// written (and the windows retiled) once, when the slider is released.
+    func setGap(_ value: Int, commit: Bool = true) { gap = max(0, min(64, value)); if commit { save() } }
+    func setPadding(_ value: Int, commit: Bool = true) { padding = max(0, min(64, value)); if commit { save() } }
     func setMouseFollowsFocus(_ on: Bool) { mouseFollowsFocus = on; save() }
+    func setAccordionPadding(_ value: Int, commit: Bool = true) {
+        accordionPadding = max(0, min(120, value))
+        if commit { save() }
+    }
 
     func addWorkspace() {
         workspaces.append(Workspace(name: "\(workspaces.count + 1)", switchKeys: "", moveKeys: ""))
@@ -320,6 +336,7 @@ final class TilingModel: ObservableObject {
         gap = (tiling["gap"] as? NSNumber)?.intValue ?? 8
         padding = (tiling["padding"] as? NSNumber)?.intValue ?? 8
         mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? true
+        accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? 30
         floating = tiling["floating"] as? [String] ?? []
         floatingWindows = (tiling["floatingWindows"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let title = entry["title"] as? String, !title.isEmpty else { return nil }
@@ -363,6 +380,7 @@ final class TilingModel: ObservableObject {
             tiling["gap"] = gap
             tiling["padding"] = padding
             tiling["mouseFollowsFocus"] = mouseFollowsFocus
+            tiling["accordionPadding"] = accordionPadding == 30 ? nil : accordionPadding
             tiling["floating"] = floating
             tiling["floatingWindows"] = floatingWindows.isEmpty ? nil : floatingWindows.map { rule -> [String: Any] in
                 var entry: [String: Any] = ["title": rule.title]

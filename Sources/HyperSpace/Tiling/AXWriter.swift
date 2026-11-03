@@ -1,16 +1,25 @@
 import Foundation
 
-/// Runs AX writes (move, resize, focus) off the main thread, on one serial queue per app.
+/// Runs AX calls off the main thread, on one serial queue per app: writes (move, resize,
+/// focus) and the batches of reads that tracking a window needs.
 ///
-/// A write waits for the app to answer, up to the AX timeout: an app that is busy or hung
-/// would otherwise hold up every shortcut. Per app the writes stay in order; different apps
-/// no longer wait for each other. Reads stay on the main thread, which owns all state.
+/// A call waits for the app to answer, up to the AX timeout: an app that is busy or hung
+/// would otherwise hold up every shortcut. Per app the calls stay in order; different apps
+/// no longer wait for each other. State stays on the main thread: reads hand their result back there.
 final class AXWriter {
     private var queues: [pid_t: DispatchQueue] = [:]
 
     /// Main thread only.
     func perform(_ pid: pid_t, _ block: @escaping () -> Void) {
         queue(for: pid).async(execute: block)
+    }
+
+    /// Runs `work` on the app's queue and hands its result to `then` on the main thread.
+    func read<T>(_ pid: pid_t, _ work: @escaping () -> T, then: @escaping (T) -> Void) {
+        queue(for: pid).async {
+            let value = work()
+            DispatchQueue.main.async { then(value) }
+        }
     }
 
     func forget(_ pid: pid_t) {

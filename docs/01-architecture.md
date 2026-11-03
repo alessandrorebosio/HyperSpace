@@ -26,7 +26,7 @@ Resources/              Info.plist, AppIcon.icns
 ### `Core/`
 - **`Config.swift`**: `RawConfig` (the JSON as written) → `Config` (validated and compiled: `remaps`, `TapConfig`, `TilingConfig`). `TapConfig` holds the lookup tables used by the event tap.
 - **`DefaultConfig.swift`**, **`ConfigStore.swift`** (load, watch, reload), **`ConfigWriter.swift`** (rewrites the file for the settings UI).
-- **`Action.swift`** (text → `Action`), **`ActionRunner.swift`** (runs on the main thread), **`SystemActions.swift`** (`Navigation`, `SystemAction`, `MediaKey`, `Pointer`), **`AppLauncher.swift`**.
+- **`Action.swift`** (text → `Action`), **`ActionRunner.swift`** (runs on the main thread), **`SystemActions.swift`** (`Navigation`, `SystemAction`, `MediaKey`, `Pointer`), **`AppLauncher.swift`**, **`Peripherals.swift`** (battery of wireless keyboards, mice, trackpads).
 - **`EventTap.swift`**: the single active `CGEventTap`, shared by keyboard and mouse.
 - **`KeyCodes.swift`**: key table (name ↔ virtual keycode ↔ HID usage), `Modifiers`, `KeyCombo`.
 - **`RemapTarget.swift`**: remap destination (single key or combination) and `CarrierPool`.
@@ -41,8 +41,9 @@ Resources/              Info.plist, AppIcon.icns
 
 ### `Tiling/`
 - **`WindowManager`** (~1400 lines): state of windows, workspaces, displays, scratchpad; commands; save/restore.
-- **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`, neighbour search, `ScreenInfo`), **`ColumnLayout`** (i3-style columns).
-- **`AppWatcher`** (one `AXObserver` per app), **`AXWriter`** (per-app serial queues), **`AX`** (Accessibility API helpers).
+- **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `ScreenInfo`), **`ColumnLayout`** (i3-style columns).
+- **`AppWatcher`** (one `AXObserver` per app), **`AXWriter`** (per-app serial queues), **`AX`** (Accessibility API helpers, `AX.probe`).
+- **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible key window that makes an empty display the active one).
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
@@ -54,7 +55,7 @@ SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`
 |---|---|
 | **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. No allocation and no locks on the hot path. |
 | **Main thread** | Everything else: window state, actions, AX reads, `NSWorkspace`/AX notifications, UI. |
-| **`AXWriter` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus). A slow app only makes itself wait. |
+| **`AXWriter` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
 | **`HyperSpace.state` queue** (QoS `utility`) | Reads titles and writes `workspaces.json` off the main thread. |
 
 Communication rules:
@@ -62,7 +63,7 @@ Communication rules:
 - **Config → tap**: `EventTap.apply(_:)` hands the new `TapConfig` to the tap thread with `CFRunLoopPerformBlock`.
 - **Tap → actions**: an action triggered by the tap runs with `DispatchQueue.main.async`.
 - **Tap → drag**: `DragController` keeps only the latest point behind an `OSAllocatedUnfairLock` and schedules at most one pending main-thread update: no backlog even with a 1000 Hz mouse.
-- **Main → apps**: AX writes go through `AXWriter.perform(pid)`. Reads and state stay on the main thread.
+- **Main → apps**: AX writes go through `AXWriter.perform(pid)`; window discovery reads through `AXWriter.read(pid, …)`, whose result comes back to the main thread. State stays on the main thread, as do the few reads a command needs at once (the focused window).
 - AX timeout is 0.5 s (on the system-wide element and on every `AppWatcher`) instead of the 6 s default.
 
 ## Data flow: from config to features
@@ -102,7 +103,7 @@ Mouse movement is never intercepted.
 
 ## Window manager: how it reacts
 
-- **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. No polling.
+- **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. The only polling is `DisplayMonitor` (every 5 s, only with several displays).
 - Bursts of events are coalesced into one retile (30 ms delay).
 - Visibility and position of windows come from a single `CGWindowListCopyWindowInfo` per retile, without titles (so no Screen Recording).
 - A window is moved only if its position really differs from the target (2 pt tolerance).

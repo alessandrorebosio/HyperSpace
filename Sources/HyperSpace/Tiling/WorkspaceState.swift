@@ -20,10 +20,26 @@ struct WorkspaceState: Codable, Equatable {
     var windows: [Window] = []
     /// Per workspace (as a string key), its columns as indices into `windows`.
     var columns: [String: [[Int]]] = [:]
-    /// Display ID (as a string) → workspace it shows.
+    /// Display ID (as a string) → workspace it shows. Kept for older versions; `displays` wins.
     var displayed: [String: Int] = [:]
-    /// Workspace (as a string) → display ID it was moved to.
+    /// Workspace (as a string) → display ID it was moved to. Kept for older versions; `moved` wins.
     var homeOverride: [String: UInt32] = [:]
+    /// Display UUID → workspace it shows. Unlike the id, a UUID stays the same when the
+    /// monitor is unplugged and plugged in again.
+    var displays: [String: Int]?
+    /// Workspace (as a string) → UUID of the display it was moved to.
+    var moved: [String: String]?
+    /// Display UUID → its layout and master ratio.
+    var layouts: [String: DisplayLayout]?
+    /// Per workspace (as a string key), which of its `columns` are accordions.
+    var accordions: [String: [Int]]?
+    /// Workspaces stacked as an accordion over a tall, wide or monocle layout.
+    var accordionWorkspaces: [Int]?
+
+    struct DisplayLayout: Codable, Equatable {
+        var layout: String
+        var ratio: Double
+    }
 
     /// Older states describe windows long gone.
     static let maxAge: TimeInterval = 7 * 24 * 3600

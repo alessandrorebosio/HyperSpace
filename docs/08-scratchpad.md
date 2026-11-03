@@ -39,7 +39,7 @@ Among the windows in the scratchpad: if one is shown and focused → hide it; el
 
 - **Size**: a fraction of the focused display's visible area: `"scratchpad": { "width": 0.6, "height": 0.7 }` (default; each value clamped to 0.2…1; also not exposed in Settings, it is config only).
 - **Where**: centred on the display with focus. It stays visible when you change workspace, until you hide it. ⌘Tab to a hidden scratchpad window shows it automatically (if more than 0.6 s after one of HyperSpace's own focus changes).
-- **Hiding**: the window is parked like a hidden workspace's windows (bottom-right corner) and focus goes back to a window of the workspace you were using.
+- **Hiding**: the window is parked like a hidden workspace's windows (bottom-right corner) and focus goes back to a window of the workspace shown on the display it was on, so the pointer stays on that display.
 - Scratchpad windows are excluded from layouts, from the workspace summaries in the menu, from `focus`-by-workspace candidates, and from snap-back.
 - The scratchpad state (which windows) is **saved** in `workspaces.json` (`scratchpad: true`) and restored across restarts.
 
@@ -55,6 +55,8 @@ Some apps (terminals sizing in steps, apps with a minimum size) do not take the 
 If the display or the configured fraction changes, the target differs and the remembered size is ignored.
 
 ## Notes
+
+- **Window level**: HyperSpace cannot change the `NSWindow.Level` (`.normal`/`.floating`) of another app's window: there is no public API for it (only the private SkyLight calls that yabai makes through its scripting addition, which needs SIP partly off). So a scratchpad window is hidden by parking it, not sent behind at a lower level.
 
 - Windows created while their app is the scratchpad target are shown even when their workspace is not displayed.
 - `workspace`/focus candidates never include scratchpad windows; a scratchpad window does not belong to any visible workspace even though it keeps a workspace index.

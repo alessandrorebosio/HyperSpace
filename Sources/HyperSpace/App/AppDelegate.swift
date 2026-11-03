@@ -27,7 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opened by macOS at login rather than by the user.
     private var launchedAtLogin = false
-    private var firstConfig = true
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Only readable here: the open-application event says whether it is a login launch.
@@ -36,8 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
-    /// Double-clicking the app while it runs opens Settings (the only way with tiling off,
-    /// when there is no menu bar item).
+    /// Double-clicking the app while it runs opens Settings.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         settingsWindow.show()
         return false
@@ -51,8 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             workspaces: { [unowned self] in windowManager.summaries() },
             showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
             focusWindow: { [unowned self] in windowManager.focusWindow($0) },
-            layout: { [unowned self] in windowManager.activeLayout },
-            setLayout: { [unowned self] in windowManager.setLayout($0) },
+            setTilingEnabled: { [unowned self] in setTilingEnabled($0) },
+            batteries: { Peripherals.batteries() },
             setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) },
             keyboardUnlocksAt: { [unowned self] in eventTap.keyboardUnlocksAt },
             debugInfo: { [unowned self] in debugInfo() }
@@ -73,6 +71,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.start()
     }
 
+    /// From the menu bar: saved in the config, so it lasts and Settings shows the same. The
+    /// reload that follows the write applies it; the window manager is told at once anyway.
+    private func setTilingEnabled(_ on: Bool) {
+        if let error = ConfigWriter.save({ root in
+            var tiling = root["tiling"] as? [String: Any] ?? [:]
+            tiling["enabled"] = on
+            root["tiling"] = tiling
+        }) {
+            statusMenu.problem = .config(error)
+            return
+        }
+        statusMenu.tilingEnabled = on
+        NotificationCenter.default.post(name: TilingModel.enabledDidChange, object: on)
+    }
+
     @objc private func showSettings(_ sender: Any?) {
         settingsWindow.show()
     }
@@ -84,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "HyperSpace \(version) — \(Date().formatted(date: .numeric, time: .standard))",
             "macOS \(ProcessInfo.processInfo.operatingSystemVersionString), up \(Int(ProcessInfo.processInfo.systemUptime / 60)) min",
             "Accessibility: \(Permissions.isTrusted(prompt: false) ? "granted" : "missing"), launched at login: \(launchedAtLogin)",
+            "Devices: " + (Peripherals.batteries().map { "\($0.name) \($0.percent)%\($0.charging ? " charging" : "")" }.joined(separator: ", ").nilIfEmpty ?? "none with a battery"),
             "Keyboard: \(eventTap.isKeyboardLocked ? "locked" : "active"); keyboards: " +
                 remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
         ]
@@ -116,9 +130,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .success(let config):
             self.config = config
             statusMenu.tilingEnabled = config.tiling.enabled
-            // Opened by hand with no menu bar item to show for it: show Settings instead.
-            if firstConfig, !config.tiling.enabled, !launchedAtLogin { settingsWindow.show() }
-            firstConfig = false
             remapper.apply(config.remaps)
             if config.tap.suppressCapsLock { CapsLock.turnOff() }
             if trusted { applyTrusted(config) }
@@ -136,4 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventTap.apply(config.tap)
         windowManager.apply(config.tiling)
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

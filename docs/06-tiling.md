@@ -5,15 +5,16 @@ When it is off, HyperSpace stops observing apps, brings every parked window back
 
 ## What gets tiled
 
-Only **standard windows** (`AX.isStandardWindow`): role `AXWindow`, subrole `AXStandardWindow`, and a settable position. Dialogs, sheets, panels and popovers are ignored.
+**Standard windows**: role `AXWindow`, subrole `AXStandardWindow`, and a settable position. **Dialogs** (subrole `AXDialog`/`AXSystemDialog`, movable) are tracked too, as floating windows of their parent (see [Dialogs](#dialogs)). Sheets, panels and popovers are ignored.
+Windows are described on the app's own AX queue (`AX.probe`: role, subrole, title, frame, the app's main window), not on the main thread; a window AX does not describe yet (no subrole) is looked at again after 0.2, 0.4, 0.8, 1.6 and 3.2 s.
 Excluded from a retile: minimized windows, hidden apps, windows on other macOS Spaces (not in the on-screen list), **native full-screen windows** (a frame that covers a whole display),
 floating windows and scratchpad windows. Windows without a CGWindowID are skipped (and noted in the debug report).
 New windows join the end of the tiling order; the first window of a workspace is its **master**.
 
 ## Layouts
 
-Set `tiling.layout` (default `columns`); each display has its own layout and ratio at runtime (`layout …`, `ratio …`, the menu, Settings).
-The area is the display's visible frame (menu bar and Dock excluded) shrunk by `padding` on every side; `gap` separates windows.
+Set `tiling.layout` (default `columns`); each display has its own layout and ratio at runtime (`layout …`, `ratio …` actions; Settings sets the default).
+The area is the display's `NSScreen.visibleFrame` (menu bar and Dock excluded), flipped to AX coordinates against the main display, shrunk by `padding` on every side (ignored if it would leave no room); `gap` separates windows. No layout uses fixed screen coordinates.
 
 | Layout | Arrangement |
 |---|---|
@@ -21,6 +22,7 @@ The area is the display's visible frame (menu bar and Dock excluded) shrunk by `
 | `wide` | master on top (height `(H − gap) × ratio`), the others side by side below |
 | `columns` | i3-style: columns side by side, each a vertical stack. No master ratio |
 | `monocle` | every window gets the whole area (stacked on top of each other); focus decides which is in front |
+| `accordion` | windows on top of each other, all the same size; the focused one in front, the ones before it aligned to the left edge and the ones after it to the right edge, so `accordionPadding` points (default 30) of each neighbour stay visible on the sides. Focusing another window re-centres the stack |
 
 - Windows sharing a split (the stack in `tall`/`wide`, all columns, the rows of a column) are sized by **weights** (default 1 each), changed by [resizing](#resize). The last tile absorbs rounding.
 - `masterRatio` (default 0.55, clamped 0.1…0.9) applies to `tall`/`wide`. Actions `ratio ±x` change it per display, clamped the same way.
@@ -37,7 +39,17 @@ Each workspace has a `ColumnLayout`: new windows get their own column on the rig
 
 After a `swap` in columns the moved window's weight is reset to 1.
 
+### Accordion on any layout
+
+The `accordion` action (Settings → Shortcuts → *Stack windows as an accordion*) stacks the windows of the focused workspace as an accordion without changing the display's layout, and unstacks them when pressed again (like i3's tabbed/stacked containers).
+
+- **`columns`**: all the workspace's windows go into **one accordion column** (in order, the focused one in front). `swap left/right` takes the window **out** into a new column beside the accordion, so moving windows out one by one puts them back side by side the way you want; `swap up/down` reorders the stack; `focus left/right` goes through the stack. An accordion left with one window is a normal column again. Pressing `accordion` inside an accordion gives each of its windows its own column. New windows opened while the accordion has the focus join it. Accordion columns are saved with the columns in `workspaces.json` (`accordions`).
+- **`tall`/`wide`/`monocle`**: the whole workspace is drawn as an accordion; `focus left/right` goes through it, and any `swap` puts the workspace back in its layout. Saved as `accordionWorkspaces`.
+- The visible edges use `accordionPadding`.
+
 ## Focus, swap, master
+
+In `accordion`, `focus left/right` and `swap left/right` go to / exchange with the previous or next window of the stack (in order); past either end `focus` goes on to the nearest window on another display.
 
 - **`focus <dir>`**: among all visible windows of displayed workspaces (floating and other displays included) it picks the nearest one in that direction by window centers,
   preferring windows that overlap on the perpendicular axis (others are penalised).
@@ -53,7 +65,7 @@ After a `swap` in columns the moved window's weight is reset to 1.
 - **`tall`/`wide`**: along the master/stack split, the ratio changes by `delta / area length` (the master grows with a positive delta; a stack window grows by shrinking the master).
   Along the stack, the window's weight changes (needs a stack of at least 2 windows, and the window cannot be the master).
 - **`columns`**: *width* changes the window's column weight (needs 2+ columns); *height* changes the window's weight in its column (needs 2+ windows in it).
-- **`monocle`**: nothing.
+- **`monocle`**, **`accordion`**: nothing.
 - Weights are computed so the other items keep their relative sizes; every item keeps at least 80 pt.
 
 ## Gaps and padding
@@ -81,6 +93,12 @@ A window floats if any of these holds (rules 2–3: `TilingConfig.floats`):
 - On a config reload, rules are re-evaluated for all windows without a user override.
 - Floating windows are not moved by the layout. When their workspace is hidden they are parked like tiled ones; when the workspace comes back, they return to their frame (or are centred on the display now showing the workspace, if their frame was elsewhere).
 - In *Settings → Window Rules → Floating*: an app with no title = all its windows; "Any app" with a title = title rule for every app.
+
+## Dialogs
+
+- A dialog joins the **workspace of its parent**: the app's main window (`AXMainWindow`), else its window focused last in a shown workspace, else any of its windows. It is parked and shown with that workspace, and moves with the parent on `move-to-workspace`.
+- When the parent's app **comes to the front** (⌘Tab, a click, the Dock, or HyperSpace focusing it) its on-screen dialogs are raised above it (`AXRaise`). Focus changes inside the same app do not raise them, so a non-modal panel never locks you out of its window.
+- Dialog-like standard windows (no zoom/full-screen button) get the same parent and workspace.
 
 ## Drag and drop and snap back
 

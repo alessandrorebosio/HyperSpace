@@ -72,6 +72,7 @@ make clean      # remove .build and build/
 - `make app` copies the binary, `Resources/Info.plist` and `Resources/AppIcon.icns` into the bundle, strips the binary, and codesigns it with hardened runtime (`--options runtime`)
   using `HyperSpace Dev` if that identity exists, otherwise ad-hoc with the designated requirement pinned to the bundle id.
   Override with `SIGN_IDENTITY=… make app`, or `CONFIG=debug`.
+- `make app` also rewrites the binary's build version with `vtool` (minimum macOS 13.0, SDK = `xcrun --show-sdk-version`). SwiftPM records the deployment target as the SDK version, and AppKit would then run the app in compatibility mode, with the pre-Liquid Glass look on macOS 26 and later.
 - There is no `scripts/bundle.sh`; the bundle is built by the Makefile.
 - After rebuilding, relaunch the app (`make run`) to test the new binary.
 
