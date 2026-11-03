@@ -115,6 +115,7 @@ Written on first launch (`DefaultConfig.swift`):
       { "keys": "hyper+right", "action": "swap right" },
       { "keys": "hyper+return", "action": "swap master" },
       { "keys": "hyper+f", "action": "float" },
+      { "keys": "hyper+a", "action": "accordion" },
       { "keys": "hyper+minus", "action": "ratio -0.05" },
       { "keys": "hyper+equal", "action": "ratio +0.05" },
       { "keys": "hyper+r", "action": "retile" },

@@ -4,7 +4,7 @@
 
 ```
 Sources/HyperSpace/
-├── main.swift          entry point: NSApplication + AppDelegate
+├── main.swift          entry point: NSApplication + AppDelegate (or the `--render-settings` screenshots, no AppDelegate)
 ├── App/                AppDelegate, StatusMenu (menu bar), MainMenu (app menu)
 ├── Core/               config, actions, event tap, key codes, permissions
 ├── Keyboard/           HID remaps, keyboard lock, caps lock, synthetic keys, layout
@@ -47,7 +47,7 @@ Resources/              Info.plist, AppIcon.icns
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
-SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`RemapModel`, `MouseModel`, `TilingModel`, `GeneralModel`), the matching views, and `Components.swift`. See [page 9](09-settings-and-menu.md).
+SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`RemapModel`, `MouseModel`, `TilingModel`, `GeneralModel`), the matching views, and `Components.swift`. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
 
 ## Threads and queues
 

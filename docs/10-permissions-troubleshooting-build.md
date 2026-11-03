@@ -12,7 +12,7 @@ notifications, drivers/kexts, root.
 | Tiling, workspaces, scratchpad, `navigate` | Yes (AX) |
 
 - At launch HyperSpace asks (`AXIsProcessTrustedWithOptions` with prompt). Until it is granted a 1 s timer polls cheaply; as soon as it arrives the already-loaded config is applied, with no restart.
-- Missing permission is shown in the menu (`Accessibility not granted to this build`), on the window pages (banner) and on the Settings page.
+- Missing permission is shown in the menu (`Accessibility permission needed`), on the window pages (banner) and on the General page.
 - **Signing and the grant**: macOS ties the Accessibility grant to the app's *designated requirement*. A plain ad-hoc signature bases it on the binary hash, which changes on every build, so the grant is lost even though the switch
   looks on in System Settings. `make app` therefore signs ad-hoc pinning the requirement to the bundle id (`identifier "com.alessandrorebosio.HyperSpace"`) so the grant survives rebuilds. This is convenient for development but weaker (any app signed with that bundle id inherits the grant).
   For a strong binding create a self-signed code-signing certificate named **`HyperSpace Dev`** (*Keychain Access → Certificate Assistant → Create a Certificate*, *Self Signed Root*, *Code Signing*): if present, `make app` uses it automatically.
@@ -44,9 +44,11 @@ notifications, drivers/kexts, root.
 
 - `HyperSpace <version> — <date>`, macOS version and uptime;
 - Accessibility `granted`/`missing`, *launched at login*;
+- `Devices:` the wireless keyboards, mice and trackpads that report a battery, with their level (or `none with a battery`);
 - Keyboard `locked`/`active` and the names of connected keyboards;
 - `Problem: …` if any;
-- Tiling: `running`/`stopped`, enabled, layout; per display: id, frame, the workspace it shows, `[focused]`;
+- Tiling: `running`/`stopped`, enabled, layout; per display: id, UUID, frame, visible frame, the workspace it shows, `[focused]`;
+- *Displays left out* (asleep or on another input, see [page 7](07-workspaces-and-displays.md));
 - *Moved workspaces* (home overrides);
 - per workspace with windows: app bundle id, window id, title, frame, and flags (`floating`, `floating (dialog)`, `scratchpad`/`scratchpad shown`, `parked`, `off screen`);
 - *Watched apps*;

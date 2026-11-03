@@ -17,6 +17,8 @@ make install    # copy to /Applications
 make test       # tests (Swift Testing): config, shortcuts, combinations, layouts, workspace logic, saved state
 ```
 
+To check the settings window without clicking through it, `build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings <folder>` saves every page as PNG (light and dark, 720×460 and 900×640) and quits; see [docs/10](docs/10-permissions-troubleshooting-build.md#screenshots-of-the-settings-window).
+
 On first launch macOS asks for the Accessibility permission; HyperSpace starts by itself as soon as it is granted.
 
 > **Signing and the permission.** macOS ties the Accessibility permission to the signature's *designated requirement*.
@@ -30,7 +32,7 @@ On first launch macOS asks for the Accessibility permission; HyperSpace starts b
 
 ## Configuration
 
-`~/.hyperspace/config.json` — created on first launch, reloaded automatically on every save.
+`~/.hyperspace/config.json` — created on first launch (a config from `~/.config/hyperspace/` is moved there), reloaded automatically on every save.
 If the file has an error the menu bar icon turns into ⚠︎ and the menu shows the message; the last valid config stays active.
 
 ```json
@@ -63,9 +65,10 @@ The icon is always in the menu bar; with tiling off it is drawn dimmed. Double-c
 opens the settings. With more than one workspace configured the icon is replaced by the workspace shown on each
 display (`1 2`, the focused display's one in a filled box).
 
-The menu in the top bar starts with **Tiling** (on/off). With more than one workspace configured it lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Wireless keyboards, mice and trackpads follow with their battery level (**Devices**). Below, **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 680×420, so it fits in a column) and has a sidebar:
+The menu in the top bar starts with **Tiling** (on/off). With more than one workspace configured it lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Wireless keyboards, mice and trackpads follow with their battery level (**Devices**). Below, **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 720×460) and has a sidebar:
 **Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
-**Settings** (version, launch at login, config file with Edit/Show in Finder, Accessibility permission status, Quit).
+**General** (version, launch at login, config file with Edit/Show in Finder, Accessibility permission status, Quit).
+Each page shows its name once, in the title bar, with a one-line summary under it.
 Without the Accessibility permission the pages that need it show a notice at the top with **Open System Settings…**
 (it goes away by itself once granted); with tiling off the Windows pages show **Turn On**.
 
@@ -73,7 +76,7 @@ Without the Accessibility permission the pages that need it show a notice at the
 **Keyboard lock.** At the top of the Keyboard page (or from the menu bar, **Lock Keyboard**) you can lock the
 keyboard to clean it: every key is ignored, media, volume and brightness included, until you unlock it
 with the mouse (**Unlock** on the page or **Unlock Keyboard** in the menu, in the same place as Lock; a padlock shows in the menu bar).
-To be safe it also unlocks by itself after the time chosen next to the button (1, 3, 5, 10 minutes or never;
+To be safe it also unlocks by itself after the time chosen under it (1, 3, 5, 10 minutes or never;
 3 by default), with the countdown on the page and in the menu. The lock is not saved: quitting HyperSpace turns the keyboard back on. Touch ID and the power button
 cannot be locked.
 
@@ -269,7 +272,7 @@ Floating (an app with no title = all its windows). It also applies to windows th
 ```
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
-├── Settings/   window with a Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, Settings sidebar (SwiftUI, created only when opened)
+├── Settings/   window with a Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
 ├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions,
 │               KeyCodes, RemapTarget, AppLauncher, Peripherals, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),

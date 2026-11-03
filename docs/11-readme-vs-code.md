@@ -1,6 +1,6 @@
 # 11. README vs code
 
-The repository README was compared with the code and aligned to it. The code wins; this page keeps what is left to know.
+The repository README and these pages were compared with the code (a second, full pass after the commits from `6dabf49` on: config in `~/.hyperspace` with migration, accordion layout, display standby, focus anchor, device batteries, drag writes through `AXWriter`, empty workspaces on another display, the settings redesign). The code wins; this page keeps what is left to know.
 
 ## Fixed in the README
 
@@ -10,7 +10,17 @@ The repository README was compared with the code and aligned to it. The code win
 - The menu lists the workspaces only when **more than one workspace is configured**; it has no Layout submenu; the icon is always there (dimmed with tiling off).
 - `move-to-scratchpad <App>` is documented.
 - The architecture tree lists every folder's files.
-- The obsolete hint in Settings → Tiling about a layout shortcut was replaced by one that matches the page (layout actions are bound in `config.json`).
+- The hint in Settings → Tiling about layout shortcuts was removed from the page (layout actions are bound in `config.json`: [page 5](05-actions.md)).
+
+## Fixed in the second pass
+
+- Settings window: minimum size is **720×460** (the README said 680×420); the last sidebar page is **General** (the README and architecture tree said Settings); the sidebar has no search; each page has one title and a one-line summary, no large header; rows carry no colored icons ([page 9](09-settings-and-menu.md)).
+- The default config includes `hyper+a` → `accordion`; page 2 listed it without.
+- **Shortcuts** page: the *More* group also has *Stack windows as an accordion*.
+- Menu problem line: `Accessibility permission needed` (was `… not granted to this build`); a config error is cut to its first line (~48 characters) in the menu, the tooltip has all of it.
+- Device batteries are orange at 15% or less **only while not charging**.
+- *Copy Debug Info* also reports the devices, each display's UUID and visible frame, and displays left out.
+- The README mentions the migration of the config from `~/.config/hyperspace/`, and the `--render-settings` option (page 10).
 
 ## Still only in the code / these pages
 
