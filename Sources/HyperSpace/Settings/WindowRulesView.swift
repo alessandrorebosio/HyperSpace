@@ -50,9 +50,10 @@ struct WindowRulesView: View {
                         ForEach(model.scratchpadApps) { pad in
                             GridRow {
                                 AppLabel(bundleID: pad.bundleID)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(minWidth: 100, alignment: .leading)
                                 ShortcutCap(model: model, keys: pad.toggleKeys, field: .shortcut(pad.toggleAction))
                                 ShortcutCap(model: model, keys: pad.tileKeys, field: .shortcut(pad.tileAction))
+                                Spacer(minLength: 0)
                                 RemoveButton { model.removeScratchpadApp(pad.bundleID) }
                             }
                         }

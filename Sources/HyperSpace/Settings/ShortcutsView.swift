@@ -49,8 +49,9 @@ struct ShortcutsView: View {
     }
 }
 
-/// Rows of shortcuts in aligned columns: a first column that takes the free width, then one
-/// column per caption, then the given trailing room (a remove button).
+/// Rows of shortcuts in aligned columns: a first column, one column per caption and, when
+/// `trailing` is set, a flexible gap and then that room (a remove button). Rows with a trailing
+/// column put a `Spacer(minLength: 0)` cell before it, so the button sits at the right edge.
 struct ShortcutGrid<Rows: View>: View {
     let columns: [String]
     var leading = ""
@@ -65,7 +66,10 @@ struct ShortcutGrid<Rows: View>: View {
                 ForEach(columns, id: \.self) { title in
                     caption(title).frame(width: ShortcutCap.width, alignment: .leading)
                 }
-                if trailing > 0 { Color.clear.frame(width: trailing, height: 1) }
+                if trailing > 0 {
+                    Spacer(minLength: 0)
+                    Color.clear.frame(width: trailing, height: 1)
+                }
             }
             rows()
         }

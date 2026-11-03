@@ -308,7 +308,7 @@ struct AddButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: "plus")
+            AddLabel(title: title)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
@@ -322,10 +322,22 @@ struct AddMenu<Content: View>: View {
 
     var body: some View {
         Menu(content: content) {
-            Label(title, systemImage: "plus")
+            AddLabel(title: title)
         }
         .modifier(BorderedMenu())
         .controlSize(.small)
+    }
+}
+
+/// "+ Title", drawn the same in a button and in a menu (a menu's Label spaces them differently).
+private struct AddLabel: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "plus").font(.caption.weight(.semibold))
+            Text(title)
+        }
     }
 }
 

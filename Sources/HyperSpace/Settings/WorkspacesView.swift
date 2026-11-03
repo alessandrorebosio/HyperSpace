@@ -20,9 +20,10 @@ struct WorkspacesView: View {
                                 TextField("Name", text: Binding(get: { workspace.name }, set: { model.rename(workspace.id, to: $0) }))
                                     .textFieldStyle(.roundedBorder)
                                     .labelsHidden()
-                                    .frame(minWidth: 70, maxWidth: .infinity)
+                                    .frame(width: 120)
                                 ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
                                 ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
+                                Spacer(minLength: 0)
                                 RemoveButton { model.removeWorkspace(workspace.id) }
                             }
                         }
