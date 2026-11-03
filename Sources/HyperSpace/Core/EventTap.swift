@@ -5,8 +5,8 @@ import CoreGraphics
 ///
 /// It runs on its own high-priority thread so that window-management work on the
 /// main thread can never delay input. All tap state is confined to that thread:
-/// config updates are handed over with `CFRunLoopPerformBlock`, so the hot path
-/// takes no locks and does no allocation.
+/// config updates are handed over with `CFRunLoopPerformBlock`, so the hot path reads
+/// plain arrays and takes no locks of its own (the one allocation is the CGEvent a carrier posts).
 final class EventTap {
     /// Stamped on events we synthesize so the tap lets them through untouched.
     static let syntheticMarker: Int64 = 0x4859_5045
@@ -20,6 +20,11 @@ final class EventTap {
     /// When the lock lifts by itself, if it does. Main thread.
     private(set) var keyboardUnlocksAt: Date?
     private var unlockTimer: Timer?
+    /// Main thread: the config last asked for, and what was last handed to the tap thread
+    /// (carrier keys translated to the keyboard layout in use).
+    private var requestedConfig: TapConfig?
+    private var pushedConfig: TapConfig?
+    private var layoutObserver: NSObjectProtocol?
 
     private let onAction: (Action) -> Void
     private let drag: DragController
@@ -59,6 +64,14 @@ final class EventTap {
         thread.qualityOfService = .userInteractive
         thread.start()
         ready.wait()
+        // A carrier that types a symbol follows the layout: translated again when it changes.
+        layoutObserver = NotificationCenter.default.addObserver(
+            forName: KeyboardLayout.didChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.pushConfig() }
+    }
+
+    deinit {
+        if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver) }
     }
 
     /// Runs a block on the tap thread, which owns all tap state.
@@ -68,14 +81,34 @@ final class EventTap {
     }
 
     func apply(_ newConfig: TapConfig) {
+        requestedConfig = newConfig
+        pushConfig()
+    }
+
+    /// Hands the tap thread the requested config, with the keys of combinations translated to
+    /// the current keyboard layout here, on the main thread (the tap thread never asks the
+    /// input sources). Nothing happens when it is what the tap already has.
+    private func pushConfig() {
+        guard let requested = requestedConfig else { return }
+        let translated = requested.translated { KeyboardLayout.keyCode(for: $0) }
+        guard translated != pushedConfig else { return }
+        pushedConfig = translated
         onTapThread { [self] in
-            config = newConfig
-            carrierDown = [Bool](repeating: false, count: newConfig.carriers.count)
-            heldModifiers = []
-            dragMode = nil
-            for i in swallowedKeys.indices { swallowedKeys[i] = false }
-            for i in swallowedButtons.indices { swallowedButtons[i] = false }
+            config = translated
+            resetHeldState(includingMouse: true)
             updateMask()
+        }
+    }
+
+    /// Tap thread: forgets the keys, carriers and modifiers held or swallowed, so nothing
+    /// stays stuck after the config or the lock changes. The mouse state goes too on a new config.
+    private func resetHeldState(includingMouse: Bool) {
+        carrierDown = [Bool](repeating: false, count: config.carriers.count)
+        heldModifiers = []
+        for i in swallowedKeys.indices { swallowedKeys[i] = false }
+        if includingMouse {
+            dragMode = nil
+            for i in swallowedButtons.indices { swallowedButtons[i] = false }
         }
     }
 
@@ -96,9 +129,7 @@ final class EventTap {
         log.info("keyboard \(locked ? "locked" : "unlocked", privacy: .public)")
         onTapThread { [self] in
             keyboardLocked = locked
-            carrierDown = [Bool](repeating: false, count: config.carriers.count)
-            heldModifiers = []
-            for i in swallowedKeys.indices { swallowedKeys[i] = false }
+            resetHeldState(includingMouse: false)
             updateMask()
         }
         NotificationCenter.default.post(name: Self.keyboardLockDidChange, object: self)

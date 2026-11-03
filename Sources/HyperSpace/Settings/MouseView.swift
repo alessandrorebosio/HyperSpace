@@ -61,12 +61,12 @@ private struct MouseRuleRow: View {
                 ForEach(MouseModel.presets, id: \.group) { group in
                     Menu(group.group) {
                         ForEach(group.items, id: \.action) { item in
-                            Button(item.name) { model.choose(item.action, for: rule.id) }
+                            Button(item.name) { model.setAction(item.action, for: rule.id) }
                         }
                     }
                 }
                 Divider()
-                Button("Disable Button") { model.choose("none", for: rule.id) }
+                Button("Disable Button") { model.setAction("none", for: rule.id) }
             }
             Spacer(minLength: 12)
             WarningBadge(text: model.warning(for: rule))

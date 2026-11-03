@@ -13,7 +13,10 @@ enum ConfigWriter {
     static func update(_ change: (inout [String: Any]) -> Void) throws {
         var root = read()
         change(&root)
-        try (format(root, depth: 0) + "\n").write(to: ConfigStore.url, atomically: true, encoding: .utf8)
+        let text = format(root, depth: 0) + "\n"
+        // Nothing changed: no write, so no reload of the whole config.
+        if let current = try? String(contentsOf: ConfigStore.url, encoding: .utf8), current == text { return }
+        try text.write(to: ConfigStore.url, atomically: true, encoding: .utf8)
     }
 
     /// `update` for the settings pages: the error message, or nil when saved.

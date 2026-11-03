@@ -214,14 +214,9 @@ final class RemapModel: ObservableObject {
     /// Modifier keys send flagsChanged on press and on release; keep the press.
     private static func isPress(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags
-        switch event.keyCode {
-        case 0x37, 0x36: return flags.contains(.command)
-        case 0x38, 0x3C: return flags.contains(.shift)
-        case 0x3A, 0x3D: return flags.contains(.option)
-        case 0x3B, 0x3E: return flags.contains(.control)
-        case 0x3F: return flags.contains(.function)
-        default: return true // caps lock sends one event per press
-        }
+        if event.keyCode == 0x3F { return flags.contains(.function) }
+        if let modifier = KeyCodes.modifierKeyCodes[event.keyCode] { return Modifiers(flags).contains(modifier) }
+        return true // caps lock sends one event per press
     }
 
     // MARK: - Persistence

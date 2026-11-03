@@ -48,7 +48,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openConfig: { [unowned self] in store.openInEditor() },
             workspaces: { [unowned self] in windowManager.summaries() },
             showWorkspace: { [unowned self] in windowManager.switchWorkspace($0) },
-            focusWindow: { [unowned self] in windowManager.focusWindow($0) },
             setTilingEnabled: { [unowned self] in setTilingEnabled($0) },
             batteries: { Peripherals.batteries() },
             setKeyboardLocked: { [unowned self] in eventTap.setKeyboardLocked($0) },

@@ -7,7 +7,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var openConfig: () -> Void
         var workspaces: () -> [WorkspaceSummary]
         var showWorkspace: (Int) -> Void
-        var focusWindow: (CGWindowID) -> Void
         /// Turns the tiling engine on or off (saved in the config).
         var setTilingEnabled: (Bool) -> Void
         /// Wireless keyboards, mice and trackpads with their battery level.
@@ -21,7 +20,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// Shows a lock in the menu bar; the menu item turns into Unlock Keyboard.
     var keyboardLocked = false {
-        didSet { updateIcon() }
+        didSet { if keyboardLocked != oldValue { updateIcon() } }
     }
 
     /// Something that keeps HyperSpace from working fully, shown at the top of the menu.
@@ -43,17 +42,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     var problem: Problem? {
-        didSet { updateIcon() }
+        didSet { if problem != oldValue { updateIcon() } }
     }
 
     /// With tiling off the icon is drawn dimmed; the menu turns it back on.
     var tilingEnabled = true {
-        didSet { updateIcon() }
+        didSet { if tilingEnabled != oldValue { updateIcon() } }
     }
 
     /// i3-style: the workspace shown on each display, left to right, instead of the icon.
     var workspaces: (names: [String], focused: Int)? {
-        didSet { updateIcon() }
+        didSet {
+            // Tuples are not Equatable: compare by hand, and only redraw on a real change.
+            let unchanged = (oldValue == nil) == (workspaces == nil)
+                && oldValue?.names == workspaces?.names && oldValue?.focused == workspaces?.focused
+            if !unchanged { updateIcon() }
+        }
     }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

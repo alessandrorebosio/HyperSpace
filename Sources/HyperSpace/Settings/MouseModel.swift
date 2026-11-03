@@ -20,7 +20,7 @@ final class MouseModel: ObservableObject {
     }
 
     @Published var rules: [Rule] = []
-    @Published private(set) var reverseScroll = false
+    @Published private(set) var reverseScroll = TapConfig.defaultReverseScroll
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
 
@@ -48,10 +48,6 @@ final class MouseModel: ObservableObject {
         if capturing == .button(id) || capturing == .action(id) { stopCapture() }
         rules.removeAll { $0.id == id }
         save()
-    }
-
-    func choose(_ action: String, for id: UUID) {
-        setAction(action, for: id)
     }
 
     /// Ready-made actions for mouse buttons, grouped for the menu.
@@ -97,17 +93,26 @@ final class MouseModel: ObservableObject {
         ]),
     ]
 
-    /// The preset name for an action, matching key shortcuts by meaning ("cmd+[" == "cmd+left_bracket").
-    private static func presetName(_ action: String) -> String? {
-        let combo = action.hasPrefix("key ") ? try? KeyCombo.parse(String(action.dropFirst(4))) : nil
+    /// Preset names by action text, and of the key presets by parsed shortcut, built once.
+    private static let presetNames: (byAction: [String: String], byCombo: [(combo: KeyCombo, name: String)]) = {
+        var byAction: [String: String] = [:]
+        var byCombo: [(combo: KeyCombo, name: String)] = []
         for (_, items) in presets {
             for item in items {
-                if item.action == action { return item.name }
-                if let combo, item.action.hasPrefix("key "),
-                   (try? KeyCombo.parse(String(item.action.dropFirst(4)))) == combo { return item.name }
+                if byAction[item.action] == nil { byAction[item.action] = item.name }
+                if item.action.hasPrefix("key "), let combo = try? KeyCombo.parse(String(item.action.dropFirst(4))) {
+                    byCombo.append((combo, item.name))
+                }
             }
         }
-        return nil
+        return (byAction, byCombo)
+    }()
+
+    /// The preset name for an action, matching key shortcuts by meaning ("cmd+[" == "cmd+left_bracket").
+    private static func presetName(_ action: String) -> String? {
+        if let name = presetNames.byAction[action] { return name }
+        guard action.hasPrefix("key "), let combo = try? KeyCombo.parse(String(action.dropFirst(4))) else { return nil }
+        return presetNames.byCombo.first { $0.combo == combo }?.name
     }
 
     func setReverseScroll(_ on: Bool) {
@@ -194,7 +199,7 @@ final class MouseModel: ObservableObject {
         }
     }
 
-    private func setAction(_ action: String, for id: UUID) {
+    func setAction(_ action: String, for id: UUID) {
         guard let index = rules.firstIndex(where: { $0.id == id }) else { return }
         if capturing == .action(id) { stopCapture() }
         rules[index].action = action
@@ -205,13 +210,13 @@ final class MouseModel: ObservableObject {
 
     private func load() {
         let mouse = ConfigWriter.read()["mouse"] as? [String: Any]
-        reverseScroll = mouse?["reverseScroll"] as? Bool ?? false
+        reverseScroll = mouse?["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
+        // In the order of the file: when two rules share a button, the last one wins.
         rules = (mouse?["buttons"] as? [[String: Any]] ?? []).map {
             Rule(button: $0["button"] as? Int,
                  modifiers: (try? Modifiers.parse($0["modifiers"] as? String ?? "")) ?? [],
                  action: $0["action"] as? String ?? "")
         }
-        .sorted { ($0.button ?? .max, $0.modifiers.rawValue) < ($1.button ?? .max, $1.modifiers.rawValue) }
     }
 
     private func save() {

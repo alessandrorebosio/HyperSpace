@@ -1,14 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// A physical key: its macOS virtual key code (what event taps see, used by
-/// bindings) and its full HID usage, `page << 32 | usage` (used by remapping).
-/// Keys that macOS never turns into key events (media keys, F21–F24) have no key code.
-struct Key {
-    let keyCode: UInt16?
-    let hidUsage: UInt64?
-}
-
+/// A physical key: its names (the first is canonical), its macOS virtual key code (what
+/// event taps see, used by bindings) and its full HID usage, `page << 32 | usage` (used by
+/// remapping). Keys that macOS never turns into key events (media keys, F21–F24) have no key code.
 struct KeyInfo {
     let names: [String]
     let keyCode: UInt16?
@@ -34,11 +29,11 @@ struct KeyInfo {
 enum KeyCodes {
     /// A name from the table, or a raw HID usage for anything else:
     /// "0x39" (keyboard page) or "0xC000000E2" (any page, `page << 32 | usage`).
-    static func lookup(_ name: String) -> Key? {
+    static func lookup(_ name: String) -> KeyInfo? {
         let lowered = name.lowercased()
-        if let key = table[lowered] { return key }
+        if let key = index.byName[lowered] { return key }
         guard lowered.hasPrefix("0x"), let raw = UInt64(lowered.dropFirst(2), radix: 16) else { return nil }
-        return Key(keyCode: nil, hidUsage: raw <= 0xFFFF ? keyboard(raw) : raw)
+        return KeyInfo([lowered], nil, raw <= 0xFFFF ? keyboard(raw) : raw)
     }
 
     private static func keyboard(_ usage: UInt64) -> UInt64 { 0x07 << 32 | usage }
@@ -162,41 +157,48 @@ enum KeyCodes {
         ]),
     ]
 
-    private static let table: [String: Key] = {
-        var table: [String: Key] = [:]
+    /// The lookup tables, built in one pass over `groups`.
+    private static let index: (byName: [String: KeyInfo], canonical: [String: String],
+                               nameByKeyCode: [UInt16: String], keyCodeByHID: [UInt64: UInt16]) = {
+        var byName: [String: KeyInfo] = [:]
+        var canonical: [String: String] = [:]
+        var nameByKeyCode: [UInt16: String] = [:]
+        var keyCodeByHID: [UInt64: UInt16] = [:]
         for (_, keys) in groups {
             for key in keys {
-                for name in key.names { table[name] = Key(keyCode: key.keyCode, hidUsage: key.hidUsage) }
+                for alias in key.names {
+                    byName[alias] = key
+                    canonical[alias] = key.name
+                }
+                if let code = key.keyCode {
+                    if nameByKeyCode[code] == nil { nameByKeyCode[code] = key.name }
+                    if keyCodeByHID[key.hidUsage] == nil { keyCodeByHID[key.hidUsage] = code }
+                }
             }
         }
-        return table
-    }()
-
-    private static let canonicalNames: [String: String] = {
-        var names: [String: String] = [:]
-        for (_, keys) in groups {
-            for key in keys { for alias in key.names { names[alias] = key.name } }
-        }
-        return names
+        return (byName, canonical, nameByKeyCode, keyCodeByHID)
     }()
 
     /// "[" → "left_bracket", "esc" → "escape"; unknown names are returned as they are.
     static func canonicalName(_ name: String) -> String {
-        canonicalNames[name.lowercased()] ?? name
+        index.canonical[name.lowercased()] ?? name
     }
-
-    private static let namesByKeyCode: [UInt16: String] = {
-        var names: [UInt16: String] = [:]
-        for (_, keys) in groups {
-            for key in keys { if let code = key.keyCode, names[code] == nil { names[code] = key.name } }
-        }
-        return names
-    }()
 
     /// Canonical name of the key that produced an event with this virtual key code.
     static func name(forKeyCode code: UInt16) -> String? {
-        namesByKeyCode[code]
+        index.nameByKeyCode[code]
     }
+
+    /// The virtual key code of the key with this HID usage, if macOS has one for it.
+    static func keyCode(forHID usage: UInt64) -> UInt16? {
+        index.keyCodeByHID[usage]
+    }
+
+    /// The physical modifier keys by virtual key code, and the modifier each produces.
+    static let modifierKeyCodes: [UInt16: Modifiers] = [
+        0x37: .cmd, 0x36: .cmd, 0x3A: .alt, 0x3D: .alt,
+        0x3B: .ctrl, 0x3E: .ctrl, 0x38: .shift, 0x3C: .shift,
+    ]
 }
 
 struct Modifiers: OptionSet, Hashable {
@@ -243,13 +245,7 @@ struct Modifiers: OptionSet, Hashable {
 
     /// The modifier a physical modifier key produces ("left_shift" → .shift).
     static func modifierKey(_ name: String) -> Modifiers? {
-        switch name.lowercased() {
-        case "left_command", "right_command", "left_cmd", "right_cmd": return .cmd
-        case "left_option", "right_option", "left_alt", "right_alt": return .alt
-        case "left_control", "right_control": return .ctrl
-        case "left_shift", "right_shift": return .shift
-        default: return nil
-        }
+        KeyCodes.lookup(name)?.keyCode.flatMap { KeyCodes.modifierKeyCodes[$0] }
     }
 
     /// Config text, e.g. "ctrl+alt".

@@ -2,7 +2,8 @@ import Carbon.HIToolbox
 
 /// Key codes are physical positions (ANSI). Apps match shortcuts by character, so on
 /// other layouts a symbol shortcut must use the key that types that symbol there:
-/// ⌘- on an Italian keyboard is the key in the ANSI "/" position.
+/// ⌘- on an Italian keyboard is the key in the ANSI "/" position. Translation happens on
+/// the main thread only (`EventTap` translates the keys of combinations when it applies a config).
 enum KeyboardLayout {
     /// ANSI symbol keys and the character a shortcut on them means.
     private static let symbols: [UInt16: Character] = [
@@ -15,8 +16,25 @@ enum KeyboardLayout {
     private static let keypad: Set<UInt16> = [0x41, 0x43, 0x45, 0x47, 0x4B, 0x4C, 0x4E, 0x51,
                                               0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5B, 0x5C]
 
+    /// Posted on the main thread when the keyboard input source changes.
+    static let didChange = Notification.Name("HyperSpaceKeyboardLayoutDidChange")
+
     private static var layoutID: String?
     private static var keyCodes: [Character: UInt16] = [:]
+    /// The table is rebuilt only after the system says the input source changed; until the
+    /// first notification is armed it is checked on every use.
+    private static var stale = true
+    private static var observer: NSObjectProtocol?
+
+    private static func watch() {
+        guard observer == nil else { return }
+        observer = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil, queue: .main
+        ) { _ in
+            KeyboardLayout.stale = true
+            NotificationCenter.default.post(name: KeyboardLayout.didChange, object: nil)
+        }
+    }
 
     /// The key code that types the same symbol on the current layout (main thread only).
     static func keyCode(for ansiCode: UInt16) -> UInt16 {
@@ -29,9 +47,12 @@ enum KeyboardLayout {
 
     /// Rebuilds the character → key code table when the input source changes.
     private static func refresh() {
+        watch()
+        guard stale else { return }
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let idPointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return }
         let id = Unmanaged<CFString>.fromOpaque(idPointer).takeUnretainedValue() as String
+        stale = false
         guard id != layoutID else { return }
         layoutID = id
         keyCodes = [:]

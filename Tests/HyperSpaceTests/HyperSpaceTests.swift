@@ -87,7 +87,7 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
 
     @Test func presetsParse() {
         for item in MouseModel.presets.flatMap(\.items) { #expect((try? Action.parse(item.action)) != nil, "\(item.action)") }
-        for item in TilingModel.shortcutActions.flatMap(\.items) { #expect((try? Action.parse(item.action)) != nil, "\(item.action)") }
+        for item in TilingModel.shortcutActions { #expect((try? Action.parse(item.action)) != nil, "\(item.action)") }
         #expect(MouseModel.actionLabel("navigate back") == "Back")
         #expect("\((try? Action.parse("move-workspace-to-display"))!)" == "moveWorkspaceToNextDisplay")
         #expect(MouseModel.actionLabel("key cmd+left_bracket") == MouseModel.actionLabel("key cmd+["))
@@ -395,5 +395,36 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(try action(config, "meh+z") == "scratchpad(nil)")
         #expect(try action(config, "hyper+c") == "moveToScratchpad(Optional(\"com.anthropic.claudefordesktop\"))")
         #expect(config.tiling.scratchpadSize == CGSize(width: 0.5, height: 1))
+    }
+}
+
+@Suite struct KeyboardTests {
+    /// `print_screen` shares its key code with F13: F13 cannot be a carrier then.
+    @Test func carriersAvoidKeysSharingAKeyCode() {
+        #expect(throws: ConfigError.self) {
+            try config(#"""
+            { "keyboard": { "remap": [ { "from": "print_screen", "to": "escape" }, { "from": "caps_lock", "to": "meh" } ] },
+              "tiling": { "workspaces": [
+                { "switch": "f20" }, { "switch": "f19" }, { "switch": "f18" }, { "switch": "f17" },
+                { "switch": "f16" }, { "switch": "f15" }, { "switch": "f14" } ] } }
+            """#)
+        }
+    }
+
+    @Test func modifierKeysAreFoundByName() {
+        #expect(Modifiers.modifierKey("right_command") == .cmd)
+        #expect(Modifiers.modifierKey("left_alt") == .alt)
+        #expect(Modifiers.modifierKey("caps_lock") == nil)
+        #expect(Modifiers.modifierKey("a") == nil)
+    }
+
+    @Test func carriersFollowTheLayout() throws {
+        let config = try config(#"{ "keyboard": { "remap": [ { "from": "right_command", "to": "cmd+-" } ] } }"#)
+        let minus = try KeyCombo.parse("-").keyCode
+        #expect(config.tap.carriers.map(\.keyCode) == [minus])
+        let translated = config.tap.translated { $0 == minus ? 0x2C : $0 }
+        #expect(translated.carriers.map(\.keyCode) == [0x2C])
+        #expect(translated != config.tap)
+        #expect(translated.translated { $0 } == translated)
     }
 }

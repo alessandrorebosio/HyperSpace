@@ -63,20 +63,22 @@ enum RemapTarget: Equatable {
     }
 }
 
-/// Hands out carrier keys for combinations, skipping any key the config uses itself.
+/// Hands out carrier keys for combinations, skipping any key the config uses itself: by HID
+/// usage and by key code (`print_screen`/`scroll_lock`/`pause` share the key code of
+/// F13/F14/F15, and the tap tells keys apart by key code only).
 struct CarrierPool {
     private static let candidates = ["f20", "f19", "f18", "f17", "f16", "f15", "f14", "f13"]
-    private var free: [Key]
-    private var assigned: [String: Key] = [:]
+    private var free: [KeyInfo]
+    private var assigned: [String: KeyInfo] = [:]
 
     init(excludingHID usedHID: Set<UInt64>, keyCodes usedCodes: Set<UInt16>) {
         free = Self.candidates.compactMap { KeyCodes.lookup($0) }.filter { key in
-            !usedHID.contains(key.hidUsage!) && !usedCodes.contains(key.keyCode!)
+            !usedHID.contains(key.hidUsage) && !usedCodes.contains(key.keyCode!)
         }
     }
 
     /// The same combination always shares one carrier.
-    mutating func carrier(for id: String) throws -> (key: Key, isNew: Bool) {
+    mutating func carrier(for id: String) throws -> (key: KeyInfo, isNew: Bool) {
         if let key = assigned[id] { return (key, false) }
         guard !free.isEmpty else { throw ConfigError("too many different combinations (at most 8)") }
         let key = free.removeFirst()

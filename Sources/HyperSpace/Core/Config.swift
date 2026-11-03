@@ -83,7 +83,8 @@ struct RawConfig: Decodable {
 
 /// Lookup tables consumed by the event tap. Indexed by `slot(code, mods)`,
 /// so matching an event is a single array read with no hashing or allocation.
-struct TapConfig {
+struct TapConfig: Equatable {
+    static let defaultReverseScroll = false
     static let keySlots = 128 << 4
     static let buttonSlots = 32 << 4
 
@@ -93,7 +94,7 @@ struct TapConfig {
     /// Carrier key code → index in `carriers` (-1 when the key is not a carrier).
     var carrierTable = [Int8](repeating: -1, count: 128)
     var carriers: [Carrier] = []
-    var reverseScroll = false
+    var reverseScroll = defaultReverseScroll
     var dragModifier: Modifiers?
     /// Caps lock is remapped: keep the caps lock state off (see `CapsLock`).
     var suppressCapsLock = false
@@ -113,10 +114,18 @@ struct TapConfig {
     }
 
     /// A key remapped (in HID) onto `keyCode` that the tap turns into a combination.
-    struct Carrier {
+    struct Carrier: Equatable {
         let modifiers: Modifiers
         /// Pressed together with the modifiers; nil for modifier-only combinations (held instead).
         let keyCode: UInt16?
+    }
+
+    /// The same config with the key of every combination typed on the key `layout` gives it
+    /// (a symbol such as "-" sits elsewhere on other layouts).
+    func translated(_ layout: (UInt16) -> UInt16) -> TapConfig {
+        var copy = self
+        copy.carriers = carriers.map { Carrier(modifiers: $0.modifiers, keyCode: $0.keyCode.map(layout)) }
+        return copy
     }
 
     mutating func addCarrier(keyCode: UInt16, _ carrier: Carrier) {
@@ -155,11 +164,21 @@ struct TapConfig {
 }
 
 struct TilingConfig {
-    var enabled = true
-    var layout = LayoutKind.columns
-    var gap: CGFloat = 8
-    var padding: CGFloat = 8
-    var masterRatio: CGFloat = 0.55
+    /// The defaults of every option, shared by the config parser and the settings pages.
+    static let defaultEnabled = true
+    static let defaultLayout = LayoutKind.columns
+    static let defaultGap: CGFloat = 8
+    static let defaultPadding: CGFloat = 8
+    static let defaultMasterRatio: CGFloat = 0.55
+    static let defaultMouseFollowsFocus = true
+    static let defaultScratchpadSize = CGSize(width: 0.6, height: 0.7)
+    static let defaultAccordionPadding: CGFloat = 30
+
+    var enabled = defaultEnabled
+    var layout = defaultLayout
+    var gap = defaultGap
+    var padding = defaultPadding
+    var masterRatio = defaultMasterRatio
     var floating: Set<String> = []
     var floatingWindows: [FloatingWindowRule] = []
     /// Workspace names; empty means a single implicit workspace.
@@ -167,11 +186,11 @@ struct TilingConfig {
     /// Bundle id → workspace index for windows to open in.
     var assignments: [String: Int] = [:]
     /// Moving the focus to another display brings the pointer along.
-    var mouseFollowsFocus = true
+    var mouseFollowsFocus = defaultMouseFollowsFocus
     /// Scratchpad windows' size, as fractions of the display's visible area.
-    var scratchpadSize = CGSize(width: 0.6, height: 0.7)
+    var scratchpadSize = defaultScratchpadSize
     /// Accordion layout: how much of the windows behind the focused one shows on each side.
-    var accordionPadding: CGFloat = 30
+    var accordionPadding = defaultAccordionPadding
 }
 
 /// Windows that float by title (a dialog, an app's own settings), of one app or any.
@@ -238,22 +257,33 @@ struct Config {
         if let name = keyboard?.hyperKey, !name.isEmpty {
             rawRemaps.insert(RawConfig.Remap(from: name, to: "hyper", keyboard: nil), at: 0)
         }
-        let parsed = try rawRemaps.map { remap -> (from: UInt64, to: RemapTarget, target: KeyboardTarget) in
-            guard let from = KeyCodes.lookup(remap.from)?.hidUsage else { throw ConfigError("unknown key '\(remap.from)' in remap") }
+        let parsed = try rawRemaps.map { remap -> (from: KeyInfo, to: RemapTarget, target: KeyboardTarget) in
+            guard let from = KeyCodes.lookup(remap.from) else { throw ConfigError("unknown key '\(remap.from)' in remap") }
             return (from, try RemapTarget.parse(remap.to), KeyboardTarget(remap.keyboard))
         }
 
-        var usedHID = Set(parsed.map(\.from))
-        for case let (_, .key(hid), _) in parsed { usedHID.insert(hid) }
-        var pool = CarrierPool(excludingHID: usedHID, keyCodes: boundKeyCodes)
-        for (from, to, target) in parsed {
-            switch to {
+        // A carrier must not share its HID usage or its key code with any key the config
+        // uses: the tap tells keys apart by key code, and some keys share one (`print_screen`
+        // and F13, `scroll_lock` and F14, `pause` and F15).
+        var usedHID = Set<UInt64>()
+        var usedCodes = boundKeyCodes
+        for item in parsed {
+            usedHID.insert(item.from.hidUsage)
+            if let code = item.from.keyCode { usedCodes.insert(code) }
+            if case .key(let hid) = item.to {
+                usedHID.insert(hid)
+                if let code = KeyCodes.keyCode(forHID: hid) { usedCodes.insert(code) }
+            }
+        }
+        var pool = CarrierPool(excludingHID: usedHID, keyCodes: usedCodes)
+        for item in parsed {
+            switch item.to {
             case .key(let hid):
-                remaps.append(RemapRule(from: from, to: hid, target: target))
+                remaps.append(RemapRule(from: item.from.hidUsage, to: hid, target: item.target))
             case .combination(let mods, let keyCode, _):
                 let (carrier, isNew) = try pool.carrier(for: "\(mods.rawValue)-\(keyCode.map(String.init) ?? "")")
                 if isNew { tap.addCarrier(keyCode: carrier.keyCode!, .init(modifiers: mods, keyCode: keyCode)) }
-                remaps.append(RemapRule(from: from, to: carrier.hidUsage!, target: target))
+                remaps.append(RemapRule(from: item.from.hidUsage, to: carrier.hidUsage, target: item.target))
             }
         }
         let capsLock = KeyCodes.lookup("caps_lock")?.hidUsage
@@ -261,7 +291,7 @@ struct Config {
     }
 
     private mutating func parseMouse(_ mouse: RawConfig.Mouse) throws {
-        tap.reverseScroll = mouse.reverseScroll ?? false
+        tap.reverseScroll = mouse.reverseScroll ?? TapConfig.defaultReverseScroll
         if let drag = mouse.dragModifier, !drag.isEmpty {
             tap.dragModifier = try Modifiers.parse(drag)
         }
@@ -277,21 +307,23 @@ struct Config {
     /// Fills `tiling` and returns the workspace shortcuts to bind.
     private mutating func parseTiling(_ raw: RawConfig.Tiling) throws -> [(String, Action)] {
         var shortcuts: [(String, Action)] = []
-        tiling.enabled = raw.enabled ?? true
+        tiling.enabled = raw.enabled ?? TilingConfig.defaultEnabled
         if let layout = raw.layout {
             guard let kind = LayoutKind(rawValue: layout.lowercased()) else { throw ConfigError("unknown layout '\(layout)'") }
             tiling.layout = kind
         }
-        tiling.gap = CGFloat(max(0, raw.gap ?? 8))
-        tiling.padding = CGFloat(max(0, raw.padding ?? 8))
-        tiling.masterRatio = CGFloat(min(0.9, max(0.1, raw.masterRatio ?? 0.55)))
+        tiling.gap = CGFloat(max(0, raw.gap ?? Double(TilingConfig.defaultGap)))
+        tiling.padding = CGFloat(max(0, raw.padding ?? Double(TilingConfig.defaultPadding)))
+        tiling.masterRatio = CGFloat(min(0.9, max(0.1, raw.masterRatio ?? Double(TilingConfig.defaultMasterRatio))))
         tiling.floating = Set(raw.floating ?? [])
         tiling.floatingWindows = (raw.floatingWindows ?? []).filter { !$0.title.isEmpty }
             .map { FloatingWindowRule(app: $0.app.flatMap { $0.isEmpty ? nil : $0 }, title: $0.title) }
-        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? true
-        tiling.accordionPadding = CGFloat(min(200, max(0, raw.accordionPadding ?? 30)))
+        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? TilingConfig.defaultMouseFollowsFocus
+        tiling.accordionPadding = CGFloat(min(200, max(0, raw.accordionPadding ?? Double(TilingConfig.defaultAccordionPadding))))
         func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat(min(1, max(0.2, $0))) } ?? fallback }
-        tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, 0.6), height: fraction(raw.scratchpad?.height, 0.7))
+        let defaultSize = TilingConfig.defaultScratchpadSize
+        tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, defaultSize.width),
+                                       height: fraction(raw.scratchpad?.height, defaultSize.height))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }

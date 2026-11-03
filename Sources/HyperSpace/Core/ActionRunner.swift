@@ -28,7 +28,7 @@ final class ActionRunner {
         case .workspaceBackAndForth: windowManager.switchToPreviousWorkspace()
         case .moveToWorkspace(let index): windowManager.moveFocusedWindow(toWorkspace: index)
         case .resize(let width, let delta): windowManager.resizeFocused(width: width, by: delta)
-        case .launch(let app): launch(app)
+        case .launch(let app): AppLauncher.open(app)
         case .shell(let command): shell(command)
         case .sendKey(let combo): KeyEmitter.post(combo)
         case .reload: reload()
@@ -40,11 +40,6 @@ final class ActionRunner {
         case .scratchpad(let app): windowManager.toggleScratchpad(app: app)
         case .moveToScratchpad(let app): windowManager.moveToScratchpad(app: app)
         }
-    }
-
-    /// Accepts a bundle identifier ("com.apple.Terminal") or an app name ("Terminal").
-    private func launch(_ name: String) {
-        AppLauncher.open(name)
     }
 
     private func shell(_ command: String) {

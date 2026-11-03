@@ -10,7 +10,7 @@ enum LayoutKind: String, CaseIterable {
 
 /// Everything a key binding or mouse button can trigger.
 /// Parsed once at config load, so the event tap never touches strings.
-enum Action {
+enum Action: Equatable {
     case focus(Direction)
     case swap(Direction)
     case swapMaster

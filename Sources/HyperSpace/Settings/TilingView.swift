@@ -26,7 +26,7 @@ struct TilingView: View {
             } header: {
                 Text("Layout")
             } footer: {
-                SettingsFooter(hint: "A layout shortcut (layout …) switches the focused display on the fly. Windows always stay inside the visible area, clear of the menu bar and the Dock.",
+                SettingsFooter(hint: "Windows always stay inside the visible area, clear of the menu bar and the Dock. To switch layout on the fly, bind a layout action (layout tall, layout columns…) in config.json.",
                                error: model.saveError)
             }
             .disabled(!model.enabled)
@@ -239,32 +239,24 @@ struct WindowRulesView: View {
 struct TilingShortcutsView: View {
     @ObservedObject var model: TilingModel
 
-    private static let directions = [("Left", "left"), ("Down", "down"), ("Up", "up"), ("Right", "right")]
-
     var body: some View {
         Form {
             PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 
-            Section {
-                ColumnHeaders(titles: ["Focus", "Move window"])
-                ForEach(Self.directions, id: \.1) { name, direction in
-                    PairRow(model: model, title: name, actions: ("focus \(direction)", "swap \(direction)"))
+            ForEach(TilingModel.pairedShortcuts, id: \.title) { group in
+                Section {
+                    ColumnHeaders(titles: [group.columns.0, group.columns.1])
+                    ForEach(group.rows, id: \.title) { row in
+                        PairRow(model: model, title: row.title, actions: row.actions)
+                    }
+                } header: {
+                    Text(group.title)
                 }
-            } header: {
-                Text("Focus & Move")
             }
 
-            Section {
-                ColumnHeaders(titles: ["Smaller", "Larger"])
-                PairRow(model: model, title: "Width", actions: ("resize width -50", "resize width +50"))
-                PairRow(model: model, title: "Height", actions: ("resize height -50", "resize height +50"))
-            } header: {
-                Text("Resize")
-            }
-
-            ForEach(TilingModel.shortcutActions.dropFirst(2), id: \.group) { group in
+            ForEach(TilingModel.singleShortcuts, id: \.group) { group in
                 Section {
                     ForEach(group.items, id: \.action) { item in
                         if let shortcut = model.shortcuts.first(where: { $0.action == item.action }) {
@@ -274,7 +266,7 @@ struct TilingShortcutsView: View {
                 } header: {
                     Text(group.group)
                 } footer: {
-                    if group.group == TilingModel.shortcutActions.last?.group {
+                    if group.group == TilingModel.singleShortcuts.last?.group {
                         SettingsFooter(hint: "Click a shortcut and press the keys. Esc cancels, Delete clears.",
                                        error: model.saveError)
                     }

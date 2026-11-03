@@ -14,6 +14,17 @@ final class AXWriter {
         queue(for: pid).async(execute: block)
     }
 
+    /// Runs `work(false)` on the app's queue; when it returns true it runs again, `work(true)`,
+    /// `delay` seconds later. The queue is free in between (a wait would hold up every call
+    /// to a slow app). Main thread only.
+    func perform(_ pid: pid_t, retryAfter delay: TimeInterval, _ work: @escaping (_ isRetry: Bool) -> Bool) {
+        let serial = queue(for: pid)
+        serial.async {
+            guard work(false) else { return }
+            serial.asyncAfter(deadline: .now() + delay) { _ = work(true) }
+        }
+    }
+
     /// Runs `work` on the app's queue and hands its result to `then` on the main thread.
     func read<T>(_ pid: pid_t, _ work: @escaping () -> T, then: @escaping (T) -> Void) {
         queue(for: pid).async {

@@ -26,19 +26,27 @@ final class TilingModel: ObservableObject {
         case shortcut(String)
     }
 
-    static let shortcutActions: [(group: String, items: [(title: String, action: String)])] = [
-        // Shown as a grid on the Shortcuts page: one row per direction, Focus and Move side by side.
-        ("Focus & Move", [
-            ("Focus left", "focus left"), ("Focus down", "focus down"),
-            ("Focus up", "focus up"), ("Focus right", "focus right"),
-            ("Move window left", "swap left"), ("Move window down", "swap down"),
-            ("Move window up", "swap up"), ("Move window right", "swap right"),
+    /// Shortcuts shown two to a row, like focus and move in the same direction: a caption over
+    /// each column, one row per direction or dimension.
+    struct PairedGroup {
+        let title: String
+        let columns: (String, String)
+        let rows: [(title: String, actions: (String, String))]
+    }
+
+    static let pairedShortcuts: [PairedGroup] = [
+        PairedGroup(title: "Focus & Move", columns: ("Focus", "Move window"), rows: [
+            ("Left", ("focus left", "swap left")), ("Down", ("focus down", "swap down")),
+            ("Up", ("focus up", "swap up")), ("Right", ("focus right", "swap right")),
         ]),
-        // Also a grid: one row per dimension, smaller and larger.
-        ("Resize", [
-            ("Narrower", "resize width -50"), ("Wider", "resize width +50"),
-            ("Shorter", "resize height -50"), ("Taller", "resize height +50"),
+        PairedGroup(title: "Resize", columns: ("Smaller", "Larger"), rows: [
+            ("Width", ("resize width -50", "resize width +50")),
+            ("Height", ("resize height -50", "resize height +50")),
         ]),
+    ]
+
+    /// Shortcuts shown one to a row.
+    static let singleShortcuts: [(group: String, items: [(title: String, action: String)])] = [
         ("Displays", [
             ("Focus other display", "focus-display"),
             ("Move workspace to other display", "move-workspace-to-display"),
@@ -51,12 +59,26 @@ final class TilingModel: ObservableObject {
         ]),
     ]
 
-    @Published private(set) var enabled = true
-    @Published private(set) var layout = LayoutKind.columns
-    @Published private(set) var gap = 8
-    @Published private(set) var padding = 8
-    @Published private(set) var mouseFollowsFocus = true
-    @Published private(set) var accordionPadding = 30
+    /// Every window-management action with an editable shortcut, in page order: the single
+    /// source the Shortcuts page and the saved bindings derive from.
+    static let shortcutActions: [(title: String, action: String)] = {
+        var all: [(title: String, action: String)] = []
+        for group in pairedShortcuts {
+            for row in group.rows {
+                all.append((title: "\(group.columns.0) · \(row.title)", action: row.actions.0))
+                all.append((title: "\(group.columns.1) · \(row.title)", action: row.actions.1))
+            }
+        }
+        for group in singleShortcuts { all += group.items }
+        return all
+    }()
+
+    @Published private(set) var enabled = TilingConfig.defaultEnabled
+    @Published private(set) var layout = TilingConfig.defaultLayout
+    @Published private(set) var gap = Int(TilingConfig.defaultGap)
+    @Published private(set) var padding = Int(TilingConfig.defaultPadding)
+    @Published private(set) var mouseFollowsFocus = TilingConfig.defaultMouseFollowsFocus
+    @Published private(set) var accordionPadding = Int(TilingConfig.defaultAccordionPadding)
     @Published var workspaces: [Workspace] = []
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
@@ -178,11 +200,30 @@ final class TilingModel: ObservableObject {
         Self.runningApps.filter { app in !assignments.contains { $0.app == app.bundleID } }
     }
 
+    /// The regular apps running, by name. The pages ask on every redraw (a keystroke in a
+    /// text field), so the list is kept until an app launches or quits.
     static var runningApps: [(name: String, bundleID: String)] {
-        NSWorkspace.shared.runningApplications
+        if let cached = cachedApps { return cached }
+        watchRunningApps()
+        let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
             .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? $0, $0) } }
             .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+        cachedApps = apps
+        return apps
+    }
+
+    private static var cachedApps: [(name: String, bundleID: String)]?
+    private static var appObservers: [NSObjectProtocol] = []
+
+    private static func watchRunningApps() {
+        guard appObservers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            appObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                TilingModel.cachedApps = nil
+            })
+        }
     }
 
     var scratchpadCandidates: [(name: String, bundleID: String)] {
@@ -200,14 +241,18 @@ final class TilingModel: ObservableObject {
         startCapture(.shortcut(ScratchpadApp(bundleID: bundleID).toggleAction))
     }
 
-    func chooseAppForScratchpad() {
+    /// Asks for any installed app, running or not; its bundle identifier.
+    private func chooseApp(prompt: String) -> String? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "Add"
-        guard panel.runModal() == .OK, let url = panel.url,
-              let bundleID = Bundle(url: url)?.bundleIdentifier else { return }
-        addScratchpadApp(bundleID)
+        panel.prompt = prompt
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return Bundle(url: url)?.bundleIdentifier
+    }
+
+    func chooseAppForScratchpad() {
+        if let bundleID = chooseApp(prompt: "Add") { addScratchpadApp(bundleID) }
     }
 
     func removeScratchpadApp(_ bundleID: String) {
@@ -222,15 +267,8 @@ final class TilingModel: ObservableObject {
         save()
     }
 
-    /// Picks any installed app, running or not.
     func chooseAppForAssignment() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.application]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "Assign"
-        guard panel.runModal() == .OK, let url = panel.url,
-              let bundleID = Bundle(url: url)?.bundleIdentifier else { return }
-        addAssignment(bundleID)
+        if let bundleID = chooseApp(prompt: "Assign") { addAssignment(bundleID) }
     }
 
     func setAssignment(_ id: UUID, workspace: String) {
@@ -331,12 +369,12 @@ final class TilingModel: ObservableObject {
     private func load() {
         let root = ConfigWriter.read()
         let tiling = root["tiling"] as? [String: Any] ?? [:]
-        enabled = tiling["enabled"] as? Bool ?? true
-        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? .columns
-        gap = (tiling["gap"] as? NSNumber)?.intValue ?? 8
-        padding = (tiling["padding"] as? NSNumber)?.intValue ?? 8
-        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? true
-        accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? 30
+        enabled = tiling["enabled"] as? Bool ?? TilingConfig.defaultEnabled
+        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? TilingConfig.defaultLayout
+        gap = (tiling["gap"] as? NSNumber)?.intValue ?? Int(TilingConfig.defaultGap)
+        padding = (tiling["padding"] as? NSNumber)?.intValue ?? Int(TilingConfig.defaultPadding)
+        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? TilingConfig.defaultMouseFollowsFocus
+        accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(TilingConfig.defaultAccordionPadding)
         floating = tiling["floating"] as? [String] ?? []
         floatingWindows = (tiling["floatingWindows"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let title = entry["title"] as? String, !title.isEmpty else { return nil }
@@ -353,7 +391,7 @@ final class TilingModel: ObservableObject {
         }
 
         let bindings = (root["keyboard"] as? [String: Any])?["bindings"] as? [[String: Any]] ?? []
-        shortcuts = Self.shortcutActions.flatMap(\.items).map { item in
+        shortcuts = Self.shortcutActions.map { item in
             let keys = bindings.last { ($0["action"] as? String) == item.action }?["keys"] as? String
             return Shortcut(title: item.title, action: item.action, keys: keys ?? "")
         }
@@ -380,7 +418,7 @@ final class TilingModel: ObservableObject {
             tiling["gap"] = gap
             tiling["padding"] = padding
             tiling["mouseFollowsFocus"] = mouseFollowsFocus
-            tiling["accordionPadding"] = accordionPadding == 30 ? nil : accordionPadding
+            tiling["accordionPadding"] = accordionPadding == Int(TilingConfig.defaultAccordionPadding) ? nil : accordionPadding
             tiling["floating"] = floating
             tiling["floatingWindows"] = floatingWindows.isEmpty ? nil : floatingWindows.map { rule -> [String: Any] in
                 var entry: [String: Any] = ["title": rule.title]
@@ -399,18 +437,36 @@ final class TilingModel: ObservableObject {
             }
             root["tiling"] = tiling
 
-            // Window shortcuts replace their own bindings; other bindings are kept as they are.
+            // Each window shortcut edits the last binding of its action (the one the page shows)
+            // in place; other bindings, even more for the same action, stay where they are.
             var keyboard = root["keyboard"] as? [String: Any] ?? [:]
-            let managed = Set(shortcuts.map(\.action))
-            var bindings = (keyboard["bindings"] as? [[String: Any]] ?? []).filter {
-                let action = $0["action"] as? String ?? ""
-                return !managed.contains(action) && !action.hasPrefix(Self.togglePrefix) && !action.hasPrefix(Self.tilePrefix)
+            var bindings = keyboard["bindings"] as? [[String: Any]] ?? []
+            func actionText(_ binding: [String: Any]) -> String { binding["action"] as? String ?? "" }
+            // An app taken off the scratchpad list loses all its bindings.
+            let padActions = Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] })
+            bindings.removeAll {
+                let action = actionText($0)
+                return (action.hasPrefix(Self.togglePrefix) || action.hasPrefix(Self.tilePrefix)) && !padActions.contains(action)
             }
-            bindings += shortcuts.filter { !$0.keys.isEmpty }.map { ["keys": $0.keys, "action": $0.action] }
+            var desired: [(action: String, keys: String)] = shortcuts.map { (action: $0.action, keys: $0.keys) }
             for pad in scratchpadApps {
-                if !pad.toggleKeys.isEmpty { bindings.append(["keys": pad.toggleKeys, "action": pad.toggleAction]) }
-                if !pad.tileKeys.isEmpty { bindings.append(["keys": pad.tileKeys, "action": pad.tileAction]) }
+                desired.append((action: pad.toggleAction, keys: pad.toggleKeys))
+                desired.append((action: pad.tileAction, keys: pad.tileKeys))
             }
+            var cleared = Set<Int>()
+            var added: [[String: Any]] = []
+            for entry in desired {
+                if let index = bindings.lastIndex(where: { actionText($0) == entry.action }) {
+                    if entry.keys.isEmpty {
+                        cleared.insert(index)
+                    } else if bindings[index]["keys"] as? String != entry.keys {
+                        bindings[index]["keys"] = entry.keys
+                    }
+                } else if !entry.keys.isEmpty {
+                    added.append(["keys": entry.keys, "action": entry.action])
+                }
+            }
+            bindings = bindings.enumerated().filter { !cleared.contains($0.offset) }.map(\.element) + added
             keyboard["bindings"] = bindings
             root["keyboard"] = keyboard
         }
