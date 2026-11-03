@@ -1481,6 +1481,9 @@ final class WindowManager {
         } else if let id = display(showing: workspace), case let screens = currentScreens(),
                   let screen = screens.first(where: { $0.id == id }) {
             activeDisplay = id
+            // Already holding the focus there (the same workspace asked again, a held key
+            // repeating): nothing to do, the pointer is not clicked again.
+            if heldDisplay == id, focusAnchor.shown { return nil }
             bringPointer(to: screen.visible.center, on: screen)
             // Nothing to focus there: take the keyboard away from the window you left (on
             // another display it would keep typing there). An invisible window of ours on that
@@ -1493,7 +1496,7 @@ final class WindowManager {
             focusAnchor.show(on: screen)
             let me = getpid()
             writer.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.focusAnchor.takeKey() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.focusAnchor.takeKey() }
         }
         return nil
     }

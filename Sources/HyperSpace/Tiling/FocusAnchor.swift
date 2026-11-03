@@ -49,7 +49,13 @@ final class FocusAnchor: NSObject, NSWindowDelegate {
         window.orderFrontRegardless()
         shown = true
         window.makeKey()
-        click()
+        // Clicked once it is really on screen: sent right away, the click can land on the
+        // window of the workspace just left (still there for a moment), whose app would
+        // then take the focus and bring its workspace back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, shown else { return }
+            click()
+        }
     }
 
     /// Once HyperSpace is frontmost: takes the key focus there (again, now as the active app).
