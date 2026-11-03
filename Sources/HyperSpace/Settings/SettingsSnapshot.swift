@@ -63,9 +63,11 @@ enum SettingsSnapshot {
             window.appearance = NSAppearance(named: appearance)
             for size in sizes {
                 window.setContentSize(size)
+                // The window animates its new size; shooting before it ends catches the page shifted.
+                settle(window, seconds: 1.2)
                 for page in SettingsNavigation.Page.allCases {
                     navigation.page = page
-                    settle(window)
+                    settle(window, seconds: 0.6)
                     let name = "\(page.fileName)-\(appearanceName)-\(Int(size.width))x\(Int(size.height)).png"
                     if let error = save(window, to: directory.appendingPathComponent(name)) {
                         fputs("\(name): \(error)\n", stderr)
@@ -81,8 +83,8 @@ enum SettingsSnapshot {
     }
 
     /// A few turns of the run loop so SwiftUI lays the page out and the images load.
-    private static func settle(_ window: NSWindow) {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+    private static func settle(_ window: NSWindow, seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
         window.contentView?.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
