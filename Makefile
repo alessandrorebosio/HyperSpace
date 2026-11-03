@@ -2,6 +2,8 @@ APP_NAME      := HyperSpace
 CONFIG        ?= release
 BUNDLE        := build/$(APP_NAME).app
 BUNDLE_ID     := com.alessandrorebosio.HyperSpace
+MIN_MACOS     := 13.0
+SDK_VERSION   := $(shell xcrun --show-sdk-version)
 # macOS ties the Accessibility grant to the app's designated requirement. When a
 # "HyperSpace Dev" code signing certificate exists (see README) it is used: the grant is
 # bound to that certificate. Otherwise the app is signed ad-hoc, whose default requirement
@@ -31,6 +33,10 @@ app: build
 	cp Resources/Info.plist $(BUNDLE)/Contents/Info.plist
 	cp Resources/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
 	strip -x $(BUNDLE)/Contents/MacOS/$(APP_NAME)
+	# SwiftPM records the deployment target (13.0) as the SDK version too, and AppKit then runs
+	# the app in compatibility mode: the pre-Liquid Glass look on macOS 26 and later. Record the
+	# SDK it was really built with.
+	vtool -set-build-version macos $(MIN_MACOS) $(SDK_VERSION) -replace -output $(BUNDLE)/Contents/MacOS/$(APP_NAME) $(BUNDLE)/Contents/MacOS/$(APP_NAME)
 	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(SIGN_REQUIREMENT) $(BUNDLE)
 
 run: app
