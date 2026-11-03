@@ -377,26 +377,25 @@ struct BorderedMenu: ViewModifier {
     }
 }
 
-/// Removes a row; red under the pointer.
+/// Removes a row.
+///
+/// No `@State` here, or anywhere in the settings views: with only the Command Line Tools, a
+/// SwiftPM build cannot load the SwiftUI macro plugin that `@State` expands with on recent SDKs
+/// ("external macro implementation type 'SwiftUIMacros.StateMacro' could not be found"). View
+/// state lives in the models (ObservableObject), which need no macro.
 struct RemoveButton: View {
     static let width: CGFloat = 20
 
     let action: () -> Void
-    @State private var hovering = false
-
-    init(action: @escaping () -> Void) {
-        self.action = action
-    }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "minus.circle.fill")
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(hovering ? Color.red : Color.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: Self.width, height: Self.width)
         }
         .buttonStyle(.borderless)
-        .onHover { hovering = $0 }
         .help("Remove")
         .accessibilityLabel("Remove")
     }

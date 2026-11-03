@@ -28,6 +28,17 @@ jobs:
           sw_vers
           xcrun swift --version
 
+      # The README promises that the Command Line Tools are enough. Some SwiftUI features (the
+      # @State macro on recent SDKs) build in Xcode but not there, so build with them too.
+      - name: Build with the Command Line Tools only
+        run: |
+          if [ -d /Library/Developer/CommandLineTools/usr/bin ]; then
+            DEVELOPER_DIR=/Library/Developer/CommandLineTools swift --version
+            DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build -c release --scratch-path .build-clt
+          else
+            echo "::warning::No Command Line Tools on this runner, skipped"
+          fi
+
       - name: Build the app
         run: make app
 

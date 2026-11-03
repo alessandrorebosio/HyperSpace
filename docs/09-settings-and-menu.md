@@ -51,7 +51,7 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 | `ChoiceMenu` | The small ▾ button next to a key cap, to pick from a list instead of pressing (all keys, mouse actions). |
 | `AddButton` / `AddMenu` | Small bordered *+ Add…* button / menu in a section header. |
 | `BorderedMenu` | How every menu button is styled. On macOS 14+ the SwiftUI button style: the label is drawn as a vector in its own colors (the older menu styles turn it into a gray, blurry template bitmap). |
-| `RemoveButton` | ⊖ at the end of a row, red under the pointer. |
+| `RemoveButton` | ⊖ at the end of a row. |
 | `WarningBadge` | ⚠︎ with the explanation in its tooltip (a duplicate remap, button or shortcut). |
 | `SliderRow` | A value in points: title, slider, value. Shows the value while dragging and saves on release (each save reloads the config and retiles). |
 | `AppLabel` | An app's icon (22 pt, high-quality scaling) and name; the bundle id in the tooltip. |
