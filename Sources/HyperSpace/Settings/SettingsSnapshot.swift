@@ -31,43 +31,22 @@ enum SettingsSnapshot {
         // The models, built the way the settings window builds them, with nothing behind them.
         let windowManager = WindowManager()
         let eventTap = EventTap(drag: DragController(windowManager: windowManager)) { _ in }
-        let navigation = SettingsNavigation()
-        let root = SettingsRoot(
-            navigation: navigation,
-            keyboard: RemapModel(remapper: KeyboardRemapper(), eventTap: eventTap),
-            mouse: MouseModel(eventTap: eventTap),
-            tiling: TilingModel(eventTap: eventTap),
-            general: GeneralModel(actions: GeneralModel.Actions(openConfig: {}, problem: { nil }))
-        )
-
-        let controller = NSHostingController(rootView: root)
-        controller.sizingOptions = [.minSize]
-        if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: sizes[1]),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
-        window.contentViewController = controller
-        if #unavailable(macOS 14) { window.title = "HyperSpace" }
-        window.toolbarStyle = .unified
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
-        // On screen (the views only lay out and draw there) but invisible and untouchable.
-        window.alphaValue = 0
-        window.ignoresMouseEvents = true
-        // Key and active, so the sidebar draws its selection and headers as in a real window.
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        let keyboard = RemapModel(remapper: KeyboardRemapper(), eventTap: eventTap)
+        let mouse = MouseModel(eventTap: eventTap)
+        let tiling = TilingModel(eventTap: eventTap)
+        let general = GeneralModel(actions: GeneralModel.Actions(openConfig: {}, problem: { nil }))
 
         var failures = 0
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
-            window.appearance = NSAppearance(named: appearance)
             for size in sizes {
-                window.setContentSize(size)
-                // The window animates its new size; shooting before it ends catches the page shifted.
-                settle(window, seconds: 1.2)
                 for page in SettingsNavigation.Page.allCases {
+                    // A new window for every picture, born at its final size and page: no resize
+                    // animation or scroll position left over from the previous one.
+                    let navigation = SettingsNavigation()
                     navigation.page = page
-                    settle(window, seconds: 0.6)
+                    let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling, general: general)
+                    let window = makeWindow(root, size: size, appearance: NSAppearance(named: appearance))
+                    settle(window, seconds: 0.8)
                     let name = "\(page.fileName)-\(appearanceName)-\(Int(size.width))x\(Int(size.height)).png"
                     if let error = save(window, to: directory.appendingPathComponent(name)) {
                         fputs("\(name): \(error)\n", stderr)
@@ -75,11 +54,38 @@ enum SettingsSnapshot {
                     } else {
                         print(name)
                     }
+                    window.orderOut(nil)
+                    window.contentViewController = nil
                 }
             }
         }
-        window.orderOut(nil)
         return failures == 0 ? 0 : 1
+    }
+
+    /// The settings window as the app builds it, invisible, fully on screen.
+    private static func makeWindow(_ root: SettingsRoot, size: NSSize, appearance: NSAppearance?) -> NSWindow {
+        let controller = NSHostingController(rootView: root)
+        controller.sizingOptions = [.minSize]
+        if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.contentViewController = controller
+        if #unavailable(macOS 14) { window.title = "HyperSpace" }
+        window.toolbarStyle = .unified
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.appearance = appearance
+        window.setContentSize(size)
+        // Inside the visible area of the screen, so AppKit has no reason to move or clip it.
+        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
+        window.setFrameTopLeftPoint(NSPoint(x: visible.minX + 40, y: visible.maxY - 40))
+        // Invisible and untouchable, but key and active, so the sidebar draws like a live one.
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        return window
     }
 
     /// A few turns of the run loop so SwiftUI lays the page out and the images load.
