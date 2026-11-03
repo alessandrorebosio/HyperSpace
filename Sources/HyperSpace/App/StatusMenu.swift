@@ -35,6 +35,17 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             }
         }
 
+        /// The line in the menu: short, so a long parse error does not make the menu very wide
+        /// (the whole message stays in the tooltip and in Settings).
+        var menuTitle: String {
+            switch self {
+            case .permission: return "Accessibility permission needed"
+            case .config(let message):
+                let line = message.split(separator: "\n").first.map(String.init) ?? message
+                return "Config error: " + (line.count > 48 ? String(line.prefix(47)) + "…" : line)
+            }
+        }
+
         var isConfig: Bool {
             if case .config = self { return true }
             return false
@@ -298,14 +309,14 @@ extension StatusMenu {
         let item: ClosureMenuItem
         switch problem {
         case .permission:
-            fix = "Click to allow HyperSpace in System Settings"
-            item = ClosureMenuItem(problem.text) { Permissions.openSettings() }
+            fix = "Click to open System Settings and allow HyperSpace"
+            item = ClosureMenuItem(problem.menuTitle) { Permissions.openSettings() }
         case .config(let message):
             fix = "Click to edit the file. The last valid config stays active."
-            item = ClosureMenuItem(problem.text) { [host] in host.openConfig() }
+            item = ClosureMenuItem(problem.menuTitle) { [host] in host.openConfig() }
             item.toolTip = message
         }
-        item.attributedTitle = Self.title(problem.text, symbol: "exclamationmark.triangle.fill", color: .systemOrange)
+        item.attributedTitle = Self.title(problem.menuTitle, symbol: "exclamationmark.triangle.fill", color: .systemOrange)
         if #available(macOS 14.4, *) { item.subtitle = fix } else { item.toolTip = fix }
         menu.addItem(item)
         menu.addItem(.separator())
