@@ -115,7 +115,10 @@ Bursts are coalesced (30 ms). `retile` also: parks windows of non-displayed work
 ## Windows in apps with slow or odd AX behaviour
 
 - Apps that fail to answer AX right after launch are retried every 0.5 s up to 20 times; two extra rescans run 2 s and 6 s after start.
-- Moves use `size → position → size` across displays (the first resize lets the window fit the destination, the second fixes apps that clamp to the old screen); within a display only what changed, shrinking before moving. Across displays the frame is then read back and written once more if the app kept another size, and the workspace is retiled again after 0.3 s and 0.8 s: apps resizing themselves for the new display's scale do it too soon to count as a hand resize.
+- Moves use `size → position → size` across displays (the first resize lets the window fit the destination, the second fixes apps that clamp to the old screen); within a display only what changed, shrinking before moving.
+- Across displays (moving a window to a workspace shown on another display, `swap` with a window there, a workspace moved to another display):
+  - the frame is read back right after the writes and written once more (position, then size) if the app kept another size or position;
+  - the workspace is retiled again after 0.3 s and 0.8 s: many apps resize themselves for the new display's scale a moment after the move, too soon (< 0.5 s) to be taken for a hand resize and snapped back. Floating and scratchpad windows are left alone.
 - `AXEnhancedUserInterface` is switched off during a move (it makes some apps animate every AX resize) and restored after.
 - If the app does not take focus within 0.15 s, HyperSpace activates it and retries.
 - Failures are recorded in "Recent issues" of *Copy Debug Info*.

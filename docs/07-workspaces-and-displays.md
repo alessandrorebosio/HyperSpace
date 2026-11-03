@@ -24,9 +24,21 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift`.
 - **Workspace 1 lives on the main display** (the one with the menu bar), **2 on the second**, 3 on the third, and so on (displays ordered: main first, then left to right, then by `y`). Workspaces beyond the number of displays live on the main display.
 - Each display **shows exactly one** of its workspaces (the lowest-numbered one by default), or none if no workspace lives there.
 - `workspace n` (**`switchWorkspace`**) shows n on *its* display, remembers what it replaced, and focuses its last focused window (or the first one; with no windows, it moves the pointer to the display
-  centre and activates HyperSpace itself with a tiny invisible window (`FocusAnchor`) as key window on that display, so macOS makes it the active display: the keyboard no longer types into the window you left, and the menu bar, new windows and Spotlight follow). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
+  centre and makes that display the active one through the focus anchor, see [Empty workspaces](#empty-workspaces)). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
 - Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
-- On an empty workspace the focus anchor (`Tiling/FocusAnchor.swift`, an invisible 2×2 window above the others in the middle of the display) is clicked by HyperSpace (a synthetic click, ignored by the event tap; the pointer goes back where it was). macOS lets a background app activate itself only through a click, and the menu bar of a display lights up only for the active app: so HyperSpace becomes active there, the keyboard leaves the window on the other display, and that display counts as the focused one (menu bar, apps opened from there, layout commands) until a window is focused or something else takes the key focus. No click while a mouse button is held.
+
+## Empty workspaces
+
+An empty workspace has no window to focus, yet its display must become the active one: otherwise the keyboard keeps typing into the window left on the other display, and the menu bar, new windows and Spotlight stay there. macOS lights up a display's menu bar only for the **active app**, and it ignores a background app activating itself (`NSApp.activate`, or `AXFrontmost` on itself): a click is the one thing it always honours.
+
+So focusing an empty workspace (`workspace n`, `focus-display`, a window moved away leaving its workspace empty, a scratchpad hidden over one):
+
+1. `FocusAnchor` (`Tiling/FocusAnchor.swift`) puts a 2×2 window, nearly transparent, at `popUpMenu` level in the middle of the display's visible area;
+2. HyperSpace **clicks it** with a synthetic left click (no modifiers, stamped with `EventTap.syntheticMarker`, so the event tap and your mouse mappings ignore it), which makes HyperSpace the active app with its key window on that display. The pointer goes back where it was 50 ms later (already there with *Pointer follows focus*). No click is sent while a mouse button is held: then only `AXFrontmost` is asked, as a fallback;
+3. until a window is focused, that display **counts as the focused one** for HyperSpace too (menu bar highlight, apps opened from there, layout and workspace commands), even if macOS still reports the window left behind as focused;
+4. the anchor goes away as soon as anything else takes the key focus (a click, ⌘Tab, an app opening) or HyperSpace focuses a window.
+
+While HyperSpace is active its own (small) menu bar is shown on that display.
 
 ## Moving windows and workspaces
 

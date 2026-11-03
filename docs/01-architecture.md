@@ -43,7 +43,7 @@ Resources/              Info.plist, AppIcon.icns
 - **`WindowManager`** (~1400 lines): state of windows, workspaces, displays, scratchpad; commands; save/restore.
 - **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `ScreenInfo`), **`ColumnLayout`** (i3-style columns).
 - **`AppWatcher`** (one `AXObserver` per app), **`AXWriter`** (per-app serial queues), **`AX`** (Accessibility API helpers, `AX.probe`).
-- **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible key window that makes an empty display the active one).
+- **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible window HyperSpace clicks on an empty workspace's display, so HyperSpace becomes the active app there and that display the active one).
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
@@ -85,7 +85,7 @@ AppDelegate.apply
 - The tap **subscribes only to the events in use** (`TapConfig.eventMask`): with an empty config no tap is installed at all.
 - Without Accessibility `applyTrusted` is not called: only HID remaps are active. A 1 s timer polls until the permission arrives, then applies the already-loaded config.
 - A tap disabled by the system (`tapDisabledByTimeout`/`ByUserInput`) is re-enabled in the callback.
-- Events HyperSpace generates are stamped with `EventTap.syntheticMarker` (`0x48595045`) in `eventSourceUserData`; the tap lets them through untouched.
+- Events HyperSpace generates (synthetic keys, the `click` and `navigate` actions, the focus anchor's click) are stamped with `EventTap.syntheticMarker` (`0x48595045`) in `eventSourceUserData`; the tap lets them through untouched.
 
 ## Events the tap subscribes to
 

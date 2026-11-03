@@ -17,7 +17,7 @@ written from the code in `Sources/HyperSpace/`. For a quick overview and install
 | [4. Mouse](04-mouse.md) | Button mapping, reverse scroll, modifier + drag |
 | [5. Actions](05-actions.md) | Full list of actions and their arguments |
 | [6. Tiling](06-tiling.md) | Layouts, gaps/padding, floating windows and rules, resize, focus/swap, drag & drop, snap back |
-| [7. Workspaces and displays](07-workspaces-and-displays.md) | Workspaces per display, moving, app assignments, parking, saved state |
+| [7. Workspaces and displays](07-workspaces-and-displays.md) | Workspaces per display, empty workspaces, moving, app assignments, parking, saved state |
 | [8. Scratchpad](08-scratchpad.md) | Per-app and generic scratchpad, size, centering, overlap |
 | [9. Settings window and menu bar](09-settings-and-menu.md) | Every settings page, the menu bar, the app menu |
 | [10. Permissions, troubleshooting, build and test](10-permissions-troubleshooting-build.md) | Accessibility, Copy Debug Info, `make app`, `make test` |
