@@ -6,8 +6,14 @@ import SwiftUI
 ///
 /// Nothing of the app runs: no event tap, no remapping, no tiling, no menu bar item. The models
 /// only read the config; nothing is written and no key or button capture is started.
+///
+/// With `HYPERSPACE_SNAPSHOT_SCREENCAPTURE=1` the window is shown on screen and photographed with
+/// `screencapture` instead of drawn offscreen: slower and it needs Screen Recording, but it also
+/// works where offscreen drawing comes out blank (the CI runners: no Liquid Glass, no SwiftUI
+/// content in `cacheDisplay`).
 enum SettingsSnapshot {
     private static let flag = "--render-settings"
+    private static let useScreencapture = ProcessInfo.processInfo.environment["HYPERSPACE_SNAPSHOT_SCREENCAPTURE"] == "1"
     private static let sizes = [NSSize(width: 720, height: 460), NSSize(width: 900, height: 640)]
     private static let scale = 2
 
@@ -48,7 +54,8 @@ enum SettingsSnapshot {
                     let window = makeWindow(root, size: size, appearance: NSAppearance(named: appearance))
                     settle(window, seconds: 0.8)
                     let name = "\(page.fileName)-\(appearanceName)-\(Int(size.width))x\(Int(size.height)).png"
-                    if let error = save(window, to: directory.appendingPathComponent(name)) {
+                    let url = directory.appendingPathComponent(name)
+                    if let error = useScreencapture ? capture(window, to: url) : save(window, to: url) {
                         fputs("\(name): \(error)\n", stderr)
                         failures += 1
                     } else {
@@ -81,8 +88,9 @@ enum SettingsSnapshot {
         // Inside the visible area of the screen, so AppKit has no reason to move or clip it.
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
         window.setFrameTopLeftPoint(NSPoint(x: visible.minX + 40, y: visible.maxY - 40))
-        // Invisible and untouchable, but key and active, so the sidebar draws like a live one.
-        window.alphaValue = 0
+        // Invisible (unless it is photographed) and untouchable, but key and active, so the sidebar
+        // draws like a live one.
+        window.alphaValue = useScreencapture ? 1 : 0
         window.ignoresMouseEvents = true
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -118,6 +126,23 @@ enum SettingsSnapshot {
         } catch {
             return error.localizedDescription
         }
+    }
+}
+
+extension SettingsSnapshot {
+    /// The window as the window server shows it, without its shadow, written as PNG.
+    fileprivate static func capture(_ window: NSWindow, to url: URL) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-o", "-l\(window.windowNumber)", url.path]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return error.localizedDescription
+        }
+        if process.terminationStatus != 0 { return "screencapture exited with \(process.terminationStatus)" }
+        return FileManager.default.fileExists(atPath: url.path) ? nil : "screencapture wrote nothing"
     }
 }
 

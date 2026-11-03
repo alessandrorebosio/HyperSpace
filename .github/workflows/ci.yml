@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -p ~/.hyperspace
           cp .github/ci/sample-config.json ~/.hyperspace/config.json
-          build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings "$RUNNER_TEMP/settings"
+          HYPERSPACE_SNAPSHOT_SCREENCAPTURE=1 build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings "$RUNNER_TEMP/settings"
 
       - uses: actions/upload-artifact@v4
         if: always()
