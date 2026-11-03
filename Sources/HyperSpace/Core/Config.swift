@@ -219,6 +219,18 @@ struct FloatingWindowRule: Hashable {
 }
 
 extension TilingConfig {
+    /// A title rule as written in the file or typed in Settings: dropped when its title is
+    /// empty; an empty app means any app.
+    static func floatingRule(app: String?, title: String) -> FloatingWindowRule? {
+        guard !title.isEmpty else { return nil }
+        return FloatingWindowRule(app: app.flatMap { $0.isEmpty ? nil : $0 }, title: title)
+    }
+
+    /// The name of a workspace: the one given, or its 1-based position when none (or empty).
+    static func workspaceName(_ name: String?, at index: Int) -> String {
+        name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)"
+    }
+
     /// Whether a window floats: its app is floating, or a title rule matches it.
     func floats(app bundleID: String?, title: String?) -> Bool {
         if let bundleID, floating.contains(bundleID) { return true }
@@ -337,15 +349,14 @@ struct Config {
         tiling.padding = raw.padding.map { CGFloat($0).clamped(to: TilingConfig.spacingRange) } ?? defaults.padding
         tiling.masterRatio = raw.masterRatio.map { CGFloat($0).clamped(to: TilingConfig.ratioRange) } ?? defaults.masterRatio
         tiling.floating = Set(raw.floating ?? [])
-        tiling.floatingWindows = (raw.floatingWindows ?? []).filter { !$0.title.isEmpty }
-            .map { FloatingWindowRule(app: $0.app.flatMap { $0.isEmpty ? nil : $0 }, title: $0.title) }
+        tiling.floatingWindows = (raw.floatingWindows ?? []).compactMap { TilingConfig.floatingRule(app: $0.app, title: $0.title) }
         tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? defaults.mouseFollowsFocus
         tiling.accordionPadding = raw.accordionPadding.map { CGFloat($0).clamped(to: 0...200) } ?? defaults.accordionPadding
         func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat($0).clamped(to: 0.2...1) } ?? fallback }
         tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, defaults.scratchpadSize.width),
                                        height: fraction(raw.scratchpad?.height, defaults.scratchpadSize.height))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
-            tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
+            tiling.workspaces.append(TilingConfig.workspaceName(workspace.name, at: index))
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }
             if let keys = workspace.move, !keys.isEmpty { shortcuts.append((keys, .moveToWorkspace(index))) }
         }

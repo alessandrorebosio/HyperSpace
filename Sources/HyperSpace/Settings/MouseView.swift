@@ -75,14 +75,14 @@ private struct MouseRuleRow: View {
     private var buttonCap: some View {
         KeyCap(text: buttonText, symbol: "computermouse", minWidth: 140, placeholder: rule.button == nil,
                active: model.capturing == .button(rule.id)) {
-            toggle(.button(rule.id))
+            model.toggleCapture(.button(rule.id))
         }
     }
 
     private var actionCap: some View {
         HStack(spacing: 8) {
             KeyCap(text: actionText, minWidth: 110, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
-                toggle(.action(rule.id))
+                model.toggleCapture(.action(rule.id))
             }
             ChoiceMenu(help: "Choose an action") {
                 ForEach(MouseModel.presets, id: \.group) { group in
@@ -113,9 +113,5 @@ private struct MouseRuleRow: View {
     private var actionText: String {
         if model.capturing == .action(rule.id) { return "Press keys…" }
         return rule.action.isEmpty ? "Action" : MouseModel.actionLabel(rule.action)
-    }
-
-    private func toggle(_ field: MouseModel.Field) {
-        model.capturing == field ? model.stopCapture() : model.startCapture(field)
     }
 }

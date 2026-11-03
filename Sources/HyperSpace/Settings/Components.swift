@@ -190,6 +190,27 @@ struct SettingsFooter: View {
     }
 }
 
+// MARK: - Recording a shortcut
+
+/// A settings model that records the next key or click for one field at a time.
+protocol CaptureModel: AnyObject {
+    associatedtype Field: Equatable
+    var capturing: Field? { get }
+    func startCapture(_ field: Field)
+    func stopCapture()
+}
+
+extension CaptureModel {
+    /// A click on a key cap: stops recording that field when it is the one recording, else starts.
+    func toggleCapture(_ field: Field) {
+        capturing == field ? stopCapture() : startCapture(field)
+    }
+}
+
+extension RemapModel: CaptureModel {}
+extension MouseModel: CaptureModel {}
+extension TilingModel: CaptureModel {}
+
 // MARK: - Notices
 
 /// A notice at the top of a page: what is wrong and the one button that fixes it.

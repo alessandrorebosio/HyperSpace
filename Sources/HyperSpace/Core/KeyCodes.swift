@@ -194,11 +194,17 @@ enum KeyCodes {
         index.keyCodeByHID[usage]
     }
 
-    /// The physical modifier keys by virtual key code, and the modifier each produces.
-    static let modifierKeyCodes: [UInt16: Modifiers] = [
-        0x37: .cmd, 0x36: .cmd, 0x3A: .alt, 0x3D: .alt,
-        0x3B: .ctrl, 0x3E: .ctrl, 0x38: .shift, 0x3C: .shift,
-    ]
+    /// The physical modifier keys by virtual key code, and the modifier each produces: the
+    /// `left_` and `right_` keys of the table (`command`, `option`, `control`, `shift`).
+    static let modifierKeyCodes: [UInt16: Modifiers] = {
+        var result: [UInt16: Modifiers] = [:]
+        for (name, modifier) in [("command", Modifiers.cmd), ("option", .alt), ("control", .ctrl), ("shift", .shift)] {
+            for side in ["left", "right"] {
+                if let code = lookup("\(side)_\(name)")?.keyCode { result[code] = modifier }
+            }
+        }
+        return result
+    }()
 }
 
 struct Modifiers: OptionSet, Hashable {
@@ -243,9 +249,26 @@ struct Modifiers: OptionSet, Hashable {
         }
     }
 
-    /// The modifier a physical modifier key produces ("left_shift" → .shift).
+    /// The modifier a physical modifier key produces ("left_shift" → .shift), by any of its names.
     static func modifierKey(_ name: String) -> Modifiers? {
         KeyCodes.lookup(name)?.keyCode.flatMap { KeyCodes.modifierKeyCodes[$0] }
+    }
+
+    /// What a token of a combination stands for: a modifier ("cmd", "hyper") and, with `keys`,
+    /// a physical modifier key too ("left_shift").
+    static func named(_ token: String, keys: Bool = false) -> Modifiers? {
+        Modifiers.token(token) ?? (keys ? modifierKey(token) : nil)
+    }
+
+    /// The union of the modifiers `tokens` name; `unknown` makes the error for the first that is none.
+    static func parse<Tokens: Sequence>(tokens: Tokens, unknown: (String) -> ConfigError) throws -> Modifiers
+        where Tokens.Element == String {
+        var mods: Modifiers = []
+        for token in tokens {
+            guard let mod = named(token) else { throw unknown(token) }
+            mods.formUnion(mod)
+        }
+        return mods
     }
 
     /// Config text, e.g. "ctrl+alt".
@@ -269,13 +292,8 @@ struct Modifiers: OptionSet, Hashable {
 
     /// Parses a modifier-only list such as "ctrl+alt". Empty string means no modifiers.
     static func parse(_ text: String) throws -> Modifiers {
-        var mods: Modifiers = []
-        for part in text.split(separator: "+") {
-            let token = part.trimmingCharacters(in: .whitespaces)
-            guard let mod = Modifiers.token(token) else { throw ConfigError("unknown modifier '\(token)'") }
-            mods.formUnion(mod)
-        }
-        return mods
+        let tokens = text.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
+        return try parse(tokens: tokens) { ConfigError("unknown modifier '\($0)'") }
     }
 }
 
@@ -293,11 +311,7 @@ struct KeyCombo: Equatable {
         guard let keyCode = key.keyCode else {
             throw ConfigError("'\(name)' can be remapped but not used in a shortcut")
         }
-        var mods: Modifiers = []
-        for token in tokens.dropLast() {
-            guard let mod = Modifiers.token(token) else { throw ConfigError("unknown modifier '\(token)' in '\(text)'") }
-            mods.formUnion(mod)
-        }
+        let mods = try Modifiers.parse(tokens: tokens.dropLast()) { ConfigError("unknown modifier '\($0)' in '\(text)'") }
         return KeyCombo(keyCode: keyCode, modifiers: mods)
     }
 }

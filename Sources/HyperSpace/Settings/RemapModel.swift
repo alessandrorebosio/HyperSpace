@@ -214,8 +214,9 @@ final class RemapModel: ObservableObject {
     /// Modifier keys send flagsChanged on press and on release; keep the press.
     private static func isPress(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags
-        if event.keyCode == 0x3F { return flags.contains(.function) }
-        if let modifier = KeyCodes.modifierKeyCodes[event.keyCode] { return Modifiers(flags).contains(modifier) }
+        guard let name = KeyCodes.name(forKeyCode: event.keyCode) else { return true }
+        if name == "fn" { return flags.contains(.function) }
+        if let modifier = Modifiers.modifierKey(name) { return Modifiers(flags).contains(modifier) }
         return true // caps lock sends one event per press
     }
 

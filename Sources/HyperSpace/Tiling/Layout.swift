@@ -143,9 +143,7 @@ extension ScreenInfo {
 
     /// A frame of `size` (shrunk to fit) centered in the visible area.
     func centered(_ size: CGSize) -> CGRect {
-        let fitted = CGSize(width: min(size.width, visible.width), height: min(size.height, visible.height))
-        return CGRect(x: visible.midX - fitted.width / 2, y: visible.midY - fitted.height / 2,
-                      width: fitted.width, height: fitted.height)
+        visible.centered(CGSize(width: min(size.width, visible.width), height: min(size.height, visible.height)))
     }
 }
 
@@ -159,6 +157,13 @@ extension Array where Element == ScreenInfo {
 
 extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
+
+    /// A rect of `size` with the same center as this one; `rounded` puts its origin on whole points.
+    func centered(_ size: CGSize, rounded: Bool = false) -> CGRect {
+        let x = midX - size.width / 2
+        let y = midY - size.height / 2
+        return CGRect(origin: rounded ? CGPoint(x: x.rounded(), y: y.rounded()) : CGPoint(x: x, y: y), size: size)
+    }
 
     func isClose(to other: CGRect, tolerance: CGFloat = 2) -> Bool {
         abs(minX - other.minX) <= tolerance && abs(minY - other.minY) <= tolerance

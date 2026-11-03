@@ -399,9 +399,9 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
     @Test func windowMissingTheSizeStaysCentered() {
         let frame = CGRect(x: 294, y: 172, width: 882, height: 646)
         // A terminal that only takes whole character cells.
-        let fitted = WindowManager.centered(CGSize(width: 875, height: 640), in: frame)
+        let fitted = frame.centered(CGSize(width: 875, height: 640), rounded: true)
         #expect(fitted == CGRect(x: 298, y: 175, width: 875, height: 640))
-        #expect(WindowManager.centered(frame.size, in: frame) == frame)
+        #expect(frame.centered(frame.size, rounded: true) == frame)
     }
 
     @Test func actionsAndSize() throws {
@@ -437,6 +437,21 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(Modifiers.modifierKey("left_alt") == .alt)
         #expect(Modifiers.modifierKey("caps_lock") == nil)
         #expect(Modifiers.modifierKey("a") == nil)
+    }
+
+    @Test func modifierParsingMessages() {
+        #expect(throws: ConfigError.self) { try Modifiers.parse("ctrl+bogus") }
+        #expect(throws: ConfigError.self) { try KeyCombo.parse("bogus+a") }
+        #expect((try? Modifiers.parse(" ctrl + ⌥ ")) == [.ctrl, .alt])
+        #expect((try? RemapTarget.parse("left_shift+right_command")) == .combination([.shift, .cmd], keyCode: nil, keyName: nil))
+        #expect(KeyCodes.modifierKeyCodes.count == 8)
+    }
+
+    @Test func titleRulesAndNamesAreNormalized() {
+        #expect(TilingConfig.floatingRule(app: "", title: "") == nil)
+        #expect(TilingConfig.floatingRule(app: "", title: "Preferences") == FloatingWindowRule(app: nil, title: "Preferences"))
+        #expect(TilingConfig.workspaceName("", at: 1) == "2")
+        #expect(TilingConfig.workspaceName("web", at: 1) == "web")
     }
 
     @Test func carriersFollowTheLayout() throws {

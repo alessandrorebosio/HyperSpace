@@ -110,7 +110,7 @@ struct ShortcutCap: View {
         HStack(spacing: Self.spacing) {
             KeyCap(text: recording ? "Press keys…" : (keys.isEmpty ? "None" : RemapTarget.label(keys)),
                    width: Self.capWidth, placeholder: keys.isEmpty, active: recording) {
-                recording ? model.stopCapture() : model.startCapture(field)
+                model.toggleCapture(field)
             }
             ZStack {
                 Color.clear.frame(width: Self.badgeWidth, height: 1)

@@ -248,6 +248,8 @@ final class WindowManager {
         shownBefore = shownBefore.filter { $0.value < count }
         if let previous = previousWorkspace, previous >= count { previousWorkspace = nil }
         for window in windows.values where window.workspace >= count { window.workspace = 0 }
+        columns = columns.filter { $0.key < count }
+        lastFocused = lastFocused.filter { $0.key < count }
         config.enabled ? start() : stop()
         notifyWorkspace()
         scheduleRetile()
@@ -624,11 +626,7 @@ final class WindowManager {
             }
             return
         }
-        guard let bundleID = AppLauncher.bundleID(for: name) else {
-            note("scratchpad: app not found: \(name)")
-            return
-        }
-        let mine = orderedWindows.filter { $0.bundleID == bundleID }
+        guard let (bundleID, mine) = appWindows(of: name) else { return }
         if let window = mine.first(where: \.scratchpad) {
             if window.scratchpadShown, window.id == focusedID { hideScratchpad(window) } else { showScratchpad(window) }
         } else if let window = mine.first(where: { $0.id == focusedID }) ?? mine.first {
@@ -637,6 +635,7 @@ final class WindowManager {
             showScratchpad(window)
         } else {
             // Not open, or no window: its next window is the scratchpad one.
+            pendingScratchpad = pendingScratchpad.filter { $0.value > Date() }
             pendingScratchpad[bundleID] = Date().addingTimeInterval(30)
             AppLauncher.open(name)
         }
@@ -652,17 +651,23 @@ final class WindowManager {
             if let window = focused() { toggleScratchpadTiling(window) }
             return
         }
-        guard let bundleID = AppLauncher.bundleID(for: name) else {
-            note("scratchpad: app not found: \(name)")
-            return
-        }
-        let mine = orderedWindows.filter { $0.bundleID == bundleID }
+        guard let (_, mine) = appWindows(of: name) else { return }
         let focusedID = focused()?.id
         if let window = mine.first(where: \.scratchpad) ?? mine.first(where: { $0.id == focusedID }) ?? mine.first {
             toggleScratchpadTiling(window)
         } else {
             AppLauncher.open(name)
         }
+    }
+
+    /// The tracked windows, in tiling order, of the app a scratchpad action names (a bundle id
+    /// or an app name); nil, with a note for the debug report, when no such app is installed.
+    private func appWindows(of name: String) -> (bundleID: String, windows: [ManagedWindow])? {
+        guard let bundleID = AppLauncher.bundleID(for: name) else {
+            note("scratchpad: app not found: \(name)")
+            return nil
+        }
+        return (bundleID, orderedWindows.filter { $0.bundleID == bundleID })
     }
 
     private func toggleScratchpadTiling(_ window: ManagedWindow) {
@@ -689,7 +694,7 @@ final class WindowManager {
         guard let screen = focusedScreen() ?? screens.first else { return }
         ignoreFocusChanges()
         let target = Self.scratchpadFrame(in: screen.visible, size: config.scratchpadSize)
-        let frame = scratchpadFitted.flatMap { $0.target == target ? Self.centered($0.size, in: target) : nil } ?? target
+        let frame = scratchpadFitted.flatMap { $0.target == target ? target.centered($0.size, rounded: true) : nil } ?? target
         let current = currentBounds()[window.id]
         log.debug("show scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) on display \(screen.id)")
         window.scratchpadShown = true
@@ -713,7 +718,7 @@ final class WindowManager {
             if misses(size) {
                 DispatchQueue.main.async { self?.scratchpadFitted = (target, size) }
             }
-            let centered = Self.centered(size, in: target)
+            let centered = target.centered(size, rounded: true)
             if abs(origin.x - centered.minX) > 1 || abs(origin.y - centered.minY) > 1 {
                 AX.setPosition(element, centered.origin)
             }
@@ -742,16 +747,8 @@ final class WindowManager {
 
     /// Centered in the visible area, `size` being fractions of it.
     static func scratchpadFrame(in visible: CGRect, size: CGSize) -> CGRect {
-        let width = (visible.width * size.width).rounded()
-        let height = (visible.height * size.height).rounded()
-        return CGRect(x: (visible.midX - width / 2).rounded(), y: (visible.midY - height / 2).rounded(),
-                      width: width, height: height)
-    }
-
-    /// A window of `size` centered on the scratchpad `frame`.
-    static func centered(_ size: CGSize, in frame: CGRect) -> CGRect {
-        CGRect(origin: CGPoint(x: (frame.midX - size.width / 2).rounded(), y: (frame.midY - size.height / 2).rounded()),
-               size: size)
+        let fitted = CGSize(width: (visible.width * size.width).rounded(), height: (visible.height * size.height).rounded())
+        return visible.centered(fitted, rounded: true)
     }
 
     // MARK: - Debug report
@@ -932,6 +929,7 @@ final class WindowManager {
         }
         windows[id] = nil
         order.removeAll { $0 == id }
+        lastFocused = lastFocused.filter { $0.value != id }
     }
 
     /// Space switch: pick up windows AX could not see before and drop dead ones.

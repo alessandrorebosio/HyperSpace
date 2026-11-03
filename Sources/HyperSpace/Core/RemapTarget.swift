@@ -22,7 +22,7 @@ enum RemapTarget: Equatable {
         var keyCode: UInt16?
         var keyName: String?
         for token in tokens {
-            if let mod = Modifiers.token(token) ?? Modifiers.modifierKey(token) {
+            if let mod = Modifiers.named(token, keys: true) {
                 mods.formUnion(mod)
                 continue
             }

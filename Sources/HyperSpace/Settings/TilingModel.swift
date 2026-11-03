@@ -153,7 +153,7 @@ final class TilingModel: ObservableObject {
     }
 
     func addWorkspace() {
-        workspaces.append(Workspace(name: "\(workspaces.count + 1)", switchKeys: "", moveKeys: ""))
+        workspaces.append(Workspace(name: TilingConfig.workspaceName(nil, at: workspaces.count), switchKeys: "", moveKeys: ""))
         save()
     }
 
@@ -390,16 +390,21 @@ final class TilingModel: ObservableObject {
         mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? defaults.mouseFollowsFocus
         accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(defaults.accordionPadding)
         floating = tiling["floating"] as? [String] ?? []
-        floatingWindows = (tiling["floatingWindows"] as? [[String: Any]] ?? []).compactMap { entry in
-            guard let title = entry["title"] as? String, !title.isEmpty else { return nil }
-            return FloatingWindowRule(app: (entry["app"] as? String).flatMap { $0.isEmpty ? nil : $0 }, title: title)
+        // The rules as the config reads them; one listed twice shows once (the list is keyed by rule).
+        var rules: [FloatingWindowRule] = []
+        for entry in tiling["floatingWindows"] as? [[String: Any]] ?? [] {
+            guard let title = entry["title"] as? String,
+                  let rule = TilingConfig.floatingRule(app: entry["app"] as? String, title: title),
+                  !rules.contains(rule) else { continue }
+            rules.append(rule)
         }
+        floatingWindows = rules
         assignments = (tiling["assign"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let app = entry["app"] as? String, let workspace = entry["workspace"] as? String else { return nil }
             return Assignment(app: app, workspace: workspace)
         }
         workspaces = (tiling["workspaces"] as? [[String: Any]] ?? []).enumerated().map { index, entry in
-            Workspace(name: entry["name"] as? String ?? "\(index + 1)",
+            Workspace(name: TilingConfig.workspaceName(entry["name"] as? String, at: index),
                       switchKeys: entry["switch"] as? String ?? "",
                       moveKeys: entry["move"] as? String ?? "")
         }

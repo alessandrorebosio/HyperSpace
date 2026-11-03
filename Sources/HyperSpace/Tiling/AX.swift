@@ -150,6 +150,8 @@ enum AX {
 
     /// The pointer in global top-left coordinates.
     static var pointer: CGPoint {
+        // A CGEvent made from nothing is located at the pointer, already in these coordinates.
+        if let location = CGEvent(source: nil)?.location { return location }
         let mouse = NSEvent.mouseLocation
         return CGPoint(x: mouse.x, y: (NSScreen.screens.first?.frame.height ?? 0) - mouse.y)
     }

@@ -103,11 +103,11 @@ private struct RuleRow: View {
     private var keys: some View {
         HStack(spacing: 8) {
             KeyCap(text: sourceText, minWidth: 96, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
-                toggle(.from(rule.id))
+                model.toggleCapture(.from(rule.id))
             }
             Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
             KeyCap(text: targetText, minWidth: 96, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
-                toggle(.to(rule.id))
+                model.toggleCapture(.to(rule.id))
             }
             ChoiceMenu(help: "Choose from all keys") {
                 ForEach(KeyCodes.groups, id: \.title) { group in
@@ -149,9 +149,5 @@ private struct RuleRow: View {
             return model.capturePreview.isEmpty ? "Press keys…" : "\(model.capturePreview) …"
         }
         return rule.to.isEmpty ? "Becomes" : RemapTarget.label(rule.to)
-    }
-
-    private func toggle(_ field: RemapModel.Field) {
-        model.capturing == field ? model.stopCapture() : model.startCapture(field)
     }
 }
