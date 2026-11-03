@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <g fill="none" stroke="#2A3A9E" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Command symbol, top right tile -->
-    <rect x="652" y="325" width="52" height="52"/>
-    <circle cx="633" cy="306" r="19"/>
-    <circle cx="723" cy="306" r="19"/>
-    <circle cx="633" cy="396" r="19"/>
-    <circle cx="723" cy="396" r="19"/>
+  <!-- Same glyphs as scripts/make-icon.py, which draws AppIcon.icns. -->
+  <g fill="none" stroke="#2C40C4" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Command symbol, top right tile: the square's sides run on to the loops. -->
+    <path d="M623 321H733M623 381H733M648 296V406M708 296V406"/>
+    <circle cx="623" cy="296" r="25"/>
+    <circle cx="733" cy="296" r="25"/>
+    <circle cx="623" cy="406" r="25"/>
+    <circle cx="733" cy="406" r="25"/>
     <!-- Mouse, bottom right tile -->
-    <rect x="634" y="598" width="88" height="150" rx="44"/>
-    <line x1="678" y1="602" x2="678" y2="650"/>
+    <rect x="624" y="593" width="108" height="160" rx="54"/>
+    <line x1="678" y1="625" x2="678" y2="661"/>
   </g>
 </svg>
