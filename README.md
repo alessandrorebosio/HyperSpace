@@ -1,37 +1,37 @@
 # HyperSpace
 
-Keyboard mapper, mouse mapper e tiling window manager per macOS in un'unica app da menu bar.
-Swift + AppKit, nessuna dipendenza, binario da ~270 KB.
+Keyboard mapper, mouse mapper and tiling window manager for macOS in a single menu bar app.
+Swift + AppKit, no dependencies, ~270 KB binary.
 
-**Unico permesso richiesto: Accessibilità.** Niente Input Monitoring, niente Screen Recording,
-niente notifiche, niente driver/kext, niente root.
+**The only permission required: Accessibility.** No Input Monitoring, no Screen Recording,
+no notifications, no drivers/kexts, no root.
 
 ## Build
 
-Servono solo i Command Line Tools (Xcode non è necessario).
+Only the Command Line Tools are needed (Xcode is not required).
 
 ```bash
-make app        # build/HyperSpace.app (release, firmata ad-hoc)
-make run        # build + avvio
-make install    # copia in /Applications
-make test       # test (Swift Testing): config, scorciatoie, combinazioni, layout, logica dei workspace, stato salvato
+make app        # build/HyperSpace.app (release, ad-hoc signed)
+make run        # build + launch
+make install    # copy to /Applications
+make test       # tests (Swift Testing): config, shortcuts, combinations, layouts, workspace logic, saved state
 ```
 
-Al primo avvio macOS chiede il permesso di Accessibilità; HyperSpace parte da solo appena viene concesso.
+On first launch macOS asks for the Accessibility permission; HyperSpace starts by itself as soon as it is granted.
 
-> **Firma e permesso.** macOS lega il permesso di Accessibilità al *designated requirement* della firma.
-> Una firma ad-hoc normale lo basa sull'hash del binario, che cambia a ogni rebuild: il permesso si perde
-> anche se in Impostazioni l'interruttore resta acceso. Per questo `make app` firma ad-hoc fissando il
-> requisito al bundle id (`identifier "com.alessandrorebosio.HyperSpace"`), così il permesso sopravvive ai rebuild.
-> È una scelta comoda per lo sviluppo, ma più debole: qualunque app firmata con quel bundle id
-> erediterebbe il permesso. Per un legame forte crea un certificato self-signed (*Accesso Portachiavi →
-> Assistente Certificato → Crea un certificato*, nome `HyperSpace Dev`, *Radice autofirmata*, *Firma codice*):
-> se esiste, `make app` lo usa automaticamente e il permesso resta legato al certificato.
+> **Signing and the permission.** macOS ties the Accessibility permission to the signature's *designated requirement*.
+> A plain ad-hoc signature bases it on the binary hash, which changes on every rebuild: the permission is lost
+> even though the switch stays on in System Settings. That is why `make app` signs ad-hoc while pinning the
+> requirement to the bundle id (`identifier "com.alessandrorebosio.HyperSpace"`), so the permission survives rebuilds.
+> It is convenient for development, but weaker: any app signed with that bundle id
+> would inherit the permission. For a strong binding create a self-signed certificate (*Keychain Access →
+> Certificate Assistant → Create a Certificate*, name `HyperSpace Dev`, *Self Signed Root*, *Code Signing*):
+> if it exists, `make app` uses it automatically and the permission stays tied to the certificate.
 
-## Configurazione
+## Configuration
 
-`~/.hyperspace/config.json` — creato al primo avvio, ricaricato automaticamente a ogni salvataggio.
-Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il messaggio; resta attiva l'ultima config valida.
+`~/.hyperspace/config.json` — created on first launch, reloaded automatically on every save.
+If the file has an error the menu bar icon turns into ⚠︎ and the menu shows the message; the last valid config stays active.
 
 ```json
 {
@@ -57,37 +57,37 @@ Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il m
 }
 ```
 
-### Menu bar e finestra
+### Menu bar and window
 
-Con il tiling disattivato l'icona nella barra dei menu non c'è (resta solo se c'è un problema da segnalare o la
-tastiera è bloccata): per aprire le impostazioni fai doppio clic sull'app, che funziona anche con l'icona visibile.
-Aperta a mano con il tiling spento mostra subito le impostazioni; all'avvio con il Mac no.
+With tiling off there is no icon in the menu bar (it only stays when there is a problem to report or the
+keyboard is locked): to open the settings, double-click the app, which also works while the icon is visible.
+Opened by hand with tiling off it shows the settings right away; when started at login it does not.
 
-Il menu nella barra in alto elenca i workspace che hanno app aperte, ciascuno con accanto le icone delle sue app (✓ su quelli visibili, titoli delle finestre nel tooltip): un clic mostra il workspace. Sotto, **Layout** (sottomenu con i layout, ✓ su quello del monitor col focus; un clic lo cambia), **Lock Keyboard** (che diventa **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copia negli appunti lo stato di monitor, workspace e finestre, con titoli abbreviati, e gli ultimi problemi con le app: da incollare quando qualcosa non va) e **Quit**. Se c'è un problema compare in cima: un clic apre il permesso di Accessibilità o, per un errore di config, il file. Finché la finestra è aperta HyperSpace compare nel Dock e in ⌘Tab, con la sua barra dei menu (⌘W la chiude); chiusa, torna solo nella barra in alto. La finestra segue lo stile Liquid Glass, si ridimensiona (minimo 680×420, così entra in una colonna) e ha una barra laterale:
-**Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) e
-**Settings** (versione, avvio al login, file di config con Edit/Mostra nel Finder, stato del permesso di Accessibilità, Quit).
-Senza il permesso di Accessibilità le pagine che ne hanno bisogno mostrano in cima un avviso con **Open System Settings…**
-(sparisce da solo appena concesso); con il tiling spento le pagine Windows mostrano **Turn On**.
+The menu in the top bar lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Below, **Layout** (a submenu with the layouts, ✓ on the focused display's one; a click changes it), **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 680×420, so it fits in a column) and has a sidebar:
+**Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
+**Settings** (version, launch at login, config file with Edit/Show in Finder, Accessibility permission status, Quit).
+Without the Accessibility permission the pages that need it show a notice at the top with **Open System Settings…**
+(it goes away by itself once granted); with tiling off the Windows pages show **Turn On**.
 
 ### Keyboard
-**Blocco tastiera.** In cima alla pagina Keyboard (o dal menu nella barra, **Lock Keyboard**) puoi bloccare la
-tastiera per pulirla: ogni tasto viene ignorato, compresi media, volume e luminosità, finché non la sblocchi
-con il mouse (**Unlock** nella pagina o **Unlock Keyboard** nel menu, nello stesso punto di Lock; nella barra compare un lucchetto).
-Per sicurezza si sblocca anche da solo dopo il tempo scelto accanto al pulsante (1, 3, 5, 10 minuti o mai;
-predefinito 3), con il conto alla rovescia nella pagina e nel menu. Il blocco non viene salvato: uscendo da HyperSpace la tastiera torna attiva. Touch ID e il tasto di accensione
-non si possono bloccare.
+**Keyboard lock.** At the top of the Keyboard page (or from the menu bar, **Lock Keyboard**) you can lock the
+keyboard to clean it: every key is ignored, media, volume and brightness included, until you unlock it
+with the mouse (**Unlock** on the page or **Unlock Keyboard** in the menu, in the same place as Lock; a padlock shows in the menu bar).
+To be safe it also unlocks by itself after the time chosen next to the button (1, 3, 5, 10 minutes or never;
+3 by default), with the countdown on the page and in the menu. The lock is not saved: quitting HyperSpace turns the keyboard back on. Touch ID and the power button
+cannot be locked.
 
-| Chiave | Significato |
+| Key | Meaning |
 |---|---|
-| `remap` | Rimappature 1:1 di qualsiasi tasto, per tastiera (vedi sotto). |
-| `bindings` | Combinazione → azione. Modificatori: `cmd`, `alt`/`opt`, `ctrl`, `shift`, `hyper`, `meh` (alt+ctrl+shift). |
+| `remap` | 1:1 remapping of any key, per keyboard (see below). |
+| `bindings` | Combination → action. Modifiers: `cmd`, `alt`/`opt`, `ctrl`, `shift`, `hyper`, `meh` (alt+ctrl+shift). |
 
-#### Rimappature (`remap`)
+#### Remapping (`remap`)
 
-Il modo più comodo è **Settings… → Keyboard** (menu bar, ⌘,): clicchi il campo, premi il tasto
-fisico, poi scegli la destinazione con **Press Keys…** premendo quello che vuoi ottenere: un tasto,
-una combinazione con tasto (tieni ⌘ e premi Spazio → ⌘ Space) o solo modificatori (tieni ⇧⌃⌥ insieme e
-rilascia → ⌃⌥⇧). In alternativa c'è l'elenco di tutti i tasti. Infine scegli su quali tastiere vale. Le modifiche vengono scritte in `config.json` e applicate subito.
+The easiest way is **Settings… → Keyboard** (menu bar, ⌘,): click the field, press the physical
+key, then pick the target with **Press Keys…** by pressing what you want to get: a key,
+a combination with a key (hold ⌘ and press Space → ⌘ Space) or modifiers only (hold ⇧⌃⌥ together and
+release → ⌃⌥⇧). Otherwise there is the list of all keys. Finally choose which keyboards it applies to. Changes are written to `config.json` and applied at once.
 
 ```json
 "remap": [
@@ -101,78 +101,79 @@ rilascia → ⌃⌥⇧). In alternativa c'è l'elenco di tutti i tasti. Infine s
 ]
 ```
 
-- **Ogni tastiera**: integrata, USB, Bluetooth, anche collegate dopo l'avvio o dopo lo stop. HyperSpace
-  riceve da IOKit l'evento di nuova tastiera e la configura subito; al risveglio dallo stop ricontrolla tutto.
-- `keyboard` (facoltativo): `all` (default), `builtin`, `external`, oppure una parte del nome del prodotto
-  (es. `"USB Receiver"`, `"Keychron"`). Se più regole rimappano lo stesso tasto su una tastiera vince la più
-  specifica: nome prodotto > builtin/external > all.
-- Gli scambi (cmd ↔ option) funzionano: tutte le regole di una tastiera vengono applicate insieme.
-- `"to": "none"` disattiva il tasto.
-- **Caps Lock rimappato non attiva più il maiuscolo.** Su macOS recenti il layer HID continua ad alternare il
-  blocco maiuscole anche se il tasto è rimappato; quando una regola parte da `caps_lock`, HyperSpace toglie il
-  flag maiuscolo dagli eventi e spegne subito il blocco (serve Accessibilità). Vale per tutte le tastiere.
-- **Combinazioni**: `to` può essere più tasti uniti da `+`, cioè modificatori (`ctrl`, `alt`, `shift`, `cmd`, anche
-  `left_shift` ecc.) più al massimo un tasto. `hyper` = ⌃⌥⇧⌘, `meh` = ⌃⌥⇧.
-  - Solo modificatori (`shift+ctrl+alt`): restano premuti finché tieni premuto il tasto, valgono per i tasti e i clic,
-    e funzionano nelle `bindings` (`hyper+h`, `meh+k`…).
-  - Con un tasto (`cmd+space`): premere il tasto equivale a premere la combinazione.
-  - Il layer HID fa solo 1:1, quindi il tasto viene rimappato su un tasto "portante" inutilizzato (F13–F20,
-    saltando quelli che usi) che l'event tap traduce nella combinazione. Massimo 8 combinazioni diverse; richiede
-    il permesso di Accessibilità.
-- `hyperKey: "caps_lock"` è ancora accettato come scorciatoia per `{ "from": "caps_lock", "to": "hyper" }`.
-- Le rimappature vivono nel layer HID del sistema (la proprietà `UserKeyMapping` di ogni tastiera, la stessa
-  usata da `hidutil`): avvengono prima che qualunque app veda il tasto, costano zero CPU e **non richiedono
-  alcun permesso**, quindi sono attive anche prima di concedere Accessibilità. All'uscita vengono rimosse.
-- HyperSpace gestisce l'intera `UserKeyMapping`: eventuali mappature impostate a mano con `hidutil` vengono sostituite.
+- **Every keyboard**: built-in, USB, Bluetooth, even those connected after launch or after sleep. HyperSpace
+  gets the new-keyboard event from IOKit and configures it at once; on wake from sleep it checks everything again.
+- `keyboard` (optional): `all` (default), `builtin`, `external`, or part of the product name
+  (e.g. `"USB Receiver"`, `"Keychron"`). If several rules remap the same key on a keyboard the most
+  specific wins: product name > builtin/external > all.
+- Swaps (cmd ↔ option) work: all the rules of a keyboard are applied together.
+- `"to": "none"` disables the key.
+- **A remapped Caps Lock no longer turns on caps.** On recent macOS the HID layer keeps toggling
+  caps lock even when the key is remapped; when a rule starts from `caps_lock`, HyperSpace removes the
+  caps flag from events and turns caps lock off at once (needs Accessibility). This applies to every keyboard.
+- **Combinations**: `to` can be several keys joined by `+`, that is modifiers (`ctrl`, `alt`, `shift`, `cmd`, also
+  `left_shift` etc.) plus at most one key. `hyper` = ⌃⌥⇧⌘, `meh` = ⌃⌥⇧.
+  - Modifiers only (`shift+ctrl+alt`): they stay pressed while you hold the key, apply to keys and clicks,
+    and work in `bindings` (`hyper+h`, `meh+k`…).
+  - With a key (`cmd+space`): pressing the key is the same as pressing the combination.
+  - The HID layer only does 1:1, so the key is remapped to an unused "carrier" key (F13–F20,
+    skipping the ones you use) that the event tap translates into the combination. At most 8 different combinations; requires
+    the Accessibility permission.
+- `hyperKey: "caps_lock"` is still accepted as a shortcut for `{ "from": "caps_lock", "to": "hyper" }`.
+- Remappings live in the system's HID layer (the `UserKeyMapping` property of each keyboard, the same one
+  used by `hidutil`): they happen before any app sees the key, cost zero CPU and **need no
+  permission at all**, so they are active even before Accessibility is granted. They are removed on quit.
+- HyperSpace manages the whole `UserKeyMapping`: any mappings set by hand with `hidutil` are replaced.
 
-#### Nomi dei tasti
+#### Key names
 
-| Gruppo | Nomi |
+| Group | Names |
 |---|---|
-| Lettere, numeri | `a`–`z`, `0`–`9` |
-| Funzione | `f1`–`f24` (`f21`–`f24` solo come destinazione/sorgente di remap) |
-| Modificatori | `left_command` `right_command` `left_option` `right_option` `left_control` `right_control` `left_shift` `right_shift` `caps_lock` `fn` (alias `globe`) |
+| Letters, digits | `a`–`z`, `0`–`9` |
+| Function | `f1`–`f24` (`f21`–`f24` only as remap target/source) |
+| Modifiers | `left_command` `right_command` `left_option` `right_option` `left_control` `right_control` `left_shift` `right_shift` `caps_lock` `fn` (alias `globe`) |
 | Editing | `return` `escape` `tab` `space` `delete` `forward_delete` `insert` `application` |
-| Navigazione | `left` `right` `up` `down` `home` `end` `page_up` `page_down` |
-| Punteggiatura | `minus` `equal` `left_bracket` `right_bracket` `backslash` `semicolon` `quote` `grave` `comma` `period` `slash` `section` `non_us_pound` (anche come simboli: `-` `=` `[` `]` `;` `'` `` ` `` `,` `.` `/` `\` `§`) |
-| Tastiere PC | `print_screen` `scroll_lock` `pause` |
-| Tastierino | `keypad_0`–`keypad_9` `keypad_period` `keypad_enter` `keypad_plus` `keypad_minus` `keypad_multiply` `keypad_divide` `keypad_equal` `keypad_comma` `keypad_clear` |
-| Internazionali | `international1` `international3` `lang1` (kana) `lang2` (eisu) |
-| Multimediali (solo remap) | `mute` `volume_up` `volume_down` `play_pause` `next_track` `previous_track` `eject` `brightness_up` `brightness_down` |
-| Qualsiasi altro tasto | codice HID esadecimale: `0x39` (pagina tastiera) oppure `0xC000000E2` (`pagina << 32 \| usage`) |
+| Navigation | `left` `right` `up` `down` `home` `end` `page_up` `page_down` |
+| Punctuation | `minus` `equal` `left_bracket` `right_bracket` `backslash` `semicolon` `quote` `grave` `comma` `period` `slash` `section` `non_us_pound` (also as symbols: `-` `=` `[` `]` `;` `'` `` ` `` `,` `.` `/` `\` `§`) |
+| PC keyboards | `print_screen` `scroll_lock` `pause` |
+| Keypad | `keypad_0`–`keypad_9` `keypad_period` `keypad_enter` `keypad_plus` `keypad_minus` `keypad_multiply` `keypad_divide` `keypad_equal` `keypad_comma` `keypad_clear` |
+| International | `international1` `international3` `lang1` (kana) `lang2` (eisu) |
+| Media (remap only) | `mute` `volume_up` `volume_down` `play_pause` `next_track` `previous_track` `eject` `brightness_up` `brightness_down` |
+| Any other key | hexadecimal HID code: `0x39` (keyboard page) or `0xC000000E2` (`page << 32 \| usage`) |
 
-Note: `fn` è rimappabile sulle tastiere Apple; sulla maggior parte delle tastiere PC il tasto fn è gestito dal
-firmware e non arriva al Mac. I tasti multimediali e `f21`–`f24` non generano eventi tasto in macOS, quindi
-si possono rimappare ma non usare nelle `bindings`.
+Notes: `fn` can be remapped on Apple keyboards; on most PC keyboards the fn key is handled by the
+firmware and never reaches the Mac. Media keys and `f21`–`f24` do not produce key events in macOS, so
+they can be remapped but not used in `bindings`.
 
 ### Mouse
 
-Dalla finestra **Settings… → Mouse**: interruttore per invertire lo scroll della rotellina e mappatura dei tasti.
-**Add Button**, clicca il tasto del mouse sopra la finestra (tenendo premuti dei modificatori se vuoi che la
-mappatura valga solo con quelli), poi premi la combinazione che deve inviare, scegli un'azione pronta
-oppure **Disable Button**. Azioni pronte:
+From **Settings… → Mouse**: a switch to reverse the scroll wheel and the button mapping.
+**Add Button**, click the mouse button over the window (holding modifiers if you want the
+mapping to apply only with them), then press the combination it should send, pick a ready-made action
+or **Disable Button**. Ready-made actions:
 
-- **Navigation**: Back / Forward universali, indipendenti da lingua e layout di tastiera. HyperSpace preme la
-  voce di menu dell'app in primo piano che ha come scorciatoia ⌘[ / ⌘] (Safari, Finder, Chrome, Mail…) o
-  ⌃- / ⌃⇧- (VS Code e simili), trovandola dalla scorciatoia e non dal nome (la ricerca è memorizzata per app).
-  Se l'app non ha quella voce invia un vero tasto mouse indietro/avanti (Chrome, Firefox, Electron, JetBrains);
-  in Xcode usa ⌃⌘← / ⌃⌘→.
-- **Browser**: apri link in nuova scheda (⌘-clic sotto il puntatore), ricarica, nuova/chiudi/riapri scheda, scheda successiva/precedente.
-- **Edit**: copia, incolla, taglia, annulla, ripristina, zoom.
-- **System**: Mission Control, finestre dell'app, mostra Scrivania, Spotlight, screenshot, schermo intero, blocca schermo.
-- **Media**: play/pausa, brano successivo/precedente, volume, muto.
-| Chiave | Significato |
+- **Navigation**: universal Back / Forward, independent of language and keyboard layout. HyperSpace presses the
+  frontmost app's menu item whose shortcut is ⌘[ / ⌘] (Safari, Finder, Chrome, Mail…) or
+  ⌃- / ⌃⇧- (VS Code and similar), finding it by shortcut rather than by name (the lookup is cached per app).
+  If the app has no such item it sends a real back/forward mouse button (Chrome, Firefox, Electron, JetBrains);
+  in Xcode it uses ⌃⌘← / ⌃⌘→.
+- **Browser**: open link in new tab (⌘-click under the pointer), reload, new/close/reopen tab, next/previous tab.
+- **Edit**: copy, paste, cut, undo, redo, zoom.
+- **System**: Mission Control, app windows, show Desktop, Spotlight, screenshot, full screen, lock screen.
+- **Media**: play/pause, next/previous track, volume, mute.
+
+| Key | Meaning |
 |---|---|
-| `reverseScroll` | Inverte lo scroll **solo delle rotelline** (trackpad e Magic Mouse restano "naturali"). |
-| `dragModifier` | Modificatori + trascinamento sinistro = sposta finestra; + destro = ridimensiona. Su una finestra in tiling: rilasciarla su un'altra le scambia, il resize sposta la divisione master/stack. |
-| `buttons` | Tasto mouse (2 = centrale, 3 = indietro, 4 = avanti, …) con `modifiers` opzionali → azione (`none` lo disattiva). |
+| `reverseScroll` | Reverses scrolling **of scroll wheels only** (trackpads and Magic Mouse stay "natural"). |
+| `dragModifier` | Modifiers + left drag = move window; + right drag = resize. On a tiled window: dropping it on another swaps them, resizing moves the master/stack split. |
+| `buttons` | Mouse button (2 = middle, 3 = back, 4 = forward, …) with optional `modifiers` → action (`none` disables it). |
 
 ### Tiling
 
-Dalla pagina **Tiling**: attivazione, layout (scelto da anteprime che mostrano spazi e margini), spazi;
-da **Workspaces** i workspace (nome, scorciatoia per mostrarlo, scorciatoia per spostarci la finestra attiva) e le app
-assegnate; da **Window Rules** app e finestre fluttuanti e app scratchpad; da **Shortcuts** le scorciatoie per focus,
-spostamento, ridimensionamento.
+From the **Tiling** page: on/off, layout (picked from previews that show gaps and margins), gaps;
+from **Workspaces** the workspaces (name, shortcut to show it, shortcut to move the focused window there) and the
+assigned apps; from **Window Rules** floating apps and windows and scratchpad apps; from **Shortcuts** the shortcuts for focus,
+moving, resizing.
 
 ```json
 "tiling": {
@@ -183,8 +184,8 @@ spostamento, ridimensionamento.
 }
 ```
 
-**Regole per app.** Le finestre di un'app si aprono direttamente nel suo workspace; se l'app è in primo piano
-(l'hai appena aperta) HyperSpace ti porta in quel workspace, anche se l'app ci mette un po' ad aprirsi (non nel minuto e mezzo dopo l'accesso al Mac, quando le app si riaprono da sole). Dalla pagina Tiling → App Rules, oppure:
+**Per-app rules.** An app's windows open straight in its workspace; if the app is frontmost
+(you just opened it) HyperSpace takes you to that workspace, even if the app takes a while to open (not in the minute and a half after logging in to the Mac, when apps reopen by themselves). From the Tiling page → App Rules, or:
 
 ```json
 "assign": [
@@ -193,36 +194,36 @@ spostamento, ridimensionamento.
 ]
 ```
 
-`workspace` è il nome (o il numero) del workspace; rinominandolo dalla pagina Tiling le regole lo seguono.
+`workspace` is the name (or the number) of the workspace; renaming it from the Tiling page, the rules follow it.
 
-**Workspace virtuali con monitor fisso.** macOS non ha API pubbliche per gestire gli Spaces, quindi i workspace
-sono di HyperSpace. Ogni workspace ha il suo monitor: il **1 sul monitor principale** (quello con la barra dei
-menu), il **2 sul secondo**, il 3 sul terzo e così via; tutti gli altri stanno sul principale. Ogni monitor mostra
-uno dei suoi workspace: **Caps+N** mostra N sul suo monitor e ci porta il focus, senza toccare gli altri monitor.
-Un'app che apri resta nel workspace da cui l'hai aperta: se cambi workspace mentre sta ancora caricando, la sua finestra compare lì (nascosta) e il focus resta dove sei.
-Una finestra affiancata che sposti o ridimensioni a mano torna al suo posto quando rilasci il mouse (per spostarla davvero usa le scorciatoie o il trascinamento con modificatore).
-Quando il focus passa a un altro monitor il puntatore lo segue (al centro della finestra, o del monitor se il workspace è vuoto; `"mouseFollowsFocus": false` lo disattiva). Anche un workspace vuoto prende il focus: HyperSpace clicca una sua finestrella invisibile al centro di quel monitor, così diventa l'app attiva lì, la barra dei menu si accende su quel monitor e la tastiera non scrive più nella finestra lasciata sull'altro (il puntatore torna dove era). Una finestra spostata su un altro monitor viene ridimensionata di nuovo poco dopo, per le app che si adattano da sole alla scala del nuovo monitor. Spostare una finestra in un altro workspace sposta solo quella. **Caps+⌘+Tab** (`move-workspace-to-display`) sposta invece l'intero workspace sull'altro monitor, che da lì in poi è il suo: il workspace che quel monitor mostrava resta intatto (nascosto) e il monitor lasciato torna all'ultimo dei suoi workspace. Le finestre dei workspace non mostrati vengono
-parcheggiate nell'angolo in basso a destra del loro schermo (come fa AeroSpace). Se un monitor viene staccato, i
-suoi workspace passano sul principale e tornano al loro posto quando lo riattacchi.
+**Virtual workspaces with a fixed display.** macOS has no public API to manage Spaces, so workspaces
+belong to HyperSpace. Each workspace has its display: **1 on the main display** (the one with the menu
+bar), **2 on the second**, 3 on the third and so on; all the others live on the main one. Each display shows
+one of its workspaces: **Caps+N** shows N on its display and moves the focus there, without touching the other displays.
+An app you open stays in the workspace you opened it from: if you switch workspace while it is still loading, its window appears there (hidden) and the focus stays where you are.
+A tiled window you move or resize by hand goes back to its place when you release the mouse (to really move it use the shortcuts or the modifier drag).
+When the focus moves to another display the pointer follows it (to the centre of the window, or of the display if the workspace is empty; `"mouseFollowsFocus": false` turns it off). An empty workspace takes the focus too: HyperSpace clicks a tiny invisible window of its own in the middle of that display, so it becomes the active app there, the menu bar lights up on that display and the keyboard no longer types into the window left on the other one (the pointer goes back where it was). A window moved to another display is resized again shortly after, for apps that adapt by themselves to the new display's scale. Moving a window to another workspace moves only that window. **Caps+⌘+Tab** (`move-workspace-to-display`) instead moves the whole workspace to the other display, which is its display from then on: the workspace that display was showing stays intact (hidden) and the display left behind goes back to the last of its workspaces. Windows of workspaces not shown are
+parked in the bottom-right corner of their screen (as AeroSpace does). If a display is unplugged, its
+workspaces move to the main one and go back to their place when you plug it in again.
 
-In `columns`, spostando una finestra (`swap`): **giù/su** la scambia con quella sotto/sopra nella colonna,
-oppure, se è da sola, la impila nella colonna accanto; **sinistra/destra** la fa uscire dalla colonna in una
-nuova colonna da quel lato, oppure, se è da sola, scambia la colonna con la vicina. `resize width` cambia la
-larghezza della colonna, `resize height` l'altezza della finestra nella colonna.
-Gestisce solo le finestre standard; dialog, pannelli e finestre a schermo intero sono ignorati. Le finestre che sembrano
-dialog (si chiudono ma non si possono ingrandire né mettere a schermo intero, come Svuota cestino o la copia del Finder)
-restano floating in qualsiasi app; `float` le affianca comunque.
-**Scratchpad** (come in i3). Una scorciatoia per app, es. `{ "keys": "meh+x", "action": "scratchpad com.anthropic.claudefordesktop" }`:
-la prima volta apre l'app (se non è aperta) e la mostra al centro del monitor attivo, sopra le altre finestre e
-fuori dal tiling; premuta di nuovo la nasconde, poi la rimostra. Resta visibile anche cambiando workspace finché
-non la nascondi, e se ci arrivi con ⌘Tab si mostra da sola. `move-to-scratchpad` (es. `hyper+x`) manda la finestra
-attiva nello scratchpad o la rimette nel tiling del workspace corrente. La dimensione è una frazione del monitor:
-`"scratchpad": { "width": 0.6, "height": 0.7 }` (predefinita). Le app si gestiscono anche da Settings → Window Rules →
-Scratchpad Apps. Lo scratchpad viene ricordato tra i riavvii.
+In `columns`, moving a window (`swap`): **down/up** swaps it with the one below/above in the column,
+or, if it is alone, stacks it in the next column; **left/right** takes it out of the column into a
+new column on that side, or, if it is alone, swaps the column with its neighbour. `resize width` changes the
+column width, `resize height` the height of the window in the column.
+Only standard windows are managed; dialogs, panels and full-screen windows are ignored. Windows that look like
+dialogs (they can be closed but neither zoomed nor made full screen, like Empty Trash or the Finder's copy)
+stay floating in any app; `float` tiles them anyway.
+**Scratchpad** (as in i3). One shortcut per app, e.g. `{ "keys": "meh+x", "action": "scratchpad com.anthropic.claudefordesktop" }`:
+the first time it opens the app (if not open) and shows it in the middle of the active display, above the other windows and
+out of the tiling; pressed again it hides it, then shows it again. It stays visible across workspace switches until
+you hide it, and if you reach it with ⌘Tab it shows by itself. `move-to-scratchpad` (e.g. `hyper+x`) sends the focused
+window to the scratchpad or puts it back into the tiling of the current workspace. The size is a fraction of the display:
+`"scratchpad": { "width": 0.6, "height": 0.7 }` (default). Apps can also be managed from Settings → Window Rules →
+Scratchpad Apps. The scratchpad is remembered across restarts.
 
-`floating` elenca i bundle ID da non affiancare. `floatingWindows` fa fluttuare solo alcune finestre, in base al
-titolo (contiene il testo, maiuscole indifferenti), di un'app o di tutte; si gestisce anche da Settings → Window Rules →
-Floating (un'app senza titolo = tutte le sue finestre). Vale anche per le finestre che prendono il titolo un attimo dopo l'apertura:
+`floating` lists the bundle IDs not to tile. `floatingWindows` floats only some windows, by
+title (contains the text, case-insensitive), of one app or of all; it can also be managed from Settings → Window Rules →
+Floating (an app with no title = all its windows). It also applies to windows that get their title a moment after opening:
 
 ```json
 "floatingWindows": [
@@ -231,75 +232,75 @@ Floating (un'app senza titolo = tutte le sue finestre). Vale anche per le finest
 ]
 ```
 
-### Azioni
-| Azione | |
+### Actions
+| Action | |
 |---|---|
-| `focus left\|right\|up\|down` | Sposta il focus alla finestra più vicina in quella direzione |
-| `swap left\|right\|up\|down` | Scambia la finestra con la vicina (anche tra monitor) |
-| `swap master` | Porta la finestra in posizione master |
-| `layout tall\|wide\|columns\|monocle` | Cambia layout dello schermo attivo |
-| `ratio +0.05` / `ratio -0.05` | Ridimensiona l'area master |
-| `float` | Finestra corrente floating ↔ tiling |
-| `scratchpad <Nome App o bundle id>` | Mostra/nasconde l'app al centro sopra le altre, fuori dal tiling (la apre se serve) |
-| `scratchpad` | Mostra/nasconde le finestre mandate nello scratchpad |
-| `move-to-scratchpad` | Manda la finestra attiva nello scratchpad, o da lì la rimette nel tiling |
-| `tiling` | Attiva/disattiva il tiling |
-| `retile` | Ricalcola subito il layout |
-| `focus-display` | Focus su una finestra del monitor successivo |
-| `move-workspace-to-display` | Sposta il workspace attivo (finestre e disposizione) sul monitor successivo |
-| `workspace <n>` / `workspace back-and-forth` | Mostra il workspace n / torna al precedente |
-| `move-to-workspace <n>` | Sposta la finestra attiva nel workspace n |
-| `resize width\|height <punti>` | Allarga/restringe la finestra (es. `resize width +50`): nel tiling sposta la divisione master/colonna o cambia la quota della finestra nella colonna |
-| `launch <Nome App o bundle id>` | Apre/attiva un'app |
-| `shell <comando>` | Esegue un comando con `/bin/sh -c` |
-| `key <combo>` | Invia una combinazione di tasti (es. `key cmd+shift+4`). I simboli (`-`, `=`, `,`…) usano il tasto che li scrive nel layout attivo; simboli che il layout scrive solo con ⌥ (es. `[` sulla tastiera italiana) non sono affidabili come scorciatoia |
-| `reload` | Ricarica la config |
-| `none` | Non fa nulla: disattiva il tasto o il pulsante a cui è legata |
-| `navigate back\|forward` | Indietro/avanti con la scorciatoia dell'app in primo piano |
-| `system mission_control\|app_windows\|show_desktop` | Mission Control, finestre dell'app, mostra Scrivania (via Dock) |
-| `media play_pause\|next\|previous\|volume_up\|volume_down\|mute` | Tasti multimediali |
-| `click <modificatori>` | Clic sinistro sotto il puntatore con modificatori (es. `click cmd`) |
+| `focus left\|right\|up\|down` | Moves the focus to the nearest window in that direction |
+| `swap left\|right\|up\|down` | Swaps the window with its neighbour (across displays too) |
+| `swap master` | Moves the window to the master position |
+| `layout tall\|wide\|columns\|monocle\|accordion` | Changes the layout of the active display |
+| `accordion` | Stacks the focused workspace's windows as an accordion, or unstacks them |
+| `ratio +0.05` / `ratio -0.05` | Resizes the master area |
+| `float` | Current window floating ↔ tiled |
+| `scratchpad <App Name or bundle id>` | Shows/hides the app in the middle above the others, out of the tiling (opens it if needed) |
+| `scratchpad` | Shows/hides the windows sent to the scratchpad |
+| `move-to-scratchpad` | Sends the focused window to the scratchpad, or from there back into the tiling |
+| `tiling` | Turns tiling on/off |
+| `retile` | Recomputes the layout now |
+| `focus-display` | Focuses a window on the next display |
+| `move-workspace-to-display` | Moves the active workspace (windows and arrangement) to the next display |
+| `workspace <n>` / `workspace back-and-forth` | Shows workspace n / goes back to the previous one |
+| `move-to-workspace <n>` | Moves the focused window to workspace n |
+| `resize width\|height <points>` | Widens/narrows the window (e.g. `resize width +50`): when tiled it moves the master/column split or changes the window's share of the column |
+| `launch <App Name or bundle id>` | Opens/activates an app |
+| `shell <command>` | Runs a command with `/bin/sh -c` |
+| `key <combo>` | Sends a key combination (e.g. `key cmd+shift+4`). Symbols (`-`, `=`, `,`…) use the key that types them in the active layout; symbols the layout types only with ⌥ (e.g. `[` on the Italian keyboard) are not reliable as shortcuts |
+| `reload` | Reloads the config |
+| `none` | Does nothing: disables the key or button it is bound to |
+| `navigate back\|forward` | Back/forward with the frontmost app's shortcut |
+| `system mission_control\|app_windows\|show_desktop` | Mission Control, app windows, show Desktop (via the Dock) |
+| `media play_pause\|next\|previous\|volume_up\|volume_down\|mute` | Media keys |
+| `click <modifiers>` | Left click under the pointer with modifiers (e.g. `click cmd`) |
 
-## Architettura
+## Architecture
 
 ```
 Sources/HyperSpace/
-├── App/        AppDelegate (wiring, permesso), StatusMenu (menu bar)
-├── Settings/   finestra con barra laterale Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, Settings (SwiftUI, creata solo quando aperta)
+├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar)
+├── Settings/   window with a Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, Settings sidebar (SwiftUI, created only when opened)
 ├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
-├── Keyboard/   KeyboardRemapper (UserKeyMapping per tastiera), KeyEmitter (eventi sintetici)
-├── Mouse/      DragController (ponte tap → window manager)
-└── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), AXWriter (scritture per app),
-                WorkspaceState (workspace salvati), LaunchTracker, Layout, AX helpers
+├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events)
+├── Mouse/      DragController (tap → window manager bridge)
+└── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), AXWriter (per-app writes),
+                WorkspaceState (saved workspaces), LaunchTracker, Layout, DisplayMonitor, FocusAnchor, AX helpers
 ```
 
-Scelte fatte per prestazioni e permessi minimi:
+Choices made for performance and minimal permissions:
 
-- **Un solo event tap attivo** (`CGEventTap` a livello HID) condiviso da tastiera e mouse, su un **thread dedicato**
-  ad alta priorità: il lavoro sulle finestre (main thread) non può mai rallentare l'input.
-  Un tap attivo richiede solo Accessibilità (un tap passivo richiederebbe Input Monitoring).
-- **Si iscrive solo agli eventi usati.** I movimenti del mouse non vengono mai intercettati; lo scroll solo se
-  `reverseScroll` è attivo; con una config vuota il tap non viene proprio installato.
-- **Hot path senza allocazioni né lock**: le binding sono compilate in tabelle `[Int16]` indicizzate da
-  `keyCode << 4 | modificatori`; la config passa al thread del tap con `CFRunLoopPerformBlock`.
-- **Remap e hyper key nel layer HID**, per singola tastiera via `IOHIDServiceClient` (niente processi `hidutil`): zero CPU, nessun permesso; nuove tastiere rilevate con notifiche IOKit.
-- **Tiling event-driven**: `AXObserver` per app + notifiche `NSWorkspace`, nessun polling. Le raffiche di
-  eventi vengono accorpate in un solo retile; visibilità e posizione delle finestre arrivano da una sola
-  chiamata `CGWindowListCopyWindowInfo` (senza titoli → niente Screen Recording) e le finestre vengono
-  spostate solo se la loro posizione è effettivamente diversa.
-- **Drag a 1000 Hz senza backlog**: il tap tiene solo l'ultima posizione e c'è al massimo un aggiornamento
-  in coda sul main thread.
-- **Scritture AX fuori dal main thread**: spostare, ridimensionare, parcheggiare e dare il focus a una finestra
-  avviene su una coda seriale per app (`AXWriter`). Un'app lenta o bloccata fa aspettare solo sé stessa, mai le
-  scorciatoie o le altre app. Le letture e lo stato restano sul main thread.
-- **Timeout AX a 0,5 s** per tutti gli elementi (il predefinito di macOS è 6 s).
-- **Workspace salvati** in `~/Library/Application Support/HyperSpace/workspaces.json` (un attimo dopo ogni
-  cambiamento e all'uscita): dopo un riavvio di HyperSpace o del Mac ogni finestra torna nel suo workspace,
-  con ordine e colonne, riconosciuta da app e titolo. Le regole per app hanno la precedenza.
-- Config osservata con un `DispatchSource` kqueue: nessun costo finché il file non cambia.
+- **A single active event tap** (`CGEventTap` at HID level) shared by keyboard and mouse, on a **dedicated**
+  high-priority **thread**: window work (main thread) can never slow input down.
+  An active tap needs only Accessibility (a passive tap would need Input Monitoring).
+- **It subscribes only to the events in use.** Mouse movements are never intercepted; scrolling only if
+  `reverseScroll` is on; with an empty config the tap is not installed at all.
+- **Hot path with no allocations or locks**: bindings are compiled into `[Int16]` tables indexed by
+  `keyCode << 4 | modifiers`; the config reaches the tap thread with `CFRunLoopPerformBlock`.
+- **Remaps and hyper key in the HID layer**, per keyboard via `IOHIDServiceClient` (no `hidutil` processes): zero CPU, no permission; new keyboards detected with IOKit notifications.
+- **Event-driven tiling**: `AXObserver` per app + `NSWorkspace` notifications, no polling. Bursts of
+  events are coalesced into a single retile; window visibility and position come from a single
+  `CGWindowListCopyWindowInfo` call (without titles → no Screen Recording) and windows are
+  moved only if their position actually differs.
+- **1000 Hz drag without backlog**: the tap keeps only the latest position and at most one update is
+  queued on the main thread.
+- **AX writes off the main thread**: moving, resizing, parking and focusing a window
+  happens on a serial queue per app (`AXWriter`). A slow or hung app only makes itself wait, never the
+  shortcuts or the other apps. Reads and state stay on the main thread.
+- **0.5 s AX timeout** for every element (macOS's default is 6 s).
+- **Saved workspaces** in `~/Library/Application Support/HyperSpace/workspaces.json` (a moment after every
+  change and on quit): after a restart of HyperSpace or of the Mac every window goes back to its workspace,
+  with order and columns, recognised by app and title. Per-app rules take precedence.
+- Config watched with a kqueue `DispatchSource`: no cost until the file changes.
 
-### Limiti noti
-- Usa la funzione privata (ma stabile da anni) `_AXUIElementGetWindow`, come yabai/Amethyst/Rectangle:
-  l'app non può essere sandboxed né andare sul Mac App Store (vale per qualsiasi window manager via AX).
-- Gli Spaces non vengono creati/gestiti: si affiancano le finestre dello Space visibile su ciascun monitor.
-
+### Known limitations
+- Uses the private (but stable for years) function `_AXUIElementGetWindow`, like yabai/Amethyst/Rectangle:
+  the app cannot be sandboxed nor go on the Mac App Store (true of any AX-based window manager).
+- Spaces are not created/managed: the windows of the visible Space on each display are tiled.

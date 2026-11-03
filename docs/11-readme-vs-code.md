@@ -1,6 +1,6 @@
 # 11. README vs code
 
-The repository README (in Italian) was compared with the code. The code wins; these are the differences found.
+The repository README was compared with the code. The code wins; these are the differences found.
 
 ## Inconsistencies
 

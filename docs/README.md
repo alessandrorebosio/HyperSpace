@@ -2,7 +2,7 @@
 
 HyperSpace is a macOS menu-bar app (Swift + AppKit, no dependencies) that combines a **keyboard mapper**, a **mouse mapper** and a
 **tiling window manager** with virtual workspaces, multiple displays and a scratchpad. This wiki describes what the app contains and how it works,
-written from the code in `Sources/HyperSpace/`. For a quick overview and install steps see the repository [README](../README.md) (in Italian).
+written from the code in `Sources/HyperSpace/`. For a quick overview and install steps see the repository [README](../README.md).
 
 > Where the README and the code disagree, these pages follow the **code**. The differences are listed in
 > [README vs code](11-readme-vs-code.md).
