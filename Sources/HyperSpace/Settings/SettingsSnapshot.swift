@@ -54,7 +54,9 @@ enum SettingsSnapshot {
         // On screen (the views only lay out and draw there) but invisible and untouchable.
         window.alphaValue = 0
         window.ignoresMouseEvents = true
-        window.orderFrontRegardless()
+        // Key and active, so the sidebar draws its selection and headers as in a real window.
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
 
         var failures = 0
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {

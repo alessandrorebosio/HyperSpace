@@ -5,7 +5,6 @@ struct MouseView: View {
 
     var body: some View {
         Form {
-            PageHeader()
             PermissionNotice()
 
             Section {
@@ -71,7 +70,7 @@ private struct MouseRuleRow: View {
     }
 
     private var buttonCap: some View {
-        KeyCap(text: buttonText, symbol: "computermouse", minWidth: 110, placeholder: rule.button == nil,
+        KeyCap(text: buttonText, symbol: "computermouse", minWidth: 150, placeholder: rule.button == nil,
                active: model.capturing == .button(rule.id)) {
             toggle(.button(rule.id))
         }

@@ -86,15 +86,18 @@ struct SettingsRoot: View {
             .modifier(NoSidebarToggle())
         } detail: {
             let page = navigation.page ?? .keyboard
-            Group {
-                switch page {
-                case .keyboard: RemapView(model: keyboard)
-                case .mouse: MouseView(model: mouse)
-                case .tiling: TilingView(model: tiling)
-                case .workspaces: WorkspacesView(model: tiling)
-                case .windowRules: WindowRulesView(model: tiling)
-                case .shortcuts: TilingShortcutsView(model: tiling)
-                case .settings: GeneralView(model: general)
+            VStack(spacing: 0) {
+                PageHeader(page: page)
+                Group {
+                    switch page {
+                    case .keyboard: RemapView(model: keyboard)
+                    case .mouse: MouseView(model: mouse)
+                    case .tiling: TilingView(model: tiling)
+                    case .workspaces: WorkspacesView(model: tiling)
+                    case .windowRules: WindowRulesView(model: tiling)
+                    case .shortcuts: TilingShortcutsView(model: tiling)
+                    case .settings: GeneralView(model: general)
+                    }
                 }
             }
             .navigationTitle(page.title)
@@ -127,23 +130,20 @@ extension EnvironmentValues {
     }
 }
 
-/// First row of every page: one short line saying what the page is for. The page's name is
-/// the window title, so it is not repeated here.
+/// One short line above every page saying what it is for. The page's name is the window title,
+/// so it is not repeated here. Outside the form, so it is plain text and not a card.
 struct PageHeader: View {
-    @Environment(\.settingsPage) private var page
+    let page: SettingsNavigation.Page
 
     var body: some View {
-        if let page {
-            Section {
-                Text(page.summary)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
-            }
-        }
+        Text(page.summary)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 26)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
     }
 }
 

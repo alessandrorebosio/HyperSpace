@@ -6,7 +6,6 @@ struct TilingView: View {
 
     var body: some View {
         Form {
-            PageHeader()
             PermissionNotice()
 
             Section {
@@ -63,7 +62,6 @@ struct WorkspacesView: View {
 
     var body: some View {
         Form {
-            PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 
@@ -134,7 +132,6 @@ struct WindowRulesView: View {
 
     var body: some View {
         Form {
-            PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 
@@ -215,7 +212,6 @@ struct TilingShortcutsView: View {
 
     var body: some View {
         Form {
-            PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 
@@ -304,7 +300,7 @@ private struct SliderRow: View {
                    in: Double(range.lowerBound)...Double(range.upperBound)) { editing in
                 if !editing { onChange(value, true) }
             }
-                .frame(minWidth: 140, maxWidth: 220)
+                .frame(width: 200)
                 .labelsHidden()
             Text("\(value) pt")
                 .monospacedDigit()
@@ -516,7 +512,7 @@ private struct WorkspaceRow: View {
                 nameField
                 shortcuts
                 Spacer(minLength: 12)
-                remove
+                remove.padding(.bottom, 4)
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
