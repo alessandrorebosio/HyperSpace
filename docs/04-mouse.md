@@ -29,6 +29,7 @@ Three features, all handled by the event tap (they need Accessibility; see [Arch
 - When a button is mapped, both press and release are swallowed; the action fires on press.
 - Two rows with the same button and modifiers: the last wins (Settings shows a warning).
 - Modifiers held by a modifier-only carrier (e.g. caps lock → ⌃⌥⇧) also count for buttons.
+- Settings lists the rules in the order of the file and saves them in that order: with two rules for the same button and modifiers the last one wins, so reordering would change which one applies.
 
 ### Ready-made actions in Settings
 
@@ -61,7 +62,7 @@ A left click at the pointer position with those modifiers held (e.g. `click cmd`
 
 - Sets the modifiers (e.g. `ctrl+alt`). With **exactly** those modifiers held: **left drag = move the window**, **right drag = resize**. The click never reaches the window (it and its drag and release are swallowed).
 - On press, HyperSpace finds the window under the pointer (`AXUIElementCopyElementAtPosition`), focuses it and remembers its position and size. During the drag it moves/resizes through AX
-  (on the main thread; only the latest position travels from the tap). Resize has a 160×100 minimum.
+  on the app's `AXWriter` queue (focus first, then the moves, in order), one write at a time with only the newest point waiting; only the latest position travels from the tap to the main thread. Resize has a 160×100 minimum.
 - No retile happens while dragging (`drag != nil`).
 - It works on windows of any app, even with tiling off (then it just moves/resizes).
 

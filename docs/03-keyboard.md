@@ -91,7 +91,7 @@ Used in both bindings and remaps (case-insensitive). The first name is canonical
 A combination cannot be expressed in HID, so:
 
 1. the source key is remapped (in HID) onto an unused "carrier" key chosen from **F20, F19, F18, F17, F16, F15, F14, F13** (in that order), skipping those the config already uses
-   (as a remap source or target, or in a binding);
+   (as a remap source or target, or in a binding), **by HID usage and by key code**;
 2. the event tap recognises the carrier and turns it into the combination.
 
 Behaviour:
@@ -102,6 +102,8 @@ Behaviour:
 - The **same combination shares a single carrier**. At most **8 different combinations**; the ninth gives `too many different combinations (at most 8)`.
 - Needs Accessibility (the tap is required).
 - A key already used elsewhere is avoided as carrier, so binding F13–F20 yourself reduces the carriers available.
+- **Names that share a key code.** The tap tells keys apart by key code only, and macOS gives `print_screen`, `scroll_lock` and `pause` the key codes of F13, F14 and F15 (and `non_us_pound` that of `backslash`): in `bindings` those names are indistinguishable (the last one wins). For the same reason a remap that uses one of them (as source or target) also takes its twin out of the carrier pool: with `print_screen` in a remap, F13 is never a carrier.
+- With a key (`right_command → cmd+-`), the key is posted on the key that types the symbol in the active layout: the translation is done on the main thread when the config is applied (`TapConfig.translated`) and again whenever the input source changes (`KeyboardLayout.didChange`); the tap thread posts a ready key code.
 
 ### Remapped caps lock
 
@@ -117,7 +119,7 @@ or modifiers only (hold ⇧⌃⌥ together and release → `shift+ctrl+alt`); a 
 ## Keyboard layouts and symbols
 
 Keycodes are physical positions, but apps match shortcuts by character. For the `key <combo>` action and for combinations with a key, `KeyboardLayout` maps ANSI symbol keys (`- = [ ] \ ; ' \` , . /`)
-to the key that types that symbol in the active layout (table rebuilt when the input source changes, using `UCKeyTranslate`; keypad keys are excluded). For `=`, `+` is accepted as an alternative.
+to the key that types that symbol in the active layout (table rebuilt using `UCKeyTranslate` after the system reports an input-source change — `kTISNotifySelectedKeyboardInputSourceChanged` — not on every use; keypad keys are excluded). For `=`, `+` is accepted as an alternative.
 If the layout cannot type the symbol without modifiers (e.g. `[` on the Italian keyboard, which needs ⌥) the lookup fails and the original keycode is used: **not reliable as a shortcut**.
 This applies to keys *sent*; incoming *bindings* always use the physical keycode.
 

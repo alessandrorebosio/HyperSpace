@@ -3,7 +3,7 @@
 Actions are `verb [argument]` strings used in `keyboard.bindings[].action` and `mouse.buttons[].action`. They are parsed **once at config load** (`Action.parse`):
 an unknown action or bad arguments is a config error. The verb is case-insensitive; leading/trailing spaces are ignored. Actions run on the **main thread** (`ActionRunner`).
 
-Window-manager commands only work while tiling is on (`running`), otherwise they do nothing (exception: `resize` on a floating window).
+Window-manager commands only work while tiling is on (`running`), otherwise they do nothing.
 
 ## Windows and layout
 
@@ -15,7 +15,7 @@ Window-manager commands only work while tiling is on (`running`), otherwise they
 | `layout` | `tall` \| `wide` \| `columns` \| `monocle` \| `accordion` | Change the layout of the focused display (not saved to the file; remembered per display in `workspaces.json`). |
 | `ratio` | signed number, e.g. `+0.05`, `-0.05` | Change the focused display's master ratio; clamped to 0.1…0.9. |
 | `float` | — | Toggle the focused window between floating and tiled. From then on the user's choice beats config rules (`userOverride`). |
-| `resize` | `width` \| `height` and points, e.g. `resize width +50` | Grow/shrink the focused window. Floating: resized directly (minimum 160×100). Tiled: moves the master/column split or changes the window's share of the stack/column (see [Tiling](06-tiling.md#resize)). |
+| `resize` | `width` \| `height` and points, e.g. `resize width +50` | Grow/shrink the focused window. Floating (tiling on): resized directly (minimum 160×100). Tiled: moves the master/column split or changes the window's share of the stack/column (see [Tiling](06-tiling.md#resize)). |
 | `tiling` | — | Turn tiling on/off at runtime (not written to the file). |
 | `accordion` | — | Stack the focused workspace's windows as an accordion, or unstack them, on top of the current layout (see [Tiling](06-tiling.md#accordion-on-any-layout)). |
 | `retile` | — | Recompute the layout now. |

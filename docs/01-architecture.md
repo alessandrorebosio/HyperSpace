@@ -40,7 +40,7 @@ Resources/              Info.plist, AppIcon.icns
 `DragController`: carries modifier+drag from the tap thread to the main thread, keeping only the latest position.
 
 ### `Tiling/`
-- **`WindowManager`** (~1400 lines): state of windows, workspaces, displays, scratchpad; commands; save/restore.
+- **`WindowManager`** (~1900 lines): state of windows, workspaces, displays, scratchpad; commands; save/restore.
 - **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `ScreenInfo`), **`ColumnLayout`** (i3-style columns).
 - **`AppWatcher`** (one `AXObserver` per app), **`AXWriter`** (per-app serial queues), **`AX`** (Accessibility API helpers, `AX.probe`).
 - **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible window HyperSpace clicks on an empty workspace's display, so HyperSpace becomes the active app there and that display the active one).
@@ -53,17 +53,17 @@ SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`
 
 | Thread / queue | What it does |
 |---|---|
-| **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. No allocation and no locks on the hot path. |
+| **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. The hot path reads plain arrays and takes no locks of its own; the only allocation is the `CGEvent` a carrier posts (`DragController` does take a short lock to hand over the drag point). |
 | **Main thread** | Everything else: window state, actions, AX reads, `NSWorkspace`/AX notifications, UI. |
 | **`AXWriter` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
 | **`HyperSpace.state` queue** (QoS `utility`) | Reads titles and writes `workspaces.json` off the main thread. |
 
 Communication rules:
 
-- **Config → tap**: `EventTap.apply(_:)` hands the new `TapConfig` to the tap thread with `CFRunLoopPerformBlock`.
+- **Config → tap**: `EventTap.apply(_:)` hands the new `TapConfig` to the tap thread with `CFRunLoopPerformBlock`, unless it equals the one the tap already has. On the way, on the main thread, the keys of combinations are translated to the active keyboard layout (`TapConfig.translated`, see [Keyboard](03-keyboard.md#keyboard-layouts-and-symbols)); the tap thread never asks the input sources.
 - **Tap → actions**: an action triggered by the tap runs with `DispatchQueue.main.async`.
 - **Tap → drag**: `DragController` keeps only the latest point behind an `OSAllocatedUnfairLock` and schedules at most one pending main-thread update: no backlog even with a 1000 Hz mouse.
-- **Main → apps**: AX writes go through `AXWriter.perform(pid)`; window discovery reads through `AXWriter.read(pid, …)`, whose result comes back to the main thread. State stays on the main thread, as do the few reads a command needs at once (the focused window).
+- **Main → apps**: AX writes go through `AXWriter.perform(pid)`; window discovery reads through `AXWriter.read(pid, …)`, whose result comes back to the main thread. State stays on the main thread, as do the few reads a command needs at once. Modifier + drag writes (focus, move, resize) go through the same queues, one write in flight with only the newest point waiting.
 - AX timeout is 0.5 s (on the system-wide element and on every `AppWatcher`) instead of the 6 s default.
 
 ## Data flow: from config to features
@@ -76,11 +76,12 @@ AppDelegate.apply
   ├─ KeyboardRemapper.apply(config.remaps)      always (no permission needed)
   ├─ CapsLock.turnOff()                          if caps lock is remapped
   └─ if Accessibility granted → applyTrusted:
-        ├─ EventTap.apply(config.tap)            binding/button tables, carriers, scroll, drag
-        └─ WindowManager.apply(config.tiling)    layout, gaps, rules, workspaces, scratchpad
+        ├─ EventTap.apply(config.tap)            binding/button tables, carriers, scroll, drag (skipped when unchanged)
+        └─ WindowManager.apply(config.tiling)    layout, gaps, rules, workspaces, scratchpad (window titles are re-read only when the floating rules changed)
 ```
 
 - **Shortcuts** (`keyboard.bindings`, workspace `switch`/`move`, mouse buttons) are compiled into `[Int16]` tables indexed by `keyCode << 4 | modifiers` (and `button << 4 | modifiers`); each entry is an index into `TapConfig.actions`.
+- `ConfigWriter` writes the file only when the text really changes, so a no-op edit in Settings does not reload the config.
 - A **combination** as a remap target (`caps_lock → hyper`) becomes a *carrier* (see [Keyboard](03-keyboard.md)).
 - The tap **subscribes only to the events in use** (`TapConfig.eventMask`): with an empty config no tap is installed at all.
 - Without Accessibility `applyTrusted` is not called: only HID remaps are active. A 1 s timer polls until the permission arrives, then applies the already-loaded config.
@@ -105,7 +106,7 @@ Mouse movement is never intercepted.
 
 - **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. The only polling is `DisplayMonitor` (every 5 s, only with several displays).
 - Bursts of events are coalesced into one retile (30 ms delay).
-- Visibility and position of windows come from a single `CGWindowListCopyWindowInfo` per retile, without titles (so no Screen Recording).
+- Visibility and position of windows come from `CGWindowListCopyWindowInfo` without titles (so no Screen Recording). **A command reads the window list, the displays (`NSScreen`) and the focused window (a synchronous AX call) once**: the first read is kept for the whole command (`WindowManager.enterScope`/`leaveScope`, nested commands share it) and every function it calls reuses it, so a workspace switch costs one `CGWindowList` call, one display read and one AX read. Outside a command every read is fresh; a newly tracked window drops the cached window list.
 - A window is moved only if its position really differs from the target (2 pt tolerance).
 - See [Tiling](06-tiling.md), [Workspaces and displays](07-workspaces-and-displays.md) and [Scratchpad](08-scratchpad.md).
 

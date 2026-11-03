@@ -69,7 +69,7 @@ Shortcut capture (Esc cancels, Delete clears). Groups:
 - **Resize**: Width and Height, smaller/larger (`resize width -50` / `+50` …).
 - **Displays**: *Focus other display* (`focus-display`), *Move workspace to other display* (`move-workspace-to-display`).
 - **More**: *Previous workspace* (`workspace back-and-forth`), *Toggle floating* (`float`), *Move window to or from the scratchpad* (`move-to-scratchpad`).
-These shortcuts are stored as ordinary entries in `keyboard.bindings` (the UI replaces only its own actions and keeps the others). A shortcut used twice shows a warning (only the last one would work).
+These shortcuts are stored as ordinary entries in `keyboard.bindings`. The rows are generated from `TilingModel.pairedShortcuts`/`singleShortcuts`, the single source for titles and actions. Saving edits only the **last** binding of each action (the one the page shows) in place and adds one if there is none; other bindings, including further ones for the same action, stay as they are. Clearing a shortcut removes that last binding only. A shortcut used twice shows a warning (only the last one would work).
 During capture key bindings are suspended (so existing shortcuts reach the window) but remaps stay active (so caps lock → ⌃⌥⇧ can be part of a shortcut).
 
 ### General
@@ -78,4 +78,4 @@ Version (`CFBundleShortVersionString`); **Startup** → *Launch at Login* (`SMAp
 
 ## Names and icons caching
 
-`TilingModel` caches app names and icons by bundle id (`appInfo`), because rows ask on every redraw and LaunchServices is slow.
+`TilingModel` caches app names and icons by bundle id (`appInfo`), because rows ask on every redraw and LaunchServices is slow. The list of running apps (`runningApps`) is kept until an app launches or quits, and `MouseModel` builds its preset-name lookup once. The menu bar icon is redrawn only when what it shows changes.

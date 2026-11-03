@@ -61,7 +61,7 @@ In `accordion`, `focus left/right` and `swap left/right` go to / exchange with t
 
 `resize width|height ±points` (the Settings Shortcuts page uses ±50):
 
-- **Floating window**: resized directly (minimum 160 wide, 100 high).
+- **Floating window** (tiling on): resized directly (minimum 160 wide, 100 high). With tiling off the command does nothing: no window is tracked.
 - **`tall`/`wide`**: along the master/stack split, the ratio changes by `delta / area length` (the master grows with a positive delta; a stack window grows by shrinking the master).
   Along the stack, the window's weight changes (needs a stack of at least 2 windows, and the window cannot be the master).
 - **`columns`**: *width* changes the window's column weight (needs 2+ columns); *height* changes the window's weight in its column (needs 2+ windows in it).

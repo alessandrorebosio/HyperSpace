@@ -9,7 +9,7 @@
 - **Manual reload**: the [`reload`](05-actions.md) action (`hyper+escape` in the default config).
 - What a reload applies: HID remaps always; tap and tiling only with the Accessibility permission (see [Architecture](01-architecture.md)).
 - **Edits from the UI**: the Settings window rewrites the file with `ConfigWriter` (only touched keys change, stable key order, one line per binding/remap);
-  the watcher then applies it like a manual edit. The file gets reformatted and **unknown keys are preserved**. JSON has no comments.
+  the watcher then applies it like a manual edit. Nothing is written when the new text is identical to the file, so a no-op edit causes no reload. The file gets reformatted and **unknown keys are preserved**. JSON has no comments.
 
 ## Errors
 

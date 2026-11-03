@@ -94,7 +94,7 @@ struct TapConfig: Equatable {
     /// Carrier key code → index in `carriers` (-1 when the key is not a carrier).
     var carrierTable = [Int8](repeating: -1, count: 128)
     var carriers: [Carrier] = []
-    var reverseScroll = defaultReverseScroll
+    var reverseScroll = TapConfig.defaultReverseScroll
     var dragModifier: Modifiers?
     /// Caps lock is remapped: keep the caps lock state off (see `CapsLock`).
     var suppressCapsLock = false
@@ -174,11 +174,11 @@ struct TilingConfig {
     static let defaultScratchpadSize = CGSize(width: 0.6, height: 0.7)
     static let defaultAccordionPadding: CGFloat = 30
 
-    var enabled = defaultEnabled
-    var layout = defaultLayout
-    var gap = defaultGap
-    var padding = defaultPadding
-    var masterRatio = defaultMasterRatio
+    var enabled = TilingConfig.defaultEnabled
+    var layout = TilingConfig.defaultLayout
+    var gap = TilingConfig.defaultGap
+    var padding = TilingConfig.defaultPadding
+    var masterRatio = TilingConfig.defaultMasterRatio
     var floating: Set<String> = []
     var floatingWindows: [FloatingWindowRule] = []
     /// Workspace names; empty means a single implicit workspace.
@@ -186,11 +186,11 @@ struct TilingConfig {
     /// Bundle id → workspace index for windows to open in.
     var assignments: [String: Int] = [:]
     /// Moving the focus to another display brings the pointer along.
-    var mouseFollowsFocus = defaultMouseFollowsFocus
+    var mouseFollowsFocus = TilingConfig.defaultMouseFollowsFocus
     /// Scratchpad windows' size, as fractions of the display's visible area.
-    var scratchpadSize = defaultScratchpadSize
+    var scratchpadSize = TilingConfig.defaultScratchpadSize
     /// Accordion layout: how much of the windows behind the focused one shows on each side.
-    var accordionPadding = defaultAccordionPadding
+    var accordionPadding = TilingConfig.defaultAccordionPadding
 }
 
 /// Windows that float by title (a dialog, an app's own settings), of one app or any.

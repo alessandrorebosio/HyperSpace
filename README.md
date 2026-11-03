@@ -59,11 +59,11 @@ If the file has an error the menu bar icon turns into ⚠︎ and the menu shows 
 
 ### Menu bar and window
 
-With tiling off there is no icon in the menu bar (it only stays when there is a problem to report or the
-keyboard is locked): to open the settings, double-click the app, which also works while the icon is visible.
-Opened by hand with tiling off it shows the settings right away; when started at login it does not.
+The icon is always in the menu bar; with tiling off it is drawn dimmed. Double-clicking the app while it runs
+opens the settings. With more than one workspace configured the icon is replaced by the workspace shown on each
+display (`1 2`, the focused display's one in a filled box).
 
-The menu in the top bar lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Below, **Layout** (a submenu with the layouts, ✓ on the focused display's one; a click changes it), **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 680×420, so it fits in a column) and has a sidebar:
+The menu in the top bar starts with **Tiling** (on/off). With more than one workspace configured it lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Wireless keyboards, mice and trackpads follow with their battery level (**Devices**). Below, **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 680×420, so it fits in a column) and has a sidebar:
 **Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
 **Settings** (version, launch at login, config file with Edit/Show in Finder, Accessibility permission status, Quit).
 Without the Accessibility permission the pages that need it show a notice at the top with **Open System Settings…**
@@ -117,8 +117,9 @@ release → ⌃⌥⇧). Otherwise there is the list of all keys. Finally choose 
     and work in `bindings` (`hyper+h`, `meh+k`…).
   - With a key (`cmd+space`): pressing the key is the same as pressing the combination.
   - The HID layer only does 1:1, so the key is remapped to an unused "carrier" key (F13–F20,
-    skipping the ones you use) that the event tap translates into the combination. At most 8 different combinations; requires
+    skipping the ones you use) that the event tap translates into the combination (a symbol such as `-` is posted on the key that types it in the active layout). At most 8 different combinations; requires
     the Accessibility permission.
+- `print_screen`, `scroll_lock` and `pause` have the key codes of F13, F14 and F15 (and `non_us_pound` that of `backslash`): in `bindings` they are indistinguishable, and using one in a remap also keeps its twin from being a carrier.
 - `hyperKey: "caps_lock"` is still accepted as a shortcut for `{ "from": "caps_lock", "to": "hyper" }`.
 - Remappings live in the system's HID layer (the `UserKeyMapping` property of each keyboard, the same one
   used by `hidutil`): they happen before any app sees the key, cost zero CPU and **need no
@@ -165,7 +166,7 @@ or **Disable Button**. Ready-made actions:
 | Key | Meaning |
 |---|---|
 | `reverseScroll` | Reverses scrolling **of scroll wheels only** (trackpads and Magic Mouse stay "natural"). |
-| `dragModifier` | Modifiers + left drag = move window; + right drag = resize. On a tiled window: dropping it on another swaps them, resizing moves the master/stack split. |
+| `dragModifier` | Modifiers + left drag = move window; + right drag = resize. On a tiled window: dropping it on another swaps them; resizing moves the master/stack split in `tall` and `wide` (in the other layouts the window goes back to its tile). |
 | `buttons` | Mouse button (2 = middle, 3 = back, 4 = forward, …) with optional `modifiers` → action (`none` disables it). |
 
 ### Tiling
@@ -185,7 +186,7 @@ moving, resizing.
 ```
 
 **Per-app rules.** An app's windows open straight in its workspace; if the app is frontmost
-(you just opened it) HyperSpace takes you to that workspace, even if the app takes a while to open (not in the minute and a half after logging in to the Mac, when apps reopen by themselves). From the Tiling page → App Rules, or:
+(you just opened it) HyperSpace takes you to that workspace, even if the app takes a while to open (not in the minute and a half after logging in to the Mac, when apps reopen by themselves). From Workspaces → App Rules, or:
 
 ```json
 "assign": [
@@ -199,10 +200,10 @@ moving, resizing.
 **Virtual workspaces with a fixed display.** macOS has no public API to manage Spaces, so workspaces
 belong to HyperSpace. Each workspace has its display: **1 on the main display** (the one with the menu
 bar), **2 on the second**, 3 on the third and so on; all the others live on the main one. Each display shows
-one of its workspaces: **Caps+N** shows N on its display and moves the focus there, without touching the other displays.
+one of its workspaces: a `switch` shortcut (e.g. `meh+N`) shows workspace N on its display and moves the focus there, without touching the other displays. The default config defines no workspaces or display shortcuts: create them in Settings → Workspaces / Shortcuts.
 An app you open stays in the workspace you opened it from: if you switch workspace while it is still loading, its window appears there (hidden) and the focus stays where you are.
 A tiled window you move or resize by hand goes back to its place when you release the mouse (to really move it use the shortcuts or the modifier drag).
-When the focus moves to another display the pointer follows it (to the centre of the window, or of the display if the workspace is empty; `"mouseFollowsFocus": false` turns it off). An empty workspace takes the focus too: HyperSpace clicks a tiny invisible window of its own in the middle of that display, so it becomes the active app there, the menu bar lights up on that display and the keyboard no longer types into the window left on the other one (the pointer goes back where it was). A window moved to another display is resized again shortly after, for apps that adapt by themselves to the new display's scale. Moving a window to another workspace moves only that window. **Caps+⌘+Tab** (`move-workspace-to-display`) instead moves the whole workspace to the other display, which is its display from then on: the workspace that display was showing stays intact (hidden) and the display left behind goes back to the last of its workspaces. Windows of workspaces not shown are
+When the focus moves to another display the pointer follows it (to the centre of the window, or of the display if the workspace is empty; `"mouseFollowsFocus": false` turns it off). An empty workspace takes the focus too: HyperSpace clicks a tiny invisible window of its own in the middle of that display, so it becomes the active app there, the menu bar lights up on that display and the keyboard no longer types into the window left on the other one (the pointer goes back where it was). A window moved to another display is resized again shortly after, for apps that adapt by themselves to the new display's scale. Moving a window to another workspace moves only that window. The `move-workspace-to-display` shortcut (Settings → Shortcuts → Displays) instead moves the whole workspace to the other display, which is its display from then on: the workspace that display was showing stays intact (hidden) and the display left behind goes back to the last of its workspaces. Windows of workspaces not shown are
 parked in the bottom-right corner of their screen (as AeroSpace does). If a display is unplugged, its
 workspaces move to the main one and go back to their place when you plug it in again.
 
@@ -245,6 +246,7 @@ Floating (an app with no title = all its windows). It also applies to windows th
 | `scratchpad <App Name or bundle id>` | Shows/hides the app in the middle above the others, out of the tiling (opens it if needed) |
 | `scratchpad` | Shows/hides the windows sent to the scratchpad |
 | `move-to-scratchpad` | Sends the focused window to the scratchpad, or from there back into the tiling |
+| `move-to-scratchpad <App Name or bundle id>` | The same for that app's window (opens the app if it is not running); what Settings writes for *To tiling and back* |
 | `tiling` | Turns tiling on/off |
 | `retile` | Recomputes the layout now |
 | `focus-display` | Focuses a window on the next display |
@@ -266,10 +268,12 @@ Floating (an app with no title = all its windows). It also applies to windows th
 
 ```
 Sources/HyperSpace/
-├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar)
+├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
 ├── Settings/   window with a Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, Settings sidebar (SwiftUI, created only when opened)
-├── Core/       EventTap, Config/ConfigStore, Action/ActionRunner, KeyCodes, Permissions
-├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events)
+├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions,
+│               KeyCodes, RemapTarget, AppLauncher, Peripherals, Permissions
+├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),
+│               KeyboardLayout, CapsLock, KeyboardLock
 ├── Mouse/      DragController (tap → window manager bridge)
 └── Tiling/     WindowManager, ColumnLayout, AppWatcher (AXObserver), AXWriter (per-app writes),
                 WorkspaceState (saved workspaces), LaunchTracker, Layout, DisplayMonitor, FocusAnchor, AX helpers
@@ -282,16 +286,16 @@ Choices made for performance and minimal permissions:
   An active tap needs only Accessibility (a passive tap would need Input Monitoring).
 - **It subscribes only to the events in use.** Mouse movements are never intercepted; scrolling only if
   `reverseScroll` is on; with an empty config the tap is not installed at all.
-- **Hot path with no allocations or locks**: bindings are compiled into `[Int16]` tables indexed by
+- **Lean hot path**: no locks of its own, and no allocation except the event a combination posts; bindings are compiled into `[Int16]` tables indexed by
   `keyCode << 4 | modifiers`; the config reaches the tap thread with `CFRunLoopPerformBlock`.
 - **Remaps and hyper key in the HID layer**, per keyboard via `IOHIDServiceClient` (no `hidutil` processes): zero CPU, no permission; new keyboards detected with IOKit notifications.
 - **Event-driven tiling**: `AXObserver` per app + `NSWorkspace` notifications, no polling. Bursts of
-  events are coalesced into a single retile; window visibility and position come from a single
-  `CGWindowListCopyWindowInfo` call (without titles → no Screen Recording) and windows are
-  moved only if their position actually differs.
+  events are coalesced into a single retile; window visibility and position come from
+  `CGWindowListCopyWindowInfo` (without titles → no Screen Recording), read once per command together with the displays
+  and the focused window, and windows are moved only if their position actually differs.
 - **1000 Hz drag without backlog**: the tap keeps only the latest position and at most one update is
   queued on the main thread.
-- **AX writes off the main thread**: moving, resizing, parking and focusing a window
+- **AX writes off the main thread**: moving, resizing, parking and focusing a window, modifier-drag included,
   happens on a serial queue per app (`AXWriter`). A slow or hung app only makes itself wait, never the
   shortcuts or the other apps. Reads and state stay on the main thread.
 - **0.5 s AX timeout** for every element (macOS's default is 6 s).
