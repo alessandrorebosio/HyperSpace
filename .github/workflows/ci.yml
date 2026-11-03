@@ -9,6 +9,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -31,8 +34,12 @@ jobs:
       - name: Test
         run: make test
 
+      # With a sample config, so the lists have rows to show.
       - name: Screenshots of the settings window
-        run: build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings "$RUNNER_TEMP/settings"
+        run: |
+          mkdir -p ~/.hyperspace
+          cp .github/ci/sample-config.json ~/.hyperspace/config.json
+          build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings "$RUNNER_TEMP/settings"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -40,3 +47,14 @@ jobs:
           name: settings-screenshots
           path: ${{ runner.temp }}/settings
           if-no-files-found: ignore
+
+      # The same pictures on a hidden git ref (not a branch), readable with
+      # `git fetch origin refs/ci/screenshots && git checkout FETCH_HEAD -- .` in an empty folder.
+      - name: Publish the screenshots to refs/ci/screenshots
+        if: github.event_name != 'pull_request'
+        run: |
+          cd "$RUNNER_TEMP/settings"
+          git init -q
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Settings screenshots of ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/ci/screenshots

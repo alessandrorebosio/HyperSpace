@@ -1,0 +1,44 @@
+{
+  "keyboard": {
+    "remap": [
+      { "from": "caps_lock", "to": "hyper" },
+      { "from": "right_option", "to": "escape", "keyboard": "builtin" }
+    ],
+    "bindings": [
+      { "keys": "hyper+h", "action": "focus left" },
+      { "keys": "hyper+j", "action": "focus down" },
+      { "keys": "hyper+k", "action": "focus up" },
+      { "keys": "hyper+l", "action": "focus right" },
+      { "keys": "hyper+left", "action": "swap left" },
+      { "keys": "hyper+down", "action": "swap down" },
+      { "keys": "hyper+up", "action": "swap up" },
+      { "keys": "hyper+right", "action": "swap right" },
+      { "keys": "hyper+f", "action": "float" },
+      { "keys": "hyper+a", "action": "accordion" },
+      { "keys": "hyper+t", "action": "scratchpad com.apple.Terminal" },
+      { "keys": "hyper+shift+t", "action": "move-to-scratchpad com.apple.Terminal" }
+    ]
+  },
+  "mouse": {
+    "reverseScroll": true,
+    "buttons": [
+      { "button": 3, "action": "navigate back" },
+      { "button": 4, "action": "navigate forward" },
+      { "button": 2, "modifiers": "cmd", "action": "key cmd+w" }
+    ]
+  },
+  "tiling": {
+    "enabled": true,
+    "layout": "tall",
+    "gap": 8,
+    "padding": 8,
+    "floating": ["com.apple.calculator"],
+    "floatingWindows": [{ "app": "com.apple.Safari", "title": "Settings" }],
+    "workspaces": [
+      { "name": "1", "switch": "hyper+1", "move": "hyper+shift+1" },
+      { "name": "2", "switch": "hyper+2", "move": "hyper+shift+2" },
+      { "name": "web", "switch": "hyper+3", "move": "hyper+shift+3" }
+    ],
+    "assign": [{ "app": "com.apple.Safari", "workspace": "web" }]
+  }
+}
