@@ -71,14 +71,13 @@ struct GeneralView: View {
                 LabeledContent {
                     Text(model.version).foregroundStyle(.secondary)
                 } label: {
-                    IconLabel("Version", symbol: "info", color: .gray)
+                    RowLabel("Version")
                 }
             }
 
             Section {
                 Toggle(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) })) {
-                    IconLabel("Launch at Login", detail: "Start HyperSpace automatically when you log in.",
-                              symbol: "power", color: .green)
+                    RowLabel("Launch at Login", detail: "Start HyperSpace when you log in.")
                 }
             } header: {
                 Text("Startup")
@@ -89,7 +88,7 @@ struct GeneralView: View {
                     Text(model.configPath).font(.system(.body, design: .monospaced)).foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 } label: {
-                    IconLabel("File", symbol: "doc.text.fill", color: .blue)
+                    RowLabel("File")
                 }
                 HStack {
                     Button("Edit Config…") { model.actions.openConfig() }
@@ -103,7 +102,7 @@ struct GeneralView: View {
             } header: {
                 Text("Configuration")
             } footer: {
-                SectionFooter("The file is watched: changes made here or saved in an editor apply as soon as they are saved.")
+                SectionFooter("Changes apply as soon as the file is saved.")
             }
 
             Section {
@@ -114,12 +113,12 @@ struct GeneralView: View {
                         Button("Open System Settings…") { Permissions.openSettings() }
                     }
                 } label: {
-                    IconLabel("Accessibility", symbol: "accessibility", color: .blue)
+                    RowLabel("Accessibility")
                 }
             } header: {
                 Text("Permission")
             } footer: {
-                SectionFooter("Key remapping works without it; shortcuts, mouse buttons and window management need it.")
+                SectionFooter("Remapping works without it; shortcuts, mouse buttons and windows need it.")
             }
 
             Section {

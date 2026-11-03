@@ -10,8 +10,7 @@ struct MouseView: View {
 
             Section {
                 Toggle(isOn: Binding(get: { model.reverseScroll }, set: { model.setReverseScroll($0) })) {
-                    Text("Reverse scroll wheel")
-                    Text("Only mice with a wheel; trackpads and Magic Mouse keep the system direction.")
+                    RowLabel("Reverse scroll wheel", detail: "Mice with a wheel only; trackpads and Magic Mouse keep the system direction.")
                 }
             } header: {
                 Text("Scrolling")
@@ -47,14 +46,40 @@ private struct MouseRuleRow: View {
     @ObservedObject var model: MouseModel
     let rule: MouseModel.Rule
 
+    /// One line when it fits; otherwise the button on the first line and its action under it.
     var body: some View {
-        HStack(spacing: 10) {
-            KeyCap(text: buttonText, symbol: "computermouse", width: 170, placeholder: rule.button == nil,
-                   active: model.capturing == .button(rule.id)) {
-                toggle(.button(rule.id))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                buttonCap
+                Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                actionCap
+                Spacer(minLength: 12)
+                trailing
             }
-            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-            KeyCap(text: actionText, width: 170, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    buttonCap
+                    Spacer(minLength: 12)
+                    trailing
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                    actionCap
+                }
+            }
+        }
+    }
+
+    private var buttonCap: some View {
+        KeyCap(text: buttonText, symbol: "computermouse", minWidth: 110, placeholder: rule.button == nil,
+               active: model.capturing == .button(rule.id)) {
+            toggle(.button(rule.id))
+        }
+    }
+
+    private var actionCap: some View {
+        HStack(spacing: 10) {
+            KeyCap(text: actionText, minWidth: 110, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
                 toggle(.action(rule.id))
             }
             ChoiceMenu(help: "Choose an action") {
@@ -68,7 +93,11 @@ private struct MouseRuleRow: View {
                 Divider()
                 Button("Disable Button") { model.setAction("none", for: rule.id) }
             }
-            Spacer(minLength: 12)
+        }
+    }
+
+    private var trailing: some View {
+        HStack(spacing: 8) {
             WarningBadge(text: model.warning(for: rule))
             RemoveButton { model.remove(rule.id) }
         }

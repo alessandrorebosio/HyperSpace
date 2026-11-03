@@ -35,8 +35,10 @@ final class LocalEventMonitor {
 struct KeyCap: View {
     let text: String
     var symbol: String?
-    /// Fixed width, padding included: keeps arrows and caps aligned from row to row.
+    /// Fixed width, padding included: keeps caps aligned from row to row.
     var width: CGFloat?
+    /// Least width when the cap has no fixed one; it grows with its text, never truncating it.
+    var minWidth: CGFloat = 36
     var placeholder = false
     var active = false
     let action: () -> Void
@@ -45,14 +47,14 @@ struct KeyCap: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let symbol { Image(systemName: symbol).imageScale(.small) }
-                Text(text).lineLimit(1)
+                Text(text).lineLimit(1).minimumScaleFactor(width == nil ? 1 : 0.8)
             }
             .font(.system(.body, design: .rounded).weight(.medium))
             .foregroundStyle(active ? Color.accentColor : (placeholder ? Color.secondary : Color.primary))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .frame(width: width)
-            .frame(minWidth: 36)
+            .frame(minWidth: minWidth)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
@@ -85,15 +87,12 @@ struct ChoiceMenu<Content: View>: View {
 }
 
 struct RemoveButton: View {
-    /// Fixed, so a header row can leave the same room for it.
-    static let width: CGFloat = 20
-
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
-                .frame(width: Self.width)
+                .frame(width: 20)
         }
         .buttonStyle(.borderless)
         .help("Remove")

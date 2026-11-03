@@ -44,35 +44,17 @@ final class SettingsNavigation: ObservableObject {
             }
         }
 
-        /// One line under the page's title, like the panes of System Settings.
+        /// One line at the top of the page.
         var summary: String {
             switch self {
-            case .keyboard: return "Remap keys on each keyboard, and lock the keyboard while you clean it."
-            case .mouse: return "Give extra mouse buttons an action, and choose the scroll direction."
-            case .tiling: return "Arrange windows side by side, in columns or as an accordion, inside each display's visible area."
-            case .workspaces: return "Virtual workspaces on every display, their shortcuts, and the apps that open in each."
-            case .windowRules: return "Windows that float above the tiling, and apps that live in the scratchpad."
-            case .shortcuts: return "Keys to move the focus and windows, resize, change display and more."
+            case .keyboard: return "Remap keys, on every keyboard or just one, and lock the keyboard to clean it."
+            case .mouse: return "Give extra mouse buttons an action and choose the scroll direction."
+            case .tiling: return "How windows are arranged on each display."
+            case .workspaces: return "Virtual workspaces, their shortcuts and the apps that open in each."
+            case .windowRules: return "Windows that float and apps kept in the scratchpad."
+            case .shortcuts: return "Keys to move the focus and windows, resize and change display."
             case .settings: return "Startup, the configuration file and permissions."
             }
-        }
-
-        /// Extra words the sidebar search matches.
-        var keywords: String {
-            switch self {
-            case .keyboard: return "remap lock keys caps hyper"
-            case .mouse: return "buttons scroll reverse drag"
-            case .tiling: return "layout gap margin padding accordion columns tall wide monocle focus pointer"
-            case .workspaces: return "apps rules assign spaces"
-            case .windowRules: return "floating scratchpad title"
-            case .shortcuts: return "keys focus move resize display float accordion"
-            case .settings: return "login startup config file permission accessibility quit version"
-            }
-        }
-
-        func matches(_ query: String) -> Bool {
-            let query = query.trimmingCharacters(in: .whitespaces)
-            return query.isEmpty || "\(title) \(keywords)".localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -81,8 +63,6 @@ final class SettingsNavigation: ObservableObject {
         didSet { if page != oldValue { onSwitch?() } }
     }
     var onSwitch: (() -> Void)?
-    /// The sidebar search.
-    @Published var query = ""
 }
 
 struct SettingsRoot: View {
@@ -91,7 +71,6 @@ struct SettingsRoot: View {
     let mouse: MouseModel
     let tiling: TilingModel
     @ObservedObject var general: GeneralModel
-    private var query: String { navigation.query }
 
     private typealias Page = SettingsNavigation.Page
 
@@ -102,7 +81,6 @@ struct SettingsRoot: View {
                 sidebarSection("Windows", [.tiling, .workspaces, .windowRules, .shortcuts])
                 sidebarSection(nil, [.settings])
             }
-            .searchable(text: $navigation.query, placement: .sidebar, prompt: "Search")
             .frame(minWidth: 200)
             .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
             .modifier(NoSidebarToggle())
@@ -129,13 +107,10 @@ struct SettingsRoot: View {
 
     @ViewBuilder
     private func sidebarSection(_ title: String?, _ pages: [Page]) -> some View {
-        let shown = pages.filter { $0.matches(query) }
-        if !shown.isEmpty {
-            if let title {
-                Section(title) { ForEach(shown, id: \.self) { SidebarItem(page: $0).tag($0) } }
-            } else {
-                Section { ForEach(shown, id: \.self) { SidebarItem(page: $0).tag($0) } }
-            }
+        if let title {
+            Section(title) { ForEach(pages, id: \.self) { SidebarItem(page: $0).tag($0) } }
+        } else {
+            Section { ForEach(pages, id: \.self) { SidebarItem(page: $0).tag($0) } }
         }
     }
 }
@@ -152,61 +127,48 @@ extension EnvironmentValues {
     }
 }
 
-/// First section of every page, like the panes of System Settings: the page's icon large,
-/// its name and what it is for, centered.
+/// First row of every page: one short line saying what the page is for. The page's name is
+/// the window title, so it is not repeated here.
 struct PageHeader: View {
     @Environment(\.settingsPage) private var page
 
     var body: some View {
         if let page {
             Section {
-                VStack(spacing: 8) {
-                    SidebarIcon(symbol: page.symbol, color: page.color, size: 54)
-                    Text(page.title).font(.title2.weight(.bold))
-                    Text(page.summary)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 420)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                Text(page.summary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
             }
         }
     }
 }
 
-/// A row title with a small colored icon on its left, as in the lists of System Settings.
-struct IconLabel: View {
+/// A row title with an optional line of explanation under it, as in System Settings.
+struct RowLabel: View {
     let title: String
     var detail: String?
-    let symbol: String
-    let color: Color
 
-    init(_ title: String, detail: String? = nil, symbol: String, color: Color) {
+    init(_ title: String, detail: String? = nil) {
         self.title = title
         self.detail = detail
-        self.symbol = symbol
-        self.color = color
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            SidebarIcon(symbol: symbol, color: color, size: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                if let detail {
-                    Text(detail).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            if let detail {
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 }
 
-/// A sidebar row like System Settings: a white symbol on a small rounded square with a soft
-/// top-to-bottom gradient, a hairline edge and a faint shadow.
+/// A sidebar row like System Settings: the page's icon and its name.
 private struct SidebarItem: View {
     let page: SettingsNavigation.Page
 
@@ -219,10 +181,9 @@ private struct SidebarItem: View {
     }
 }
 
-/// A white symbol on a rounded square, as in System Settings. Drawn as vectors (sharp at any
-/// size and scale) with explicit colors, so the sidebar does not tint it. Every symbol is scaled
-/// to fit the same box, so wide ones (keyboard) and tall ones (mouse) look the same size and sit
-/// in the middle; the square has a vertical gradient, a soft highlight on top and a hairline edge.
+/// A white symbol on a colored rounded square, as in System Settings. The symbol is a vector
+/// (sharp at any scale) in an explicit color, so the sidebar does not tint it; the square has
+/// a light sheen on top and a hairline edge.
 struct SidebarIcon: View {
     let symbol: String
     let color: Color
@@ -230,82 +191,18 @@ struct SidebarIcon: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
-        let glyph = size * Self.glyphShare(symbol)
         ZStack {
-            shape.fill(LinearGradient(colors: [color.blended(with: .white, by: 0.28), color, color.blended(with: .black, by: 0.12)],
+            shape.fill(color)
+            shape.fill(LinearGradient(colors: [Color.white.opacity(0.2), Color.white.opacity(0)],
                                       startPoint: .top, endPoint: .bottom))
-            // A soft sheen on the upper half, like the system's icons.
-            shape.fill(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0)],
-                                      startPoint: .top, endPoint: .center))
-            shape.strokeBorder(Color.black.opacity(0.10), lineWidth: 0.5)
-            if let ink = SymbolInk.image(symbol) {
-                // Cropped to what the symbol really draws, so fitting it centers the drawing
-                // itself, not the symbol's box (most symbols have uneven blank space in it).
-                Image(nsImage: ink)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: glyph, height: glyph)
-                    .shadow(color: .black.opacity(0.18), radius: size * 0.02, y: size * 0.02)
-            }
+            shape.strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5)
+            Image(systemName: symbol)
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: size * 0.55, weight: .semibold))
+                .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.12), radius: size * 0.03, y: size * 0.025)
         .accessibilityHidden(true)
-    }
-
-    /// The box each symbol fits in, as a share of the icon: symbols that fill their box (a gear,
-    /// ⌘) get a little less room than airy ones, so they read the same.
-    private static func glyphShare(_ symbol: String) -> CGFloat {
-        switch symbol {
-        case "keyboard.fill", "rectangle.split.3x1.fill", "macwindow.on.rectangle": return 0.64
-        case "gearshape.fill", "command": return 0.56
-        default: return 0.58
-        }
-    }
-}
-
-/// A white SF Symbol cropped to its drawn pixels, rendered large (512 px) so it stays sharp when
-/// scaled down. Cached per symbol.
-enum SymbolInk {
-    private static var cache: [String: NSImage] = [:]
-
-    static func image(_ symbol: String) -> NSImage? {
-        if let image = cache[symbol] { return image }
-        let config = NSImage.SymbolConfiguration(pointSize: 300, weight: .semibold).applying(.init(paletteColors: [.white]))
-        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else { return nil }
-        let width = Int(glyph.size.width.rounded(.up)), height = Int(glyph.size.height.rounded(.up))
-        guard width > 0, height > 0,
-              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
-                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        glyph.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
-        NSGraphicsContext.restoreGraphicsState()
-        // The box of the pixels drawn (alpha above a trace).
-        var minX = width, minY = height, maxX = -1, maxY = -1
-        for y in 0..<height {
-            for x in 0..<width where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.02 {
-                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
-            }
-        }
-        guard maxX >= minX, maxY >= minY,
-              let cropped = rep.cgImage?.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)) else { return nil }
-        let image = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
-        image.isTemplate = false
-        cache[symbol] = image
-        return image
-    }
-}
-
-private extension Color {
-    /// `self` blended toward `other`. Not called `mix`: macOS 15 adds `Color.mix(with:by:)`, which would be ambiguous.
-    func blended(with other: NSColor, by amount: CGFloat) -> Color {
-        let base = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
-        return Color(nsColor: base.blended(withFraction: amount, of: other) ?? base)
     }
 }
 
