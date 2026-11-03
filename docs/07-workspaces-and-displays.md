@@ -34,7 +34,7 @@ An empty workspace has no window to focus, yet its display must become the activ
 So focusing an empty workspace (`workspace n`, `focus-display`, a window moved away leaving its workspace empty, a scratchpad hidden over one):
 
 1. `FocusAnchor` (`Tiling/FocusAnchor.swift`) puts a 2×2 window, nearly transparent, at `popUpMenu` level in the middle of the display's visible area;
-2. HyperSpace **clicks it** with a synthetic left click (no modifiers, stamped with `EventTap.syntheticMarker`, so the event tap and your mouse mappings ignore it), which makes HyperSpace the active app with its key window on that display. The pointer goes back where it was 50 ms later (already there with *Pointer follows focus*). No click is sent while a mouse button is held: then only `AXFrontmost` is asked, as a fallback;
+2. HyperSpace **clicks it** with a synthetic left click (no modifiers, stamped with `EventTap.syntheticMarker`, so the event tap and your mouse mappings ignore it), which makes HyperSpace the active app with its key window on that display. The pointer stays there, in the middle of the display. No click is sent while a mouse button is held: then only `AXFrontmost` is asked, as a fallback;
 3. until a window is focused, that display **counts as the focused one** for HyperSpace too (menu bar highlight, apps opened from there, layout and workspace commands), even if macOS still reports the window left behind as focused;
 4. the anchor goes away as soon as anything else takes the key focus (a click, ⌘Tab, an app opening) or HyperSpace focuses a window.
 

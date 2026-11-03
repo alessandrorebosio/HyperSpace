@@ -155,16 +155,9 @@ enum AX {
     }
 
     /// Moves the pointer without freezing it afterwards (a plain warp ignores the mouse briefly).
-    /// A warp alone moves only the cursor image: the movement still pending in the event
-    /// stream is then applied from the old position, and the pointer drifts away from where
-    /// it was put. A mouse-moved event at the point makes the system take it as the position.
     static func warpPointer(to point: CGPoint) {
         CGWarpMouseCursorPosition(point)
         CGAssociateMouseAndMouseCursorPosition(1)
-        if let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left) {
-            event.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
-            event.post(tap: .cghidEventTap)
-        }
     }
 
     /// Raises a window and makes its app frontmost. Works from a background

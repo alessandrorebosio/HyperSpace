@@ -64,19 +64,18 @@ final class FocusAnchor: NSObject, NSWindowDelegate {
         window.orderOut(nil)
     }
 
-    /// Clicks the window, the pointer going back where it was. Not while a button is held
-    /// (a drag of yours would end).
+    /// Clicks the window, which brings the pointer to the middle of the display, and leaves
+    /// it there (sent back where it was, it would visibly jump to the middle and back).
+    /// Not while a button is held (a drag of yours would end).
     private func click() {
-        guard NSEvent.pressedMouseButtons == 0, let pointer = CGEvent(source: nil)?.location else { return }
+        guard NSEvent.pressedMouseButtons == 0 else { return }
+        AX.warpPointer(to: point)
         for type in [CGEventType.leftMouseDown, .leftMouseUp] {
             guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
             event.flags = []
             event.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
             event.post(tap: .cghidEventTap)
         }
-        guard pointer.distance(to: point) > 1 else { return }
-        // The click has its own location: the pointer can go back before it is delivered.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { AX.warpPointer(to: pointer) }
     }
 
     func windowDidResignKey(_ notification: Notification) {
