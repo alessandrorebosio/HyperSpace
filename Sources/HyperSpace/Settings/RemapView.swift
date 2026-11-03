@@ -1,37 +1,41 @@
 import SwiftUI
 
+/// The Keyboard page: the keyboard lock and the key remaps.
 struct RemapView: View {
     @ObservedObject var model: RemapModel
 
     var body: some View {
         Form {
-            PageHeader()
+            PageHero(page: .keyboard)
+
             Section {
                 KeyboardLockRow(model: model)
+                Picker(selection: Binding(get: { model.lockMinutes }, set: { model.lockMinutes = $0 })) {
+                    ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
+                } label: {
+                    RowLabel("Unlock automatically", detail: "When nobody unlocks it with the mouse first.")
+                }
+                .disabled(model.isKeyboardLocked)
             } header: {
                 Text("Keyboard Lock")
             } footer: {
-                SectionFooter("Every key is ignored, media keys included, until you unlock with the mouse (here or from the menu bar) or the time is up.")
+                SectionFooter("While locked every key is ignored, media keys included. Unlock with the mouse, here or from the menu bar. Quitting HyperSpace unlocks it too.")
             }
 
             Section {
                 if model.rules.isEmpty {
-                    Text("No remaps yet").foregroundStyle(.secondary)
+                    EmptyRow(symbol: "keyboard", text: "No remaps yet")
                 }
                 ForEach(model.rules) { rule in
                     RuleRow(model: model, rule: rule)
                 }
-                Button {
-                    model.addRule()
-                } label: {
-                    AddLabel(title: "Add Remap")
-                }
-                .buttonStyle(.borderless)
             } header: {
-                Text("Remaps")
+                SectionHeader(title: "Remaps") {
+                    AddButton(title: "Add Remap") { model.addRule() }
+                }
             } footer: {
                 SettingsFooter(
-                    hint: "Click a key, then press it. For a combination, hold the keys together and release.",
+                    hint: "Click a key cap, then press the key. For a combination, hold the keys together and release them.",
                     error: model.saveError
                 )
             }
@@ -40,47 +44,40 @@ struct RemapView: View {
     }
 }
 
+/// The lock's state, with the one button that changes it.
 private struct KeyboardLockRow: View {
     @ObservedObject var model: RemapModel
 
     var body: some View {
         HStack(spacing: 12) {
-            SidebarIcon(symbol: model.isKeyboardLocked ? "lock.fill" : "keyboard.fill",
-                        color: model.isKeyboardLocked ? .orange : SettingsNavigation.Page.keyboard.color, size: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.isKeyboardLocked ? "Keyboard locked" : "Keyboard active").font(.headline)
-                Text(lockDetail).font(.callout).foregroundStyle(.secondary).monospacedDigit()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            PageIcon(symbol: model.isKeyboardLocked ? "lock.fill" : "lock.open.fill",
+                     color: model.isKeyboardLocked ? .orange : .gray, size: 28)
+            RowLabel(model.isKeyboardLocked ? "Keyboard locked" : "Keyboard active", detail: detail)
+                .monospacedDigit()
             Spacer(minLength: 12)
             if model.isKeyboardLocked {
                 Button("Unlock") { model.setKeyboardLocked(false) }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
             } else {
                 Button("Lock Keyboard") { model.setKeyboardLocked(true) }
-                    .controlSize(.large)
             }
         }
-        .padding(.vertical, 4)
-        Picker("Unlock automatically", selection: Binding(get: { model.lockMinutes }, set: { model.lockMinutes = $0 })) {
-            ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
-        }
-        .disabled(model.isKeyboardLocked)
+        .padding(.vertical, 2)
     }
 
-    private var lockDetail: String {
-        guard model.isKeyboardLocked else { return "Ignore every key, for instance to clean it." }
+    private var detail: String {
+        guard model.isKeyboardLocked else { return "Lock it to clean it without typing anything." }
         if let left = model.unlocksIn { return "Unlocks by itself in \(left)." }
         return "Click Unlock to type again."
     }
 }
 
+/// One remap: physical key → what it becomes, on which keyboards. On one line when it fits,
+/// otherwise the keys on the first line and the keyboard under them.
 private struct RuleRow: View {
     @ObservedObject var model: RemapModel
     let rule: RemapModel.Rule
 
-    /// One line when it fits; otherwise the keys on the first line and the keyboard under them.
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
@@ -96,7 +93,7 @@ private struct RuleRow: View {
                     trailing
                 }
                 HStack(spacing: 8) {
-                    Text("Keyboard").foregroundStyle(.secondary)
+                    Text("On").foregroundStyle(.secondary)
                     keyboardPicker
                 }
             }
@@ -104,12 +101,12 @@ private struct RuleRow: View {
     }
 
     private var keys: some View {
-        HStack(spacing: 10) {
-            KeyCap(text: sourceText, minWidth: 110, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
+        HStack(spacing: 8) {
+            KeyCap(text: sourceText, minWidth: 96, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
                 toggle(.from(rule.id))
             }
-            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-            KeyCap(text: targetText, minWidth: 110, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
+            Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            KeyCap(text: targetText, minWidth: 96, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
                 toggle(.to(rule.id))
             }
             ChoiceMenu(help: "Choose from all keys") {
@@ -132,6 +129,7 @@ private struct RuleRow: View {
         }
         .labelsHidden()
         .fixedSize()
+        .help("Which keyboards this remap applies to")
     }
 
     private var trailing: some View {

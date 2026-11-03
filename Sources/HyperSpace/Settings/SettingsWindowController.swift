@@ -79,7 +79,10 @@ struct SettingsRoot: View {
             List(selection: $navigation.page) {
                 sidebarSection("Input", [.keyboard, .mouse])
                 sidebarSection("Windows", [.tiling, .workspaces, .windowRules, .shortcuts])
-                sidebarSection(nil, [.settings])
+                sidebarSection("HyperSpace", [.settings])
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                SidebarStatus(general: general) { navigation.page = .settings }
             }
             .frame(minWidth: 200)
             .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
@@ -93,114 +96,61 @@ struct SettingsRoot: View {
                 case .tiling: TilingView(model: tiling)
                 case .workspaces: WorkspacesView(model: tiling)
                 case .windowRules: WindowRulesView(model: tiling)
-                case .shortcuts: TilingShortcutsView(model: tiling)
+                case .shortcuts: ShortcutsView(model: tiling)
                 case .settings: GeneralView(model: general)
                 }
             }
             .navigationTitle(page.title)
             .environment(\.permissionMissing, page.needsPermission && !general.accessibilityGranted)
-            .environment(\.settingsPage, page)
         }
         .frame(minWidth: 720, minHeight: 460)
         .modifier(GlassToolbar())
     }
 
-    @ViewBuilder
-    private func sidebarSection(_ title: String?, _ pages: [Page]) -> some View {
-        if let title {
-            Section(title) { ForEach(pages, id: \.self) { SidebarItem(page: $0).tag($0) } }
-        } else {
-            Section { ForEach(pages, id: \.self) { SidebarItem(page: $0).tag($0) } }
-        }
-    }
-}
-
-private struct SettingsPageKey: EnvironmentKey {
-    static let defaultValue: SettingsNavigation.Page? = nil
-}
-
-extension EnvironmentValues {
-    /// The page being shown, for its header.
-    var settingsPage: SettingsNavigation.Page? {
-        get { self[SettingsPageKey.self] }
-        set { self[SettingsPageKey.self] = newValue }
-    }
-}
-
-/// First row of every page: one short line saying what the page is for. The page's name is
-/// the window title, so it is not repeated here.
-struct PageHeader: View {
-    @Environment(\.settingsPage) private var page
-
-    var body: some View {
-        if let page {
-            Section {
-                Text(page.summary)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    private func sidebarSection(_ title: String, _ pages: [Page]) -> some View {
+        Section(title) {
+            ForEach(pages, id: \.self) { page in
+                Label {
+                    Text(page.title)
+                } icon: {
+                    PageIcon(symbol: page.symbol, color: page.color)
+                }
+                .tag(page)
             }
         }
     }
 }
 
-/// A row title with an optional line of explanation under it, as in System Settings.
-struct RowLabel: View {
-    let title: String
-    var detail: String?
-
-    init(_ title: String, detail: String? = nil) {
-        self.title = title
-        self.detail = detail
-    }
+/// Bottom of the sidebar: the app and whether it is working, always in sight. A click opens
+/// the General page, where every problem has its fix.
+private struct SidebarStatus: View {
+    @ObservedObject var general: GeneralModel
+    let open: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            if let detail {
-                Text(detail).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        let state = general.health
+        Button(action: open) {
+            HStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("HyperSpace").font(.callout.weight(.semibold))
+                    HStack(spacing: 5) {
+                        Circle().fill(state.color).frame(width: 7, height: 7)
+                        Text(state.text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
-    }
-}
-
-/// A sidebar row like System Settings: the page's icon and its name.
-private struct SidebarItem: View {
-    let page: SettingsNavigation.Page
-
-    var body: some View {
-        Label {
-            Text(page.title)
-        } icon: {
-            SidebarIcon(symbol: page.symbol, color: page.color)
-        }
-    }
-}
-
-/// A white symbol on a colored rounded square, as in System Settings. The symbol is a vector
-/// (sharp at any scale) in an explicit color, so the sidebar does not tint it; the square has
-/// a light sheen on top and a hairline edge.
-struct SidebarIcon: View {
-    let symbol: String
-    let color: Color
-    var size: CGFloat = 20
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
-        ZStack {
-            shape.fill(color)
-            shape.fill(LinearGradient(colors: [Color.white.opacity(0.2), Color.white.opacity(0)],
-                                      startPoint: .top, endPoint: .bottom))
-            shape.strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5)
-            Image(systemName: symbol)
-                .symbolRenderingMode(.monochrome)
-                .font(.system(size: size * 0.55, weight: .semibold))
-                .foregroundStyle(.white)
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        .buttonStyle(.plain)
+        .help("HyperSpace \(general.version)")
+        .accessibilityLabel("HyperSpace: \(state.text)")
     }
 }
 

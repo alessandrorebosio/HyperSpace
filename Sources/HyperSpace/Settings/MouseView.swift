@@ -1,16 +1,17 @@
 import SwiftUI
 
+/// The Mouse page: scroll direction and the actions of the extra buttons.
 struct MouseView: View {
     @ObservedObject var model: MouseModel
 
     var body: some View {
         Form {
-            PageHeader()
+            PageHero(page: .mouse)
             PermissionNotice()
 
             Section {
                 Toggle(isOn: Binding(get: { model.reverseScroll }, set: { model.setReverseScroll($0) })) {
-                    RowLabel("Reverse scroll wheel", detail: "Mice with a wheel only; trackpads and Magic Mouse keep the system direction.")
+                    RowLabel("Reverse scroll wheel", detail: "Mice with a wheel only: trackpads and Magic Mouse keep the system direction.")
                 }
             } header: {
                 Text("Scrolling")
@@ -18,22 +19,18 @@ struct MouseView: View {
 
             Section {
                 if model.rules.isEmpty {
-                    Text("No button mappings yet").foregroundStyle(.secondary)
+                    EmptyRow(symbol: "computermouse", text: "No buttons mapped yet")
                 }
                 ForEach(model.rules) { rule in
                     MouseRuleRow(model: model, rule: rule)
                 }
-                Button {
-                    model.addRule()
-                } label: {
-                    AddLabel(title: "Add Button")
-                }
-                .buttonStyle(.borderless)
             } header: {
-                Text("Buttons")
+                SectionHeader(title: "Buttons") {
+                    AddButton(title: "Add Button") { model.addRule() }
+                }
             } footer: {
                 SettingsFooter(
-                    hint: "Click a mouse button over this window (hold modifiers to include them), then press the keys it should send or pick an action.",
+                    hint: "Click the mouse button over this window (hold modifiers to include them), then press the keys it should send or pick an action from the menu.",
                     error: model.saveError
                 )
             }
@@ -42,43 +39,48 @@ struct MouseView: View {
     }
 }
 
+/// One mapping: button (with modifiers) → action. On one line when it fits, otherwise the
+/// button on the first line and its action under it.
 private struct MouseRuleRow: View {
     @ObservedObject var model: MouseModel
     let rule: MouseModel.Rule
 
-    /// One line when it fits; otherwise the button on the first line and its action under it.
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 buttonCap
-                Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                arrow
                 actionCap
                 Spacer(minLength: 12)
                 trailing
             }
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     buttonCap
                     Spacer(minLength: 12)
                     trailing
                 }
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    arrow
                     actionCap
                 }
             }
         }
     }
 
+    private var arrow: some View {
+        Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+    }
+
     private var buttonCap: some View {
-        KeyCap(text: buttonText, symbol: "computermouse", minWidth: 150, placeholder: rule.button == nil,
+        KeyCap(text: buttonText, symbol: "computermouse", minWidth: 140, placeholder: rule.button == nil,
                active: model.capturing == .button(rule.id)) {
             toggle(.button(rule.id))
         }
     }
 
     private var actionCap: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             KeyCap(text: actionText, minWidth: 110, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
                 toggle(.action(rule.id))
             }

@@ -12,7 +12,8 @@ Sources/HyperSpace/
 ├── Settings/           SwiftUI settings window (models + views)
 └── Tiling/             WindowManager, layouts, workspaces, AX, scratchpad
 Tests/HyperSpaceTests/  Swift Testing tests (one file)
-Resources/              Info.plist, AppIcon.icns
+Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
+.github/                CI: build, test and settings screenshots on macOS
 ```
 
 ### `App/`
@@ -47,7 +48,7 @@ Resources/              Info.plist, AppIcon.icns
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
-SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`RemapModel`, `MouseModel`, `TilingModel`, `GeneralModel`), the matching views, and `Components.swift`. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
+SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`RemapModel`, `MouseModel`, `TilingModel`, `GeneralModel`), one view file per page (`RemapView`, `MouseView`, `TilingView`, `WorkspacesView`, `WindowRulesView`, `ShortcutsView`, `GeneralView`), and the shared components in `Components.swift`. The models hold the state, record keys and buttons and save; the views only call them. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
 
 ## Threads and queues
 

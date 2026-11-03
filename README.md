@@ -67,10 +67,15 @@ display (`1 2`, the focused display's one in a filled box).
 
 The menu in the top bar starts with **Tiling** (on/off). With more than one workspace configured it lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Wireless keyboards, mice and trackpads follow with their battery level (**Devices**). Below, **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 720×460) and has a sidebar:
 **Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
-**General** (version, launch at login, config file with Edit/Show in Finder, Accessibility permission status, Quit).
-Each page shows its name once, in the title bar, with a one-line summary under it.
+**HyperSpace** (**General**: version, launch at login, config file with Edit/Show in Finder, Accessibility permission, Quit).
+At the bottom of the sidebar a status line always says whether HyperSpace is running, needs the Accessibility
+permission or has a config error (a click opens General). Every page opens with its icon, name and a one-line summary;
+lists have their **+ Add** button in the section header, keys and shortcuts are drawn as key caps (click one, then
+press the keys), and tiling is switched on and off from the top of the Tiling page.
 Without the Accessibility permission the pages that need it show a notice at the top with **Open System Settings…**
 (it goes away by itself once granted); with tiling off the Windows pages show **Turn On**.
+Every push to `develop` is built and tested on macOS by GitHub Actions, which also saves screenshots of every page
+([docs/10](docs/10-permissions-troubleshooting-build.md#continuous-integration)).
 
 ### Keyboard
 **Keyboard lock.** At the top of the Keyboard page (or from the menu bar, **Lock Keyboard**) you can lock the
