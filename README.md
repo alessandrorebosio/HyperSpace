@@ -30,7 +30,7 @@ Al primo avvio macOS chiede il permesso di Accessibilità; HyperSpace parte da s
 
 ## Configurazione
 
-`~/.config/hyperspace/config.json` — creato al primo avvio, ricaricato automaticamente a ogni salvataggio.
+`~/.hyperspace/config.json` — creato al primo avvio, ricaricato automaticamente a ogni salvataggio.
 Se il file ha un errore l'icona in menu bar diventa ⚠︎ e il menu mostra il messaggio; resta attiva l'ultima config valida.
 
 ```json
