@@ -260,8 +260,10 @@ extension WindowManager {
     }
 
     /// Moves the focused workspace, windows and arrangement, to the next display, where it
-    /// replaces the workspace shown there (which stays intact, just hidden). The display it
-    /// leaves goes back to the last of its own workspaces it showed, or to none.
+    /// replaces the workspace shown there. That one stays intact, hidden, and keeps living on
+    /// that display: it never comes over to the display left behind, so the two workspaces
+    /// are not swapped. The display left behind goes back to the last of its own workspaces it
+    /// showed, or to none.
     func moveWorkspaceToNextDisplay() {
         enterScope()
         defer { leaveScope() }
@@ -278,9 +280,18 @@ extension WindowManager {
         ignoreFocusChanges()
         if let window = focused(), window.workspace == workspace { lastFocused[workspace] = window.id }
 
+        // The workspace it replaces stays on the target display, even if it was moved there
+        // from the source display earlier (it would otherwise come back: a swap).
+        let displaced = displayed[target.id]
+        if let displaced, displaced != workspace, home(of: displaced, screens)?.id != target.id,
+           pinnedDisplay(of: displaced, screens) == nil {
+            homeOverride[displaced] = target.uuid
+        }
         homeOverride[workspace] = target.uuid
         showWorkspace(workspace, on: target.id)
-        let remaining = (0..<workspaceCount).filter { $0 != workspace && home(of: $0, screens)?.id == source.id }
+        let remaining = (0..<workspaceCount).filter {
+            $0 != workspace && $0 != displaced && home(of: $0, screens)?.id == source.id
+        }
         let back = Self.workspaceLeftBehind(remaining: remaining, shownBefore: shownBefore[source.id])
         showWorkspace(back, on: source.id)
         log.debug("move workspace \(workspace) from display \(source.id) to \(target.id); display \(source.id) now shows \(back ?? -1)")
