@@ -38,16 +38,18 @@ final class TilingModel: ObservableObject {
     /// each column, one row per direction or dimension.
     struct PairedGroup {
         let title: String
+        /// Caption over the row titles.
+        let leading: String
         let columns: (String, String)
         let rows: [(title: String, actions: (String, String))]
     }
 
     static let pairedShortcuts: [PairedGroup] = [
-        PairedGroup(title: "Focus & Move", columns: ("Focus", "Move window"), rows: [
+        PairedGroup(title: "Focus & Move", leading: "Direction", columns: ("Focus", "Move window"), rows: [
             ("Left", ("focus left", "swap left")), ("Down", ("focus down", "swap down")),
             ("Up", ("focus up", "swap up")), ("Right", ("focus right", "swap right")),
         ]),
-        PairedGroup(title: "Resize", columns: ("Smaller", "Larger"), rows: [
+        PairedGroup(title: "Resize", leading: "Dimension", columns: ("Smaller", "Larger"), rows: [
             ("Width", ("resize width -50", "resize width +50")),
             ("Height", ("resize height -50", "resize height +50")),
         ]),

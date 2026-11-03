@@ -13,7 +13,7 @@ struct ShortcutsView: View {
 
             ForEach(TilingModel.pairedShortcuts, id: \.title) { group in
                 Section {
-                    ShortcutGrid(columns: [group.columns.0, group.columns.1]) {
+                    ShortcutGrid(columns: [group.columns.0, group.columns.1], leading: group.leading) {
                         ForEach(group.rows, id: \.title) { row in
                             GridRow {
                                 Text(row.title)
