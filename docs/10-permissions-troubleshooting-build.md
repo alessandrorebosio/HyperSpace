@@ -91,4 +91,15 @@ What is covered: config parsing (default config, workspace shortcuts and rules, 
 operations (stack/unstack), layout frames and weights, workspace homes and display sync (each display shows one of its own, moved workspaces, what a display shows after losing a workspace), new-window workspace choice, launch tracking and timeout,
 frame steps (only what changed, shrink before moving, across displays), saved state round trip and restorer matching, scratchpad frame/centring and the "window missing the size stays centred" logic, scratchpad actions and size config.
 
-The UI is not unit-tested; to check a settings layout, render it offscreen to a PNG from a temporary test.
+The UI is not unit-tested; to check a settings layout, render the pages to PNG files (below).
+
+### Screenshots of the settings window
+
+```bash
+make app
+build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings ~/Desktop/hyperspace-shots
+```
+
+Draws every page of the settings window (sidebar included), in light and dark appearance, at 720×460 (the minimum size) and 900×640, at 2× scale, as `<page>-<light|dark>-<width>x<height>.png` (e.g. `tiling-dark-900x640.png`), then quits.
+Nothing else starts: no event tap, remapping, tiling or menu bar item, and nothing is written to `config.json` (the pages show your current config). Run it with HyperSpace quit or running, it makes no difference.
+The code is in `Settings/SettingsSnapshot.swift`; the window is drawn offscreen (invisible) with `cacheDisplay`, so AppKit controls are included.
