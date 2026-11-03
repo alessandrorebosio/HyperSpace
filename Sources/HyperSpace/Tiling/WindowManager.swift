@@ -1908,7 +1908,7 @@ final class WindowManager {
             case .resize:
                 AX.setSize(element, CGSize(width: max(160, frame.width + dx), height: max(100, frame.height + dy)))
             }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self, generation == dragGeneration else { return }
                 dragWriteInFlight = false
                 // The point that arrived meanwhile is written even if the button was released.
