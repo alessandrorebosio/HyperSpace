@@ -198,7 +198,8 @@ enum KeyCodes {
     /// `left_` and `right_` keys of the table (`command`, `option`, `control`, `shift`).
     static let modifierKeyCodes: [UInt16: Modifiers] = {
         var result: [UInt16: Modifiers] = [:]
-        for (name, modifier) in [("command", Modifiers.cmd), ("option", .alt), ("control", .ctrl), ("shift", .shift)] {
+        let sides: [(name: String, modifier: Modifiers)] = [("command", .cmd), ("option", .alt), ("control", .ctrl), ("shift", .shift)]
+        for (name, modifier) in sides {
             for side in ["left", "right"] {
                 if let code = lookup("\(side)_\(name)")?.keyCode { result[code] = modifier }
             }
