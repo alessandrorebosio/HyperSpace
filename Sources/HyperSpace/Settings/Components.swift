@@ -77,12 +77,33 @@ struct ChoiceMenu<Content: View>: View {
 
     var body: some View {
         Menu(content: content) {
-            Image(systemName: "chevron.down.circle")
+            Image(systemName: "chevron.down.circle.fill")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color.accentColor)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .modifier(BorderlessMenu())
         .help(help)
+    }
+}
+
+/// A menu drawn as a borderless button: the dropdowns next to the key caps and the add menus
+/// at the end of a list. On macOS 14+ it uses the SwiftUI button style, so the label keeps its
+/// own colors and its symbols are drawn as vectors. The older borderlessButton style turns the
+/// label into a gray template bitmap, which comes out blurry.
+struct BorderlessMenu: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 14, *) {
+            content
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        } else {
+            content
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        }
     }
 }
 
@@ -91,7 +112,9 @@ struct RemoveButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+            Image(systemName: "minus.circle.fill")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
                 .frame(width: 20)
         }
         .buttonStyle(.borderless)
@@ -137,10 +160,7 @@ struct NoticeRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.title2)
-                .foregroundStyle(color)
-                .frame(width: 32)
+            SidebarIcon(symbol: symbol, color: color, size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
                 Text(detail).font(.callout).foregroundStyle(.secondary)
@@ -172,7 +192,7 @@ struct PermissionNotice: View {
     var body: some View {
         if missing {
             Section {
-                NoticeRow(symbol: "lock.shield", color: .orange, title: "Accessibility permission needed",
+                NoticeRow(symbol: "lock.shield.fill", color: .orange, title: "Accessibility permission needed",
                           detail: "Shortcuts, mouse buttons and window management stay off until HyperSpace is allowed in Privacy & Security → Accessibility.",
                           button: "Open System Settings…") { Permissions.openSettings() }
             }
@@ -191,8 +211,8 @@ struct SectionFooter: View {
     }
 }
 
-/// Label of the add buttons and menus at the end of a list. Only the icon takes the accent
-/// color: a borderless menu draws its text in the primary color whatever the style.
+/// Label of the add buttons and menus at the end of a list: the icon in the accent color,
+/// the text in the primary one.
 struct AddLabel: View {
     let title: String
 
@@ -200,7 +220,9 @@ struct AddLabel: View {
         Label {
             Text(title).foregroundStyle(Color.primary)
         } icon: {
-            Image(systemName: "plus.circle.fill").foregroundStyle(Color.accentColor)
+            Image(systemName: "plus.circle.fill")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color.accentColor)
         }
     }
 }

@@ -113,10 +113,7 @@ struct WorkspacesView: View {
                 } label: {
                     AddLabel(title: "Add App")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .tint(Color.accentColor)
+                .modifier(BorderlessMenu())
                 .disabled(model.workspaces.isEmpty)
             } header: {
                 Text("App Rules")
@@ -195,10 +192,7 @@ struct WindowRulesView: View {
                 } label: {
                     AddLabel(title: "Add App")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .tint(Color.accentColor)
+                .modifier(BorderlessMenu())
             } header: {
                 Text("Scratchpad Apps")
             } footer: {
@@ -346,7 +340,7 @@ private struct TilingOffNotice: View {
     var body: some View {
         if !model.enabled {
             Section {
-                NoticeRow(symbol: "pause.circle", color: .secondary, title: "Tiling is off",
+                NoticeRow(symbol: "pause.fill", color: .gray, title: "Tiling is off",
                           detail: "These settings are kept and apply as soon as tiling is on.",
                           button: "Turn On") { model.setEnabled(true) }
             }
@@ -495,9 +489,9 @@ private struct AppLabel: View {
     let bundleID: String
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             if let icon = TilingModel.appIcon(bundleID) {
-                Image(nsImage: icon).resizable().frame(width: 18, height: 18)
+                Image(nsImage: icon).resizable().interpolation(.high).frame(width: 22, height: 22)
             }
             Text(TilingModel.appName(bundleID))
         }

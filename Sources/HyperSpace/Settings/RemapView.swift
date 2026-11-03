@@ -45,10 +45,8 @@ private struct KeyboardLockRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: model.isKeyboardLocked ? "lock.fill" : "keyboard")
-                .font(.title2)
-                .foregroundStyle(model.isKeyboardLocked ? Color.orange : Color.secondary)
-                .frame(width: 32)
+            SidebarIcon(symbol: model.isKeyboardLocked ? "lock.fill" : "keyboard.fill",
+                        color: model.isKeyboardLocked ? .orange : SettingsNavigation.Page.keyboard.color, size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.isKeyboardLocked ? "Keyboard locked" : "Keyboard active").font(.headline)
                 Text(lockDetail).font(.callout).foregroundStyle(.secondary).monospacedDigit()
