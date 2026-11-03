@@ -65,7 +65,7 @@ enum SettingsSnapshot {
     /// The settings window as the app builds it, invisible, fully on screen.
     private static func makeWindow(_ root: SettingsRoot, size: NSSize, appearance: NSAppearance?) -> NSWindow {
         let controller = NSHostingController(rootView: root)
-        controller.sizingOptions = [.minSize]
+        controller.sizingOptions = []
         if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -76,6 +76,7 @@ enum SettingsSnapshot {
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.appearance = appearance
+        window.contentMinSize = NSSize(width: 720, height: 460)
         window.setContentSize(size)
         // Inside the visible area of the screen, so AppKit has no reason to move or clip it.
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
