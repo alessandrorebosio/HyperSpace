@@ -86,18 +86,15 @@ struct SettingsRoot: View {
             .modifier(NoSidebarToggle())
         } detail: {
             let page = navigation.page ?? .keyboard
-            VStack(spacing: 0) {
-                PageHeader(page: page)
-                Group {
-                    switch page {
-                    case .keyboard: RemapView(model: keyboard)
-                    case .mouse: MouseView(model: mouse)
-                    case .tiling: TilingView(model: tiling)
-                    case .workspaces: WorkspacesView(model: tiling)
-                    case .windowRules: WindowRulesView(model: tiling)
-                    case .shortcuts: TilingShortcutsView(model: tiling)
-                    case .settings: GeneralView(model: general)
-                    }
+            Group {
+                switch page {
+                case .keyboard: RemapView(model: keyboard)
+                case .mouse: MouseView(model: mouse)
+                case .tiling: TilingView(model: tiling)
+                case .workspaces: WorkspacesView(model: tiling)
+                case .windowRules: WindowRulesView(model: tiling)
+                case .shortcuts: TilingShortcutsView(model: tiling)
+                case .settings: GeneralView(model: general)
                 }
             }
             .navigationTitle(page.title)
@@ -130,20 +127,21 @@ extension EnvironmentValues {
     }
 }
 
-/// One short line above every page saying what it is for. The page's name is the window title,
-/// so it is not repeated here. Outside the form, so it is plain text and not a card.
+/// First row of every page: one short line saying what the page is for. The page's name is
+/// the window title, so it is not repeated here.
 struct PageHeader: View {
-    let page: SettingsNavigation.Page
+    @Environment(\.settingsPage) private var page
 
     var body: some View {
-        Text(page.summary)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 26)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
+        if let page {
+            Section {
+                Text(page.summary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 }
 
@@ -261,10 +259,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling,
                                     general: GeneralModel(actions: actions))
             let controller = NSHostingController(rootView: root)
-            // The window's size is its own: the content must not size it (a content taller than
-            // the window made it overflow upward, hiding the top of every page). The minimum
-            // size is set on the window below.
-            controller.sizingOptions = []
+            // Only a minimum size: the preferred size would pin the window and block resizing.
+            controller.sizingOptions = [.minSize]
             // SwiftUI owns the toolbar and the title (the page's), so the sidebar is the system
             // Liquid Glass one and lines up with the window controls. This only takes when the
             // controller is set on an existing window, not with NSWindow(contentViewController:).

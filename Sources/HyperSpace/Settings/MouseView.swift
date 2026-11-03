@@ -5,6 +5,7 @@ struct MouseView: View {
 
     var body: some View {
         Form {
+            PageHeader()
             PermissionNotice()
 
             Section {

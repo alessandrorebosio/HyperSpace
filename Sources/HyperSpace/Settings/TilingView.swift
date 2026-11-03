@@ -6,6 +6,7 @@ struct TilingView: View {
 
     var body: some View {
         Form {
+            PageHeader()
             PermissionNotice()
 
             Section {
@@ -62,6 +63,7 @@ struct WorkspacesView: View {
 
     var body: some View {
         Form {
+            PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 
@@ -132,6 +134,7 @@ struct WindowRulesView: View {
 
     var body: some View {
         Form {
+            PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 
@@ -212,6 +215,7 @@ struct TilingShortcutsView: View {
 
     var body: some View {
         Form {
+            PageHeader()
             PermissionNotice()
             TilingOffNotice(model: model)
 

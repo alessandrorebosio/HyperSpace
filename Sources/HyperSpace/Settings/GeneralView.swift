@@ -65,6 +65,7 @@ struct GeneralView: View {
 
     var body: some View {
         Form {
+            PageHeader()
 
             Section {
                 LabeledContent {

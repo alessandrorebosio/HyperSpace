@@ -5,6 +5,7 @@ struct RemapView: View {
 
     var body: some View {
         Form {
+            PageHeader()
             Section {
                 KeyboardLockRow(model: model)
             } header: {

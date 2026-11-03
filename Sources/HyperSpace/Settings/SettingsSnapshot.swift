@@ -65,7 +65,7 @@ enum SettingsSnapshot {
     /// The settings window as the app builds it, invisible, fully on screen.
     private static func makeWindow(_ root: SettingsRoot, size: NSSize, appearance: NSAppearance?) -> NSWindow {
         let controller = NSHostingController(rootView: root)
-        controller.sizingOptions = []
+        controller.sizingOptions = [.minSize]
         if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
