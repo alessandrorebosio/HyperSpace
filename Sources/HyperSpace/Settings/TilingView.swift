@@ -27,9 +27,9 @@ struct TilingView: View {
 
             Section {
                 SliderRow(title: "Gap between windows",
-                          value: model.gap, range: 0...64, step: 2) { model.setGap($0, commit: $1) }
+                          value: model.gap, range: TilingModel.spacingRange, step: 2) { model.setGap($0, commit: $1) }
                 SliderRow(title: "Margin around the screen",
-                          value: model.padding, range: 0...64, step: 2) { model.setPadding($0, commit: $1) }
+                          value: model.padding, range: TilingModel.spacingRange, step: 2) { model.setPadding($0, commit: $1) }
             } header: {
                 Text("Spacing")
             } footer: {
@@ -40,7 +40,7 @@ struct TilingView: View {
 
             Section {
                 SliderRow(title: "Visible edges",
-                          value: model.accordionPadding, range: 0...120, step: 5) { model.setAccordionPadding($0, commit: $1) }
+                          value: model.accordionPadding, range: TilingModel.accordionRange, step: 5) { model.setAccordionPadding($0, commit: $1) }
                 AccordionPreview(peek: model.accordionPadding)
                     .frame(height: 70)
                     .frame(maxWidth: .infinity)
@@ -216,7 +216,7 @@ private struct LayoutThumbnail: View {
             let margin = 4 + inset
             let area = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
             let count = kind == .monocle ? 1 : 3
-            let frames = Layout.frames(kind, weights: Array(repeating: 1, count: count), in: area, gap: spacing, ratio: 0.55,
+            let frames = Layout.frames(kind, weights: Array(repeating: 1, count: count), in: area, gap: spacing, ratio: TilingConfig.defaultMasterRatio,
                                        focused: 1, peek: max(compact ? 8 : 12, CGFloat(peek) * 0.35))
             let order = kind == .accordion ? [0, 2, 1] : Array(frames.indices)
             let corner = max(2.5, screenCorner - margin)

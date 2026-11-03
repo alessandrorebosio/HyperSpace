@@ -70,7 +70,7 @@ In `accordion`, `focus left/right` and `swap left/right` go to / exchange with t
 
 ## Gaps and padding
 
-`gap` = space between windows, `padding` = margin around the display's visible area. Both ≥ 0 in the file (0–64 in the UI, steps of 2). The layout thumbnails in *Settings → Tiling* are drawn to scale with these values.
+`gap` = space between windows, `padding` = margin around the display's visible area. Both 0–64, in the file (clamped) and in the UI (steps of 2). The layout thumbnails in *Settings → Tiling* are drawn to scale with these values.
 
 ## Floating windows and rules
 

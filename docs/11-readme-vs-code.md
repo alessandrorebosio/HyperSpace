@@ -26,7 +26,7 @@ The repository README and these pages were compared with the code (a second, ful
 
 - With more than one workspace configured, the menu bar icon is replaced by the workspace shown on each display (`1 2`, the focused display's workspace in a filled box).
 - Mouse buttons must be in 2…31; 0/1 produce a config error.
-- Unknown JSON keys are silently ignored; values are clamped (`gap`/`padding` ≥ 0, `masterRatio` 0.1…0.9, `scratchpad` sizes 0.2…1).
+- Unknown JSON keys are silently ignored; values are clamped (`gap`/`padding` 0…64, `masterRatio` 0.1…0.9, `scratchpad` sizes 0.2…1).
 - The `tiling` action and layout changes are runtime-only: they are not written to the file, and a reload restores the file's values.
 - While the keyboard is locked the tap also listens to every key event and `NX_SYSDEFINED`.
 - `print_screen`/`scroll_lock`/`pause` share key codes with F13/F14/F15 (see [Keyboard](03-keyboard.md#combinations-and-carriers)).

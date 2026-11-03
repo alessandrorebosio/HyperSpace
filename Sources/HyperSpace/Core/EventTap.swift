@@ -105,11 +105,21 @@ final class EventTap {
     private func resetHeldState(includingMouse: Bool) {
         carrierDown = [Bool](repeating: false, count: config.carriers.count)
         heldModifiers = []
-        for i in swallowedKeys.indices { swallowedKeys[i] = false }
+        clearSwallowedKeys()
         if includingMouse {
             dragMode = nil
-            for i in swallowedButtons.indices { swallowedButtons[i] = false }
+            clearSwallowedButtons()
         }
+    }
+
+    /// Tap thread: the key-ups still owed to a swallowed key down are not swallowed any more.
+    private func clearSwallowedKeys() {
+        for i in swallowedKeys.indices { swallowedKeys[i] = false }
+    }
+
+    /// Tap thread: the same for mouse buttons.
+    private func clearSwallowedButtons() {
+        for i in swallowedButtons.indices { swallowedButtons[i] = false }
     }
 
     /// Locks for `KeyboardLock.minutes` (or until unlocked when 0), or unlocks.
@@ -149,14 +159,14 @@ final class EventTap {
     func setButtonsSuspended(_ suspended: Bool) {
         onTapThread { [self] in
             buttonsSuspended = suspended
-            for i in swallowedButtons.indices { swallowedButtons[i] = false }
+            clearSwallowedButtons()
         }
     }
 
     func setKeyBindingsSuspended(_ suspended: Bool) {
         onTapThread { [self] in
             keyBindingsSuspended = suspended
-            for i in swallowedKeys.indices { swallowedKeys[i] = false }
+            clearSwallowedKeys()
         }
     }
 

@@ -174,22 +174,24 @@ enum MediaKey: String {
 enum Pointer {
     /// A native "back" (button 3) or "forward" (button 4) mouse click at the pointer.
     static func navigationButton(back: Bool) {
-        guard let location = CGEvent(source: nil)?.location else { return }
         let number: Int64 = back ? 3 : 4
-        for type in [CGEventType.otherMouseDown, .otherMouseUp] {
-            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: .center) else { return }
-            event.setIntegerValueField(.mouseEventButtonNumber, value: number)
-            event.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
-            event.post(tap: .cghidEventTap)
+        click(down: .otherMouseDown, up: .otherMouseUp, button: .center) {
+            $0.setIntegerValueField(.mouseEventButtonNumber, value: number)
         }
     }
 
     /// Left click at the current pointer position with modifiers held.
     static func click(_ mods: Modifiers) {
+        click(down: .leftMouseDown, up: .leftMouseUp, button: .left) { $0.flags = mods.cgFlags }
+    }
+
+    /// A press and a release at the pointer, marked as ours so the tap lets them through;
+    /// `configure` adjusts each event before it is posted.
+    private static func click(down: CGEventType, up: CGEventType, button: CGMouseButton, configure: (CGEvent) -> Void) {
         guard let location = CGEvent(source: nil)?.location else { return }
-        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: .left) else { return }
-            event.flags = mods.cgFlags
+        for type in [down, up] {
+            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: button) else { return }
+            configure(event)
             event.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
             event.post(tap: .cghidEventTap)
         }

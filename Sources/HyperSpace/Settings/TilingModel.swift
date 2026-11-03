@@ -73,12 +73,18 @@ final class TilingModel: ObservableObject {
         return all
     }()
 
-    @Published private(set) var enabled = TilingConfig.defaultEnabled
-    @Published private(set) var layout = TilingConfig.defaultLayout
-    @Published private(set) var gap = Int(TilingConfig.defaultGap)
-    @Published private(set) var padding = Int(TilingConfig.defaultPadding)
-    @Published private(set) var mouseFollowsFocus = TilingConfig.defaultMouseFollowsFocus
-    @Published private(set) var accordionPadding = Int(TilingConfig.defaultAccordionPadding)
+    /// Where every option starts: the defaults of the config itself.
+    private static let defaults = TilingConfig()
+    /// The slider ranges (the config accepts the same ones).
+    static let spacingRange = Int(TilingConfig.spacingRange.lowerBound)...Int(TilingConfig.spacingRange.upperBound)
+    static let accordionRange = 0...120
+
+    @Published private(set) var enabled = TilingModel.defaults.enabled
+    @Published private(set) var layout = TilingModel.defaults.layout
+    @Published private(set) var gap = Int(TilingModel.defaults.gap)
+    @Published private(set) var padding = Int(TilingModel.defaults.padding)
+    @Published private(set) var mouseFollowsFocus = TilingModel.defaults.mouseFollowsFocus
+    @Published private(set) var accordionPadding = Int(TilingModel.defaults.accordionPadding)
     @Published var workspaces: [Workspace] = []
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
@@ -102,8 +108,8 @@ final class TilingModel: ObservableObject {
         var toggleKeys = ""
         var tileKeys = ""
         var id: String { bundleID }
-        var toggleAction: String { "scratchpad \(bundleID)" }
-        var tileAction: String { "move-to-scratchpad \(bundleID)" }
+        var toggleAction: String { TilingModel.togglePrefix + bundleID }
+        var tileAction: String { TilingModel.tilePrefix + bundleID }
     }
     @Published private(set) var scratchpadApps: [ScratchpadApp] = []
     @Published private(set) var capturing: Field?
@@ -138,11 +144,11 @@ final class TilingModel: ObservableObject {
     func setLayout(_ kind: LayoutKind) { layout = kind; save() }
     /// `commit` false while a slider is being dragged: the value shows at once, the config is
     /// written (and the windows retiled) once, when the slider is released.
-    func setGap(_ value: Int, commit: Bool = true) { gap = max(0, min(64, value)); if commit { save() } }
-    func setPadding(_ value: Int, commit: Bool = true) { padding = max(0, min(64, value)); if commit { save() } }
+    func setGap(_ value: Int, commit: Bool = true) { gap = value.clamped(to: Self.spacingRange); if commit { save() } }
+    func setPadding(_ value: Int, commit: Bool = true) { padding = value.clamped(to: Self.spacingRange); if commit { save() } }
     func setMouseFollowsFocus(_ on: Bool) { mouseFollowsFocus = on; save() }
     func setAccordionPadding(_ value: Int, commit: Bool = true) {
-        accordionPadding = max(0, min(120, value))
+        accordionPadding = value.clamped(to: Self.accordionRange)
         if commit { save() }
     }
 
@@ -230,8 +236,8 @@ final class TilingModel: ObservableObject {
         Self.runningApps.filter { app in !scratchpadApps.contains { $0.bundleID == app.bundleID } }
     }
 
-    private static let togglePrefix = "scratchpad "
-    private static let tilePrefix = "move-to-scratchpad "
+    fileprivate static let togglePrefix = "scratchpad "
+    fileprivate static let tilePrefix = "move-to-scratchpad "
 
     /// Adds an app and records its show/hide shortcut right away.
     func addScratchpadApp(_ bundleID: String) {
@@ -288,10 +294,16 @@ final class TilingModel: ObservableObject {
     private static func info(_ bundleID: String) -> (name: String, icon: NSImage?) {
         if let info = appInfo[bundleID] { return info }
         let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-        let info = (name: url.map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID,
+        let info = (name: url.map { Self.appDisplayName(at: $0) } ?? bundleID,
                     icon: url.map { NSWorkspace.shared.icon(forFile: $0.path) })
         appInfo[bundleID] = info
         return info
+    }
+
+    /// The name Finder shows for the app, less a trailing ".app" (shown when extensions are on).
+    private static func appDisplayName(at url: URL) -> String {
+        let name = FileManager.default.displayName(atPath: url.path)
+        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 
     static func appName(_ bundleID: String) -> String { info(bundleID).name }
@@ -369,12 +381,14 @@ final class TilingModel: ObservableObject {
     private func load() {
         let root = ConfigWriter.read()
         let tiling = root["tiling"] as? [String: Any] ?? [:]
-        enabled = tiling["enabled"] as? Bool ?? TilingConfig.defaultEnabled
-        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? TilingConfig.defaultLayout
-        gap = (tiling["gap"] as? NSNumber)?.intValue ?? Int(TilingConfig.defaultGap)
-        padding = (tiling["padding"] as? NSNumber)?.intValue ?? Int(TilingConfig.defaultPadding)
-        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? TilingConfig.defaultMouseFollowsFocus
-        accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(TilingConfig.defaultAccordionPadding)
+        let defaults = Self.defaults
+        enabled = tiling["enabled"] as? Bool ?? defaults.enabled
+        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? defaults.layout
+        // The config clamps these too: what a hand-edited file holds shows as it will apply.
+        gap = ((tiling["gap"] as? NSNumber)?.intValue ?? Int(defaults.gap)).clamped(to: Self.spacingRange)
+        padding = ((tiling["padding"] as? NSNumber)?.intValue ?? Int(defaults.padding)).clamped(to: Self.spacingRange)
+        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? defaults.mouseFollowsFocus
+        accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(defaults.accordionPadding)
         floating = tiling["floating"] as? [String] ?? []
         floatingWindows = (tiling["floatingWindows"] as? [[String: Any]] ?? []).compactMap { entry in
             guard let title = entry["title"] as? String, !title.isEmpty else { return nil }
@@ -418,7 +432,7 @@ final class TilingModel: ObservableObject {
             tiling["gap"] = gap
             tiling["padding"] = padding
             tiling["mouseFollowsFocus"] = mouseFollowsFocus
-            tiling["accordionPadding"] = accordionPadding == Int(TilingConfig.defaultAccordionPadding) ? nil : accordionPadding
+            tiling["accordionPadding"] = accordionPadding == Int(Self.defaults.accordionPadding) ? nil : accordionPadding
             tiling["floating"] = floating
             tiling["floatingWindows"] = floatingWindows.isEmpty ? nil : floatingWindows.map { rule -> [String: Any] in
                 var entry: [String: Any] = ["title": rule.title]

@@ -170,6 +170,12 @@ final class WindowManager {
     private var pendingDiscoveries = 0
     private var afterDiscoveries: [() -> Void] = []
 
+    /// The tracked windows in tiling order.
+    private var orderedWindows: [ManagedWindow] { order.compactMap { windows[$0] } }
+
+    /// The smallest size resizing by hand (a shortcut, a drag) takes a window to.
+    static let minimumWindowSize = CGSize(width: 160, height: 100)
+
     /// At least one workspace per display, even when fewer are configured.
     private var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
 
@@ -490,16 +496,19 @@ final class WindowManager {
     @discardableResult
     private func track(_ probe: AX.WindowProbe, in watcher: AppWatcher) -> ManagedWindow? {
         let element = probe.element
+        let appID = watcher.bundleID ?? "?"
+        let role = probe.role ?? "-"
         guard let id = probe.id else {
             // The Finder desktop (a scroll area) is listed among its windows: not worth a line.
             guard probe.role != kAXScrollAreaRole, probe.kind != .pending else { return nil }
-            log.debug("no window id for a window of \(watcher.bundleID ?? "?", privacy: .public) (role \(probe.role ?? "-", privacy: .public))")
-            note("no window id for a window of \(watcher.bundleID ?? "?") (role \(probe.role ?? "-"))")
+            let message = "no window id for a window of \(appID) (role \(role))"
+            log.debug("\(message, privacy: .public)")
+            note(message)
             return nil
         }
         guard windows[id] == nil else { return nil }
         guard probe.kind == .standard || probe.kind == .dialog else {
-            log.debug("skip window of \(watcher.bundleID ?? "?", privacy: .public): role \(probe.role ?? "-", privacy: .public) subrole \(probe.subrole ?? "-", privacy: .public)")
+            log.debug("skip window of \(appID, privacy: .public): role \(role, privacy: .public) subrole \(probe.subrole ?? "-", privacy: .public)")
             return nil
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
@@ -560,7 +569,7 @@ final class WindowManager {
 
     /// The window a new dialog of `pid` belongs to.
     private func dialogParent(of pid: pid_t, main: CGWindowID?, excluding id: CGWindowID) -> ManagedWindow? {
-        let mine = order.compactMap { windows[$0] }.filter { $0.pid == pid && $0.id != id && $0.parent == nil }
+        let mine = orderedWindows.filter { $0.pid == pid && $0.id != id && $0.parent == nil }
         if let main, let window = mine.first(where: { $0.id == main }) { return window }
         if let window = mine.first(where: { lastFocused[$0.workspace] == $0.id && display(showing: $0.workspace) != nil }) { return window }
         return mine.first { display(showing: $0.workspace) != nil } ?? mine.first
@@ -605,7 +614,7 @@ final class WindowManager {
         guard running else { return }
         let focusedID = focused()?.id
         guard let name else {
-            let pad = order.compactMap { windows[$0] }.filter(\.scratchpad)
+            let pad = orderedWindows.filter(\.scratchpad)
             if let shown = pad.first(where: { $0.scratchpadShown && $0.id == focusedID }) {
                 hideScratchpad(shown)
             } else if let shown = pad.first(where: \.scratchpadShown) {
@@ -619,7 +628,7 @@ final class WindowManager {
             note("scratchpad: app not found: \(name)")
             return
         }
-        let mine = order.compactMap { windows[$0] }.filter { $0.bundleID == bundleID }
+        let mine = orderedWindows.filter { $0.bundleID == bundleID }
         if let window = mine.first(where: \.scratchpad) {
             if window.scratchpadShown, window.id == focusedID { hideScratchpad(window) } else { showScratchpad(window) }
         } else if let window = mine.first(where: { $0.id == focusedID }) ?? mine.first {
@@ -647,7 +656,7 @@ final class WindowManager {
             note("scratchpad: app not found: \(name)")
             return
         }
-        let mine = order.compactMap { windows[$0] }.filter { $0.bundleID == bundleID }
+        let mine = orderedWindows.filter { $0.bundleID == bundleID }
         let focusedID = focused()?.id
         if let window = mine.first(where: \.scratchpad) ?? mine.first(where: { $0.id == focusedID }) ?? mine.first {
             toggleScratchpadTiling(window)
@@ -773,7 +782,7 @@ final class WindowManager {
         }
         let bounds = currentBounds()
         for workspace in 0..<workspaceCount {
-            let members = order.compactMap { windows[$0] }.filter { $0.workspace == workspace }
+            let members = orderedWindows.filter { $0.workspace == workspace }
             guard !members.isEmpty else { continue }
             lines.append("Workspace \(name(of: workspace)) (#\(workspace + 1)):")
             for window in members {
@@ -855,7 +864,7 @@ final class WindowManager {
     /// The state to save, without titles (read later, off the main thread), and the windows
     /// whose titles go with it.
     private func currentState() -> (state: WorkspaceState, elements: [AXUIElement]) {
-        let list = order.compactMap { windows[$0] }.filter { $0.bundleID != nil }
+        let list = orderedWindows.filter { $0.bundleID != nil }
         var index: [CGWindowID: Int] = [:]
         var state = WorkspaceState(savedAt: .distantPast)
         for (i, window) in list.enumerated() {
@@ -1077,11 +1086,7 @@ final class WindowManager {
         check()
     }
 
-    func retileNow() {
-        retile()
-    }
-
-    private func retile() {
+    func retile() {
         guard running, config.enabled, drag == nil else { return }
         enterScope()
         defer { leaveScope() }
@@ -1146,7 +1151,7 @@ final class WindowManager {
 
     /// Tiled windows of a workspace that are on screen, in tiling order.
     private func tiledWindows(in workspace: Int, bounds: [CGWindowID: CGRect]) -> [ManagedWindow] {
-        order.compactMap { windows[$0] }.filter {
+        orderedWindows.filter {
             $0.workspace == workspace && !$0.isFloating && !$0.scratchpad && bounds[$0.id] != nil
         }
     }
@@ -1472,7 +1477,7 @@ final class WindowManager {
         enterScope()
         defer { leaveScope() }
         let bounds = currentBounds()
-        let candidates = order.compactMap { windows[$0] }.filter {
+        let candidates = orderedWindows.filter {
             $0.workspace == workspace && !$0.scratchpad && bounds[$0.id] != nil
         }
         if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
@@ -1563,7 +1568,7 @@ final class WindowManager {
         let screens = currentScreens()
         var apps: [pid_t: NSRunningApplication] = [:]
         return (0..<workspaceCount).map { index in
-            let members = order.compactMap { windows[$0] }.filter { $0.workspace == index && !$0.scratchpad }
+            let members = orderedWindows.filter { $0.workspace == index && !$0.scratchpad }
             let entries = members.map { window -> WorkspaceSummary.Window in
                 let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
                 apps[window.pid] = app
@@ -1748,7 +1753,7 @@ final class WindowManager {
     }
 
     func adjustRatio(_ delta: CGFloat) {
-        updateActiveScreen { $0.ratio = min(0.9, max(0.1, $0.ratio + delta)) }
+        updateActiveScreen { $0.ratio = ($0.ratio + delta).clamped(to: TilingConfig.ratioRange) }
     }
 
     /// Grows or shrinks the focused window by `delta` points. Floating windows are
@@ -1761,7 +1766,11 @@ final class WindowManager {
         guard let window = focused(), let frame = bounds[window.id] else { return }
         if window.isFloating {
             var resized = frame
-            if isWidth { resized.size.width = max(160, frame.width + delta) } else { resized.size.height = max(100, frame.height + delta) }
+            if isWidth {
+                resized.size.width = max(Self.minimumWindowSize.width, frame.width + delta)
+            } else {
+                resized.size.height = max(Self.minimumWindowSize.height, frame.height + delta)
+            }
             setFrame(window, resized)
             return
         }
@@ -1779,7 +1788,7 @@ final class WindowManager {
             if isWidth == splitIsHorizontal {
                 // Across the master/stack split: the master grows, a stack window grows by shrinking it.
                 let change = delta / (splitIsHorizontal ? area.width : area.height)
-                state.ratio = min(0.9, max(0.1, state.ratio + (position == 0 ? change : -change)))
+                state.ratio = (state.ratio + (position == 0 ? change : -change)).clamped(to: TilingConfig.ratioRange)
                 setState(state, for: screen.id)
             } else {
                 // Along the stack; the master always spans the whole length.
@@ -1909,7 +1918,8 @@ final class WindowManager {
             case .move:
                 AX.setPosition(element, CGPoint(x: frame.minX + dx, y: frame.minY + dy))
             case .resize:
-                AX.setSize(element, CGSize(width: max(160, frame.width + dx), height: max(100, frame.height + dy)))
+                let minimum = WindowManager.minimumWindowSize
+                AX.setSize(element, CGSize(width: max(minimum.width, frame.width + dx), height: max(minimum.height, frame.height + dy)))
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self, generation == dragGeneration else { return }
@@ -1958,7 +1968,7 @@ final class WindowManager {
             case .wide: delta = (point.y - session.start.y) / screen.visible.height
             case .columns, .monocle, .accordion: delta = 0
             }
-            state.ratio = min(0.9, max(0.1, state.ratio + (isMaster ? delta : -delta)))
+            state.ratio = (state.ratio + (isMaster ? delta : -delta)).clamped(to: TilingConfig.ratioRange)
             setState(state, for: screen.id)
         }
         scheduleRetile()

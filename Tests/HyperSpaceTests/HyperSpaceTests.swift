@@ -37,6 +37,27 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(config.tiling.assignments["com.spotify.client"] == 1)
     }
 
+    /// Binding the same shortcut twice keeps one action: the last (no orphan left in the list).
+    @Test func lastBindingWins() throws {
+        let config = try config(#"""
+        {"keyboard":{"bindings":[{"keys":"hyper+h","action":"focus left"},{"keys":"hyper+h","action":"focus right"}]},
+         "mouse":{"buttons":[{"button":3,"action":"navigate back"},{"button":3,"action":"navigate forward"}]}}
+        """#)
+        let combo = try KeyCombo.parse("hyper+h")
+        let key = config.tap.keyTable[TapConfig.slot(Int(combo.keyCode), combo.modifiers)]
+        #expect(config.tap.actions[Int(key)] == .focus(.right))
+        let button = config.tap.buttonTable[TapConfig.slot(3, [])]
+        #expect(config.tap.actions[Int(button)] == .navigate(back: false))
+        #expect(config.tap.actions.count == 2)
+    }
+
+    @Test func spacingIsClamped() throws {
+        let tiling = try config(#"{"tiling":{"gap":500,"padding":-3}}"#).tiling
+        #expect(tiling.gap == 64)
+        #expect(tiling.padding == 0)
+        #expect(try config("{}").tiling.gap == TilingConfig().gap)
+    }
+
     @Test func ruleForUnknownWorkspaceFails() {
         #expect(throws: ConfigError.self) {
             try config(#"{"tiling":{"workspaces":[{"name":"1"}],"assign":[{"app":"x","workspace":"nope"}]}}"#)

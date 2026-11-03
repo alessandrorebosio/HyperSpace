@@ -91,7 +91,7 @@ Every section and key is optional.
 | `workspaces[]` | `{ name?, switch?, move? }` | `[]` | missing/empty `name` = 1-based position; empty `switch`/`move` = no shortcut |
 | `assign[]` | `{ app, workspace }` | `[]` | `workspace` is a name or a 1-based number; if it does not exist → error |
 
-The UI limits gap and padding to 0–64 in steps of 2, but the file accepts any value ≥ 0.
+The UI moves gap and padding in steps of 2; both are limited to 0–64 in the file as well (a larger or smaller value is clamped).
 
 Workspace notes: with `workspaces` empty there are still `max(1, number of displays)` workspaces, with no shortcuts. If fewer workspaces are configured than displays there is still one per display;
 those past the last configured are named by their number. See [Workspaces and displays](07-workspaces-and-displays.md).

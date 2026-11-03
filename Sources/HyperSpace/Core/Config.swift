@@ -104,13 +104,22 @@ struct TapConfig: Equatable {
     }
 
     mutating func bindKey(_ combo: KeyCombo, _ action: Action) {
-        actions.append(action)
-        keyTable[Self.slot(Int(combo.keyCode), combo.modifiers)] = Int16(actions.count - 1)
+        Self.bind(action, in: &keyTable, at: Self.slot(Int(combo.keyCode), combo.modifiers), actions: &actions)
     }
 
     mutating func bindButton(_ button: Int, _ mods: Modifiers, _ action: Action) {
-        actions.append(action)
-        buttonTable[Self.slot(button, mods)] = Int16(actions.count - 1)
+        Self.bind(action, in: &buttonTable, at: Self.slot(button, mods), actions: &actions)
+    }
+
+    /// Puts `action` in a table slot. A slot already taken keeps its place in `actions` and
+    /// gets the new action (the last binding wins) instead of leaving an action nobody reaches.
+    private static func bind(_ action: Action, in table: inout [Int16], at slot: Int, actions: inout [Action]) {
+        if table[slot] >= 0 {
+            actions[Int(table[slot])] = action
+        } else {
+            actions.append(action)
+            table[slot] = Int16(actions.count - 1)
+        }
     }
 
     /// A key remapped (in HID) onto `keyCode` that the tap turns into a combination.
@@ -170,6 +179,10 @@ struct TilingConfig {
     static let defaultGap: CGFloat = 8
     static let defaultPadding: CGFloat = 8
     static let defaultMasterRatio: CGFloat = 0.55
+    /// What the config accepts (and the settings sliders offer) for the gap and the padding.
+    static let spacingRange: ClosedRange<CGFloat> = 0...64
+    /// The share of the screen the master area takes.
+    static let ratioRange: ClosedRange<CGFloat> = 0.1...0.9
     static let defaultMouseFollowsFocus = true
     static let defaultScratchpadSize = CGSize(width: 0.6, height: 0.7)
     static let defaultAccordionPadding: CGFloat = 30
@@ -194,7 +207,7 @@ struct TilingConfig {
 }
 
 /// Windows that float by title (a dialog, an app's own settings), of one app or any.
-struct FloatingWindowRule: Equatable {
+struct FloatingWindowRule: Hashable {
     var app: String?
     /// Case-insensitive substring of the window title.
     var title: String
@@ -210,6 +223,13 @@ extension TilingConfig {
     func floats(app bundleID: String?, title: String?) -> Bool {
         if let bundleID, floating.contains(bundleID) { return true }
         return floatingWindows.contains { $0.matches(app: bundleID, title: title) }
+    }
+}
+
+extension Comparable {
+    /// `self` limited to `range`.
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(range.upperBound, max(range.lowerBound, self))
     }
 }
 
@@ -307,23 +327,23 @@ struct Config {
     /// Fills `tiling` and returns the workspace shortcuts to bind.
     private mutating func parseTiling(_ raw: RawConfig.Tiling) throws -> [(String, Action)] {
         var shortcuts: [(String, Action)] = []
-        tiling.enabled = raw.enabled ?? TilingConfig.defaultEnabled
+        let defaults = TilingConfig()
+        tiling.enabled = raw.enabled ?? defaults.enabled
         if let layout = raw.layout {
             guard let kind = LayoutKind(rawValue: layout.lowercased()) else { throw ConfigError("unknown layout '\(layout)'") }
             tiling.layout = kind
         }
-        tiling.gap = CGFloat(max(0, raw.gap ?? Double(TilingConfig.defaultGap)))
-        tiling.padding = CGFloat(max(0, raw.padding ?? Double(TilingConfig.defaultPadding)))
-        tiling.masterRatio = CGFloat(min(0.9, max(0.1, raw.masterRatio ?? Double(TilingConfig.defaultMasterRatio))))
+        tiling.gap = raw.gap.map { CGFloat($0).clamped(to: TilingConfig.spacingRange) } ?? defaults.gap
+        tiling.padding = raw.padding.map { CGFloat($0).clamped(to: TilingConfig.spacingRange) } ?? defaults.padding
+        tiling.masterRatio = raw.masterRatio.map { CGFloat($0).clamped(to: TilingConfig.ratioRange) } ?? defaults.masterRatio
         tiling.floating = Set(raw.floating ?? [])
         tiling.floatingWindows = (raw.floatingWindows ?? []).filter { !$0.title.isEmpty }
             .map { FloatingWindowRule(app: $0.app.flatMap { $0.isEmpty ? nil : $0 }, title: $0.title) }
-        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? TilingConfig.defaultMouseFollowsFocus
-        tiling.accordionPadding = CGFloat(min(200, max(0, raw.accordionPadding ?? Double(TilingConfig.defaultAccordionPadding))))
-        func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat(min(1, max(0.2, $0))) } ?? fallback }
-        let defaultSize = TilingConfig.defaultScratchpadSize
-        tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, defaultSize.width),
-                                       height: fraction(raw.scratchpad?.height, defaultSize.height))
+        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? defaults.mouseFollowsFocus
+        tiling.accordionPadding = raw.accordionPadding.map { CGFloat($0).clamped(to: 0...200) } ?? defaults.accordionPadding
+        func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat($0).clamped(to: 0.2...1) } ?? fallback }
+        tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, defaults.scratchpadSize.width),
+                                       height: fraction(raw.scratchpad?.height, defaults.scratchpadSize.height))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(workspace.name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)")
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }

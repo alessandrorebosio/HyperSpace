@@ -10,7 +10,7 @@ enum ConfigWriter {
         return root
     }
 
-    static func update(_ change: (inout [String: Any]) -> Void) throws {
+    private static func update(_ change: (inout [String: Any]) -> Void) throws {
         var root = read()
         change(&root)
         let text = format(root, depth: 0) + "\n"

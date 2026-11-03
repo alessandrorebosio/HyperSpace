@@ -62,9 +62,7 @@ final class GeneralModel: ObservableObject {
         return ("Running", .green)
     }
 
-    var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-    }
+    var version: String { AppInfo.version }
 }
 
 /// The General page: the app and its state, startup, the config file, the permission.

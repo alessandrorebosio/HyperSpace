@@ -21,7 +21,7 @@ final class ActionRunner {
         case .toggleFloat: windowManager.toggleFloat()
         case .toggleTiling: windowManager.toggleEnabled()
         case .toggleAccordion: windowManager.toggleAccordion()
-        case .retile: windowManager.retileNow()
+        case .retile: windowManager.retile()
         case .focusNextDisplay: windowManager.focusNextDisplay()
         case .moveWorkspaceToNextDisplay: windowManager.moveWorkspaceToNextDisplay()
         case .workspace(let index): windowManager.switchWorkspace(index)

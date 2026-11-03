@@ -201,11 +201,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let mouse = MouseModel(eventTap: eventTap)
             let tiling = TilingModel(eventTap: eventTap)
             let navigation = SettingsNavigation()
-            navigation.onSwitch = { [weak keyboard, weak mouse, weak tiling] in
-                keyboard?.stopCapture()
-                mouse?.stopCapture()
-                tiling?.stopCapture()
-            }
+            navigation.onSwitch = { [weak self] in self?.stopAllCaptures() }
             let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling,
                                     general: GeneralModel(actions: actions))
             let controller = NSHostingController(rootView: root)
@@ -244,10 +240,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func windowWillClose(_ notification: Notification) {
+    /// A key press or click being recorded on one page must not stay armed on another.
+    private func stopAllCaptures() {
         keyboard?.stopCapture()
         mouse?.stopCapture()
         tiling?.stopCapture()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stopAllCaptures()
         remapper.onKeyboardsChanged = nil
         window = nil
         keyboard = nil

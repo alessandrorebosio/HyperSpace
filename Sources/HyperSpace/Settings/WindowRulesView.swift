@@ -22,7 +22,7 @@ struct WindowRulesView: View {
                         RemoveButton { model.removeFloating(bundleID) }
                     }
                 }
-                ForEach(Array(model.floatingWindows.enumerated()), id: \.offset) { _, rule in
+                ForEach(model.floatingWindows, id: \.self) { rule in
                     HStack(spacing: 10) {
                         if let app = rule.app {
                             AppLabel(bundleID: app)
@@ -83,7 +83,7 @@ private struct NewFloatingRule: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Picker("App", selection: Binding(get: { model.newFloatingApp }, set: { model.newFloatingApp = $0 })) {
+            Picker("App", selection: $model.newFloatingApp) {
                 Text("Any app").tag(String?.none)
                 Divider()
                 ForEach(TilingModel.runningApps, id: \.bundleID) { app in
@@ -92,7 +92,7 @@ private struct NewFloatingRule: View {
             }
             .labelsHidden()
             .fixedSize()
-            TextField("Title", text: Binding(get: { model.newFloatingTitle }, set: { model.newFloatingTitle = $0 }),
+            TextField("Title", text: $model.newFloatingTitle,
                       prompt: Text("Title contains… (optional)"))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)

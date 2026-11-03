@@ -3,6 +3,11 @@ import os
 
 let log = Logger(subsystem: "com.alessandrorebosio.HyperSpace", category: "app")
 
+enum AppInfo {
+    /// The app's version; "dev" when run outside the bundle (`swift run`).
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ConfigStore()
     private let remapper = KeyboardRemapper()
@@ -90,10 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func debugInfo() -> String {
-        let bundle = Bundle.main
-        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         var lines = [
-            "HyperSpace \(version) — \(Date().formatted(date: .numeric, time: .standard))",
+            "HyperSpace \(AppInfo.version) — \(Date().formatted(date: .numeric, time: .standard))",
             "macOS \(ProcessInfo.processInfo.operatingSystemVersionString), up \(Int(ProcessInfo.processInfo.systemUptime / 60)) min",
             "Accessibility: \(Permissions.isTrusted(prompt: false) ? "granted" : "missing"), launched at login: \(launchedAtLogin)",
             "Devices: " + (Peripherals.batteries().map { "\($0.name) \($0.percent)%\($0.charging ? " charging" : "")" }.joined(separator: ", ").nilIfEmpty ?? "none with a battery"),
