@@ -133,6 +133,9 @@ final class WindowManager {
     /// The display the user works on, set when we move the focus there: an empty workspace
     /// has no window to tell, and the pointer may still be on the other display.
     private var activeDisplay: CGDirectDisplayID?
+    /// The display of an empty workspace holding the focus (the focus anchor is there): the
+    /// display you work on, even while the window left behind still looks focused to macOS.
+    private var heldDisplay: CGDirectDisplayID?
     /// Last value sent to `onWorkspaceChange`, so the menu bar is redrawn only on change.
     private var lastNotice: (names: [String], focused: Int)??
     /// Workspaces apps were opened from, for the windows they show while loading.
@@ -254,6 +257,11 @@ final class WindowManager {
         // Window elements use the global AX timeout (6 s by default): an app still busy
         // launching at login must not stall the window manager that long.
         _ = AX.systemWide
+        focusAnchor.onResign = { [weak self] in
+            guard let self else { return }
+            heldDisplay = nil
+            scheduleFocusUpdate()
+        }
         loadSavedState()
         syncDisplays()
         // One app per run loop turn, the frontmost first: shortcuts stay responsive while
@@ -327,7 +335,7 @@ final class WindowManager {
         screenObserver = nil
         displayMonitor.onChange = nil
         displayMonitor.stop()
-        focusAnchor.dismiss()
+        releaseHeldFocus()
         apps.values.forEach { $0.invalidate() }
         apps.removeAll()
         launches.removeAll()
@@ -1073,7 +1081,7 @@ final class WindowManager {
         ignoreFocusChanges()
         focusRequest += 1
         let request = focusRequest
-        focusAnchor.dismiss()
+        releaseHeldFocus()
         let dialogs = dialogs(of: window)
         writer.perform(window.pid) {
             AX.focus(window.element, pid: window.pid)
@@ -1133,10 +1141,25 @@ final class WindowManager {
                 }
                 if result != .success { failure = result }
             }
+            // Across displays some apps answer the move with a size of their own (kept from
+            // the old display, or clamped to it): once more, now that it is on the new one.
+            if !sameDisplay, failure == .success, let size = AX.size(element), let origin = AX.position(element),
+               abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
+                || abs(origin.x - frame.minX) > 1 || abs(origin.y - frame.minY) > 1 {
+                AX.setPosition(element, frame.origin)
+                AX.setSize(element, frame.size)
+            }
             if failure != .success {
                 DispatchQueue.main.async { self?.note("moving a window of \(name) failed: AX error \(failure.rawValue)") }
             }
             if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }
+        }
+        // Others resize themselves a moment later, for the scale of the new display; that
+        // resize comes too soon to count as the user's, so look again once it is done.
+        if current != nil, !sameDisplay, !window.isFloating, !window.scratchpad {
+            for delay in [0.3, 0.8] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.scheduleRetile() }
+            }
         }
     }
 
@@ -1369,6 +1392,7 @@ final class WindowManager {
             // An invisible window of ours on that display takes the key focus, so macOS makes
             // it the active display too (menu bar, new windows, Spotlight open there).
             focusRequest += 1
+            heldDisplay = id
             focusAnchor.show(on: screen)
             let me = getpid()
             writer.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
@@ -1380,9 +1404,17 @@ final class WindowManager {
         return nil
     }
 
+    /// The focus leaves the empty workspace it was held on.
+    private func releaseHeldFocus() {
+        heldDisplay = nil
+        focusAnchor.dismiss()
+    }
+
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
     private func followFocus(_ window: ManagedWindow?) {
         guard running, let window else { return }
+        // A window focused by the user (not the refocusing we cause): the empty display is left.
+        if heldDisplay != nil, Date() > followFocusAfter { releaseHeldFocus() }
         if window.scratchpad {
             // ⌘Tab or the Dock to a hidden scratchpad window: show it instead of a workspace.
             if !window.scratchpadShown, Date() > followFocusAfter { showScratchpad(window) }
@@ -1469,6 +1501,8 @@ final class WindowManager {
     private func focusedScreen(_ focusedWindow: ManagedWindow?? = nil) -> ScreenInfo? {
         let screens = ScreenInfo.current()
         guard !screens.isEmpty else { return nil }
+        // On an empty workspace the window left behind may still look focused.
+        if let id = heldDisplay, let screen = screens.first(where: { $0.id == id }) { return screen }
         if let window = focusedWindow ?? focused(), window.hiddenFrame == nil, display(showing: window.workspace) != nil,
            let frame = onScreenBounds()[window.id] {
             return screens[screens.index(for: frame)]
@@ -1583,8 +1617,8 @@ final class WindowManager {
         Swift.swap(&current.weight, &target.weight)
         Swift.swap(&current.workspace, &target.workspace)
         // Exchanging frames also carries the windows across displays.
-        setFrame(current, targetFrame)
-        setFrame(target, origin)
+        setFrame(current, targetFrame, from: origin)
+        setFrame(target, origin, from: targetFrame)
         scheduleRetile()
     }
 

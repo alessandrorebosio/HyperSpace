@@ -26,6 +26,7 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift`.
 - `workspace n` (**`switchWorkspace`**) shows n on *its* display, remembers what it replaced, and focuses its last focused window (or the first one; with no windows, it moves the pointer to the display
   centre and activates HyperSpace itself with a tiny invisible window (`FocusAnchor`) as key window on that display, so macOS makes it the active display: the keyboard no longer types into the window you left, and the menu bar, new windows and Spotlight follow). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
 - Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
+- On an empty workspace the focus anchor (`Tiling/FocusAnchor.swift`, an invisible non-activating panel) takes the keyboard on that display even when macOS does not bring HyperSpace to the front, and that display counts as the focused one (menu bar, apps opened from there, layout commands) until a window is focused or something else takes the key focus.
 
 ## Moving windows and workspaces
 
