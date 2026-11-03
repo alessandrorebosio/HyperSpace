@@ -1386,11 +1386,11 @@ final class WindowManager {
             activeDisplay = id
             bringPointer(to: screen.visible.center, on: screen, screens)
             // Nothing to focus there: take the keyboard away from the window you left (on
-            // another display it would keep typing there). HyperSpace has no window to show.
-            // Through AX like any other app: NSApp.activate is ignored from the background.
-            // Off the main thread, which has to answer the request.
-            // An invisible window of ours on that display takes the key focus, so macOS makes
-            // it the active display too (menu bar, new windows, Spotlight open there).
+            // another display it would keep typing there). An invisible window of ours on that
+            // display is clicked, which makes HyperSpace active there: macOS then makes it the
+            // active display too (menu bar, new windows, Spotlight open there). Also asked
+            // through AX, off the main thread (which has to answer), in case the click is not
+            // possible (a mouse button held).
             focusRequest += 1
             heldDisplay = id
             focusAnchor.show(on: screen)
