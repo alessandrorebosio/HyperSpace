@@ -232,7 +232,7 @@ struct SidebarIcon: View {
         let shape = RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
         let glyph = size * Self.glyphShare(symbol)
         ZStack {
-            shape.fill(LinearGradient(colors: [color.mix(with: .white, by: 0.28), color, color.mix(with: .black, by: 0.12)],
+            shape.fill(LinearGradient(colors: [color.blended(with: .white, by: 0.28), color, color.blended(with: .black, by: 0.12)],
                                       startPoint: .top, endPoint: .bottom))
             // A soft sheen on the upper half, like the system's icons.
             shape.fill(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0)],
@@ -302,8 +302,8 @@ enum SymbolInk {
 }
 
 private extension Color {
-    /// `self` blended toward `other` (macOS 15's `mix` is not available back to 13).
-    func mix(with other: NSColor, by amount: CGFloat) -> Color {
+    /// `self` blended toward `other`. Not called `mix`: macOS 15 adds `Color.mix(with:by:)`, which would be ambiguous.
+    func blended(with other: NSColor, by amount: CGFloat) -> Color {
         let base = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
         return Color(nsColor: base.blended(withFraction: amount, of: other) ?? base)
     }
