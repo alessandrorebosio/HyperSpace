@@ -33,8 +33,8 @@ struct TilingView: View {
             } header: {
                 Text("Spacing")
             } footer: {
-                SettingsFooter(hint: "Windows stay inside the visible area, clear of the menu bar and the Dock.",
-                               error: model.saveError)
+                SectionFooter("Windows stay inside the visible area, clear of the menu bar and the Dock.",
+                              error: model.saveError)
             }
             .disabled(!model.enabled)
 

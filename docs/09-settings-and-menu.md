@@ -40,7 +40,7 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 **Every page** is a grouped `Form` with the same structure, top to bottom:
 1. **Hero** (`PageHero`): the page's icon (44 pt), its name and one line saying what it is for. Tiling puts its on/off switch on the right of the hero, like Wi-Fi in System Settings.
 2. **Notices** (`NoticeRow`), only when something stops the page from working: *Accessibility permission needed* (pages that need it: all but Keyboard and General) with *Open System Settings…*, and on the window pages *Tiling is off* with *Turn On*.
-3. **Sections**. A list puts its add button in its header, on the right (`SectionHeader` + `AddButton`, or `AddMenu` when the item is picked from a menu, such as an app). An empty list says so with a centered line (`EmptyRow`) instead of showing nothing. The section footer holds one hint (`SectionFooter`), or the last save error (`SettingsFooter`).
+3. **Sections**. A list puts its add button in its header, on the right (`SectionHeader` + `AddButton`, or `AddMenu` when the item is picked from a menu; `AddAppMenu` for an app). An empty list says so with a centered line (`EmptyRow`) instead of showing nothing. The section footer holds one hint, or the last save error in its place (`SectionFooter`).
 
 ### Components (`Settings/Components.swift`)
 

@@ -29,8 +29,8 @@ struct MouseView: View {
                     AddButton(title: "Add Button") { model.addRule() }
                 }
             } footer: {
-                SettingsFooter(
-                    hint: "Click the mouse button over this window (hold modifiers to include them), then press the keys it should send or pick an action from the menu.",
+                SectionFooter(
+                    "Click the mouse button over this window (hold modifiers to include them), then press the keys it should send or pick an action from the menu.",
                     error: model.saveError
                 )
             }

@@ -253,7 +253,6 @@ final class EventTap {
         }
     }
 
-
     /// Returns true when the event must be swallowed.
     private func handleKey(_ event: CGEvent, down: Bool) -> Bool {
         let code = Int(event.getIntegerValueField(.keyboardEventKeycode))

@@ -468,9 +468,7 @@ final class WindowManager {
         guard let id = probe.id else {
             // The Finder desktop (a scroll area) is listed among its windows: not worth a line.
             guard probe.role != kAXScrollAreaRole, probe.kind != .pending else { return nil }
-            let message = "no window id for a window of \(appID) (role \(role))"
-            log.debug("\(message, privacy: .public)")
-            note(message)
+            note("no window id for a window of \(appID) (role \(role))")
             return nil
         }
         guard windows[id] == nil else { return nil }
@@ -488,15 +486,15 @@ final class WindowManager {
         window.parent = parent?.id
         // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
         var restored: WorkspaceState.Window?
-        if restorer != nil, parent == nil, let app = watcher.bundleID,
-           let index = restorer?.claim(app: app, title: probe.title) {
-            restored = restorer?.window(index)
+        if parent == nil, let app = watcher.bundleID, let index = restorer?.claim(app: app, title: probe.title),
+           let saved = restorer?.window(index) {
+            restored = saved
             restoredIndex[id] = index
-            if let floating = restored?.floating {
+            if let floating = saved.floating {
                 window.isFloating = floating
                 window.userOverride = true
             }
-            window.scratchpad = restored?.scratchpad ?? false
+            window.scratchpad = saved.scratchpad ?? false
         }
         // The app was opened by its scratchpad shortcut: this window is the scratchpad one.
         if parent == nil, let app = watcher.bundleID, let until = pendingScratchpad[app] {
@@ -859,9 +857,8 @@ final class WindowManager {
             // A later focus (another workspace, keys pressed in a row) wins over this retry.
             guard self?.focusRequest == request,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
-            log.debug("focus did not take for window \(window.id) (\(window.bundleID ?? "?", privacy: .public)), retrying")
-            self?.note("focus did not take for \(window.bundleID ?? "?") window \(window.id)")
             guard let self else { return }
+            note("focus did not take for \(window.bundleID ?? "?") window \(window.id), retrying")
             ignoreFocusChanges()
             NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
             writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }

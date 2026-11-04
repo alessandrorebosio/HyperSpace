@@ -44,8 +44,8 @@ struct WorkspacesView: View {
                     AddButton(title: "Add Workspace") { model.addWorkspace() }
                 }
             } footer: {
-                SettingsFooter(
-                    hint: "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one.",
+                SectionFooter(
+                    "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one.",
                     error: model.saveError
                 )
             }
@@ -70,13 +70,8 @@ struct WorkspacesView: View {
                 }
             } header: {
                 SectionHeader(title: "App Rules") {
-                    AddMenu(title: "Add App") {
-                        ForEach(model.assignmentCandidates, id: \.bundleID) { app in
-                            Button(app.name) { model.addAssignment(app.bundleID) }
-                        }
-                        Divider()
-                        Button("Other App…") { model.chooseAppForAssignment() }
-                    }
+                    AddAppMenu(candidates: model.assignmentCandidates, chooseTitle: "Other App…",
+                               add: model.addAssignment, choose: model.chooseAppForAssignment)
                     .disabled(model.workspaces.isEmpty)
                     .help(model.workspaces.isEmpty ? "Add a workspace first" : "Open an app's windows in a workspace")
                 }

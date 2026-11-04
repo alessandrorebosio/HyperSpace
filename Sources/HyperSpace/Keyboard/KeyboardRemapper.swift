@@ -10,11 +10,16 @@ enum KeyboardTarget: Equatable {
     /// Case-insensitive substring of the keyboard's product name ("Magic Keyboard", "USB Receiver").
     case product(String)
 
+    /// The config texts of the generic targets.
+    static let allText = "all"
+    static let builtInText = "builtin"
+    static let externalText = "external"
+
     init(_ text: String?) {
-        switch text?.lowercased() {
-        case nil, "", "all": self = .all
-        case "builtin", "built-in", "internal": self = .builtIn
-        case "external": self = .external
+        switch text?.lowercased() ?? "" {
+        case "", Self.allText: self = .all
+        case Self.builtInText, "built-in", "internal": self = .builtIn
+        case Self.externalText: self = .external
         default: self = .product(text!)
         }
     }

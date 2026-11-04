@@ -39,8 +39,8 @@ struct ShortcutsView: View {
                     Text(group.group)
                 } footer: {
                     if group.group == TilingModel.singleShortcuts.last?.group {
-                        SettingsFooter(hint: "Click a shortcut and press the keys. Esc cancels, Delete clears it.",
-                                       error: model.saveError)
+                        SectionFooter("Click a shortcut and press the keys. Esc cancels, Delete clears it.",
+                                      error: model.saveError)
                     }
                 }
             }

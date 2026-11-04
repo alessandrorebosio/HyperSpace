@@ -95,7 +95,7 @@ final class TilingModel: ObservableObject {
     @Published private(set) var padding = Int(TilingModel.defaults.padding)
     @Published private(set) var mouseFollowsFocus = TilingModel.defaults.mouseFollowsFocus
     @Published private(set) var accordionPadding = Int(TilingModel.defaults.accordionPadding)
-    @Published var workspaces: [Workspace] = []
+    @Published var workspaces: [Workspace] = [] { didSet { duplicateCache = nil } }
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
     @Published private(set) var floatingWindows: [FloatingWindowRule] = []
@@ -110,7 +110,9 @@ final class TilingModel: ObservableObject {
         var app: String
         var workspace: String
     }
-    @Published private(set) var shortcuts: [Shortcut] = []
+    @Published private(set) var shortcuts: [Shortcut] = [] { didSet { duplicateCache = nil } }
+    /// The shortcuts used more than once, kept until the workspaces, shortcuts or scratchpad apps change.
+    private var duplicateCache: Set<String>?
     /// An app with its own scratchpad shortcuts: show/hide ("scratchpad <bundle id>") and
     /// into the tiling and back ("move-to-scratchpad <bundle id>").
     struct ScratchpadApp: Identifiable, Equatable {
@@ -121,7 +123,7 @@ final class TilingModel: ObservableObject {
         var toggleAction: String { TilingModel.togglePrefix + bundleID }
         var tileAction: String { TilingModel.tilePrefix + bundleID }
     }
-    @Published private(set) var scratchpadApps: [ScratchpadApp] = []
+    @Published private(set) var scratchpadApps: [ScratchpadApp] = [] { didSet { duplicateCache = nil } }
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
 
@@ -360,9 +362,14 @@ final class TilingModel: ObservableObject {
     /// Shortcuts used more than once, which only the last one would get.
     func isDuplicate(_ keys: String) -> Bool {
         guard !keys.isEmpty else { return false }
-        let all = workspaces.flatMap { [$0.switchKeys, $0.moveKeys] } + shortcuts.map(\.keys)
-            + scratchpadApps.flatMap { [$0.toggleKeys, $0.tileKeys] }
-        return all.filter { $0 == keys }.count > 1
+        if duplicateCache == nil {
+            var counts: [String: Int] = [:]
+            let all = workspaces.flatMap { [$0.switchKeys, $0.moveKeys] } + shortcuts.map(\.keys)
+                + scratchpadApps.flatMap { [$0.toggleKeys, $0.tileKeys] }
+            for keys in all { counts[keys, default: 0] += 1 }
+            duplicateCache = Set(counts.filter { $0.value > 1 }.keys)
+        }
+        return duplicateCache?.contains(keys) ?? false
     }
 
     // MARK: - Capture

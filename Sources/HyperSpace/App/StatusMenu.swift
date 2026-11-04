@@ -87,19 +87,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         guard let button = item.button else { return }
         button.appearsDisabled = !tilingEnabled && problem == nil && !keyboardLocked
         button.toolTip = tilingEnabled ? "HyperSpace" : "HyperSpace — tiling is off"
+        button.attributedTitle = NSAttributedString()
         guard let workspaces else {
             let symbol = keyboardLocked ? "lock" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
             let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
             image?.isTemplate = true
             button.image = image
-            button.attributedTitle = NSAttributedString()
             return
         }
         // One template image, so it follows the menu bar's colors like the system items.
         button.image = Self.workspacesImage(names: workspaces.names, focused: workspaces.focused,
                                             locked: keyboardLocked, problem: problem != nil)
         button.imagePosition = .imageOnly
-        button.attributedTitle = NSAttributedString()
     }
 
     /// The workspaces left to right, the focused one in a filled box with its name cut out,

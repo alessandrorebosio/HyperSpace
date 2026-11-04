@@ -38,8 +38,8 @@ struct WindowRulesView: View {
             } header: {
                 Text("Floating")
             } footer: {
-                SettingsFooter(hint: "Floating windows keep their own size and position. Pick an app to float all its windows, or add a title to float only some, such as its settings.",
-                               error: model.saveError)
+                SectionFooter("Floating windows keep their own size and position. Pick an app to float all its windows, or add a title to float only some, such as its settings.",
+                              error: model.saveError)
             }
 
             Section {
@@ -61,13 +61,8 @@ struct WindowRulesView: View {
                 }
             } header: {
                 SectionHeader(title: "Scratchpad Apps") {
-                    AddMenu(title: "Add App") {
-                        ForEach(model.scratchpadCandidates, id: \.bundleID) { app in
-                            Button(app.name) { model.addScratchpadApp(app.bundleID) }
-                        }
-                        Divider()
-                        Button("Choose App…") { model.chooseAppForScratchpad() }
-                    }
+                    AddAppMenu(candidates: model.scratchpadCandidates, chooseTitle: "Choose App…",
+                               add: model.addScratchpadApp, choose: model.chooseAppForScratchpad)
                 }
             } footer: {
                 SectionFooter("Show / hide puts the app centered above the other windows, and hides it again. To tiling and back moves its window into the current workspace, and back into the scratchpad.")

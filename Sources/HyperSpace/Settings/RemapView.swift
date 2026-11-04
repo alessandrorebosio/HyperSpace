@@ -34,8 +34,8 @@ struct RemapView: View {
                     AddButton(title: "Add Remap") { model.addRule() }
                 }
             } footer: {
-                SettingsFooter(
-                    hint: "Click a key cap, then press the key. For a combination, hold the keys together and release them.",
+                SectionFooter(
+                    "Click a key cap, then press the key. For a combination, hold the keys together and release them.",
                     error: model.saveError
                 )
             }

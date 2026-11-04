@@ -5,7 +5,9 @@ import ApplicationServices
 extension WindowManager {
     // MARK: - Debug report
 
+    /// Keeps a problem for the debug report (and logs it).
     func note(_ issue: String) {
+        log.debug("\(issue, privacy: .public)")
         let time = Date().formatted(date: .omitted, time: .standard)
         issues.append("\(time) \(issue)")
         if issues.count > 30 { issues.removeFirst(issues.count - 30) }

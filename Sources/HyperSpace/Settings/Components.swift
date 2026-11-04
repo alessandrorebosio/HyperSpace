@@ -151,22 +151,16 @@ struct EmptyRow: View {
     }
 }
 
-/// A caption under a section, styled the same on every page.
+/// A caption under a section, styled the same on every page; the last save error, when
+/// there is one, takes its place.
 struct SectionFooter: View {
     let text: String
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text).font(.caption).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// Section footer: a hint, or the last save error in its place.
-struct SettingsFooter: View {
-    let hint: String
     let error: String?
+
+    init(_ text: String, error: String? = nil) {
+        self.text = text
+        self.error = error
+    }
 
     var body: some View {
         if let error {
@@ -174,7 +168,8 @@ struct SettingsFooter: View {
                 .font(.caption)
                 .foregroundStyle(.red)
         } else {
-            SectionFooter(hint)
+            Text(text).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -336,6 +331,24 @@ struct AddMenu<Content: View>: View {
         }
         .modifier(BorderedMenu())
         .controlSize(.small)
+    }
+}
+
+/// "+ Add App" menu: the candidate apps, then a last entry that asks for any other app.
+struct AddAppMenu: View {
+    let candidates: [(name: String, bundleID: String)]
+    let chooseTitle: String
+    let add: (String) -> Void
+    let choose: () -> Void
+
+    var body: some View {
+        AddMenu(title: "Add App") {
+            ForEach(candidates, id: \.bundleID) { app in
+                Button(app.name) { add(app.bundleID) }
+            }
+            Divider()
+            Button(chooseTitle, action: choose)
+        }
     }
 }
 

@@ -7,7 +7,7 @@ final class RemapModel: ObservableObject {
         let id = UUID()
         var from: String
         var to: String
-        /// "all", "builtin", "external" or a product name.
+        /// `KeyboardTarget.allText`, `.builtInText`, `.externalText` or a product name.
         var keyboard: String
 
         var isComplete: Bool { !from.isEmpty && !to.isEmpty }
@@ -83,7 +83,7 @@ final class RemapModel: ObservableObject {
     // MARK: - Editing
 
     func addRule() {
-        let rule = Rule(from: "", to: "", keyboard: "all")
+        let rule = Rule(from: "", to: "", keyboard: KeyboardTarget.allText)
         rules.append(rule)
         startCapture(.from(rule.id))
     }
@@ -109,16 +109,16 @@ final class RemapModel: ObservableObject {
     /// Keyboard choices for a rule: the generic targets, every connected keyboard,
     /// and the rule's own target even if that keyboard is unplugged right now.
     func keyboardOptions(for rule: Rule) -> [String] {
-        var options = ["all", "builtin", "external"] + keyboards.filter { !$0.builtIn }.map(\.product)
+        var options = [KeyboardTarget.allText, KeyboardTarget.builtInText, KeyboardTarget.externalText] + keyboards.filter { !$0.builtIn }.map(\.product)
         if !options.contains(rule.keyboard) { options.append(rule.keyboard) }
         return options
     }
 
     func keyboardLabel(_ option: String) -> String {
         switch option {
-        case "all": return "All keyboards"
-        case "builtin": return "Built-in"
-        case "external": return "All external"
+        case KeyboardTarget.allText: return "All keyboards"
+        case KeyboardTarget.builtInText: return "Built-in"
+        case KeyboardTarget.externalText: return "All external"
         default: return option
         }
     }
@@ -225,11 +225,11 @@ final class RemapModel: ObservableObject {
     private func load() {
         let keyboard = ConfigWriter.read()["keyboard"] as? [String: Any]
         rules = (keyboard?["remap"] as? [[String: Any]] ?? []).map {
-            Rule(from: $0["from"] as? String ?? "", to: $0["to"] as? String ?? "", keyboard: $0["keyboard"] as? String ?? "all")
+            Rule(from: $0["from"] as? String ?? "", to: $0["to"] as? String ?? "", keyboard: $0["keyboard"] as? String ?? KeyboardTarget.allText)
         }
         // The editor shows the hyper key as an ordinary remap to "hyper"; it is saved that way too.
         if let hyper = keyboard?["hyperKey"] as? String, !hyper.isEmpty {
-            rules.insert(Rule(from: hyper, to: "hyper", keyboard: "all"), at: 0)
+            rules.insert(Rule(from: hyper, to: "hyper", keyboard: KeyboardTarget.allText), at: 0)
         }
     }
 
@@ -244,7 +244,7 @@ final class RemapModel: ObservableObject {
             keyboard["hyperKey"] = nil
             keyboard["remap"] = complete.map { rule -> [String: Any] in
                 var entry: [String: Any] = ["from": rule.from, "to": rule.to]
-                if rule.keyboard != "all" { entry["keyboard"] = rule.keyboard }
+                if rule.keyboard != KeyboardTarget.allText { entry["keyboard"] = rule.keyboard }
                 return entry
             }
             root["keyboard"] = keyboard
