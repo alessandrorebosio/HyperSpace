@@ -24,6 +24,8 @@ final class ManagedWindow {
     var scratchpad = false
     /// A scratchpad window on screen (it stays there across workspace switches).
     var scratchpadShown = false
+    /// When it last had the focus: tells which window of its app you work in.
+    var focusedAt = Date.distantPast
 
     init(id: CGWindowID, element: AXUIElement, pid: pid_t, bundleID: String?) {
         self.id = id

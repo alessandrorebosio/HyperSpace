@@ -506,6 +506,17 @@ final class WindowManager {
                 DispatchQueue.main.async { [weak self] in self?.showScratchpad(window) }
             }
         }
+        // Opened while you work in a scratchpad window of its app (⌘N, or ⌘T in a terminal):
+        // it joins the scratchpad instead of the tiling.
+        if parent == nil, !window.scratchpad, restored == nil,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == watcher.pid,
+           let current = windows.values.filter({ $0.pid == watcher.pid }).max(by: { $0.focusedAt < $1.focusedAt }),
+           current.scratchpad, current.scratchpadShown {
+            log.debug("window \(id) opened from scratchpad window \(current.id): joins the scratchpad")
+            window.scratchpad = true
+            window.focusedAt = Date()
+            DispatchQueue.main.async { [weak self] in self?.showScratchpad(window) }
+        }
         // A window joins its parent's workspace (a dialog), its app's assigned workspace, the
         // one it had before a restart, the one the app was opened from (you may have moved on
         // while it loaded), or the one shown where it appears.
@@ -744,6 +755,15 @@ final class WindowManager {
         let shown = Set(displayed.values)
 
         for window in windows.values {
+            if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
+                // A dialog of a scratchpad window comes and goes with it.
+                if !owner.scratchpadShown {
+                    if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
+                } else if let frame = bounds[owner.id] {
+                    restore(window, on: screens[screens.index(for: frame)], screens)
+                }
+                continue
+            }
             if window.scratchpad {
                 // Out of the workspaces: parked unless shown.
                 if !window.scratchpadShown, window.hiddenFrame == nil, let frame = bounds[window.id] {

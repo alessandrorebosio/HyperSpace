@@ -22,7 +22,7 @@ In *Settings → Window Rules → Scratchpad Apps* each app has two shortcuts: *
 ## Per-app behaviour (`scratchpad <App>`)
 
 1. The app name/bundle id is resolved (`AppLauncher.bundleID`); if not found, a note goes to the debug report.
-2. If the app already has a scratchpad window: shown and focused → **hidden**; otherwise → **shown**.
+2. If the app already has scratchpad windows: one of them shown and focused → **all hidden**; otherwise → **all shown**, the one you worked in last on top.
 3. Else, if the app has a window in the tiling: the focused one (or the first) **becomes the scratchpad** and is shown.
 4. Else (app not open, or no window): the app is launched and its **next window** becomes the scratchpad window (valid for 30 s), shown as soon as it is tracked.
 
@@ -59,4 +59,6 @@ If the display or the configured fraction changes, the target differs and the re
 - **Window level**: HyperSpace cannot change the `NSWindow.Level` (`.normal`/`.floating`) of another app's window: there is no public API for it (only the private SkyLight calls that yabai makes through its scripting addition, which needs SIP partly off). So a scratchpad window is hidden by parking it, not sent behind at a lower level.
 
 - Windows created while their app is the scratchpad target are shown even when their workspace is not displayed.
+- **New windows opened from a scratchpad window** (⌘N, or ⌘T in a terminal that opens tabs as windows) join the scratchpad instead of the tiling: when the app is frontmost and the window of that app focused last is a shown scratchpad window. They are shown at the scratchpad frame and toggle together with it.
+- **Dialogs of a scratchpad window** (sheets, alerts, settings panels attached to it) are never tied to a workspace: they are hidden and shown with their window, and focusing one does not switch workspace.
 - `workspace`/focus candidates never include scratchpad windows; a scratchpad window does not belong to any visible workspace even though it keeps a workspace index.

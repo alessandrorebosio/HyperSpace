@@ -214,6 +214,12 @@ extension WindowManager {
         guard running, let window else { return }
         // A window focused by the user (not the refocusing we cause): the empty display is left.
         if heldDisplay != nil, Date() > followFocusAfter { releaseHeldFocus() }
+        window.focusedAt = Date()
+        // A dialog of a scratchpad window lives with it, not in a workspace.
+        if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
+            owner.focusedAt = window.focusedAt
+            return
+        }
         if window.scratchpad {
             // ⌘Tab or the Dock to a hidden scratchpad window: show it instead of a workspace.
             if !window.scratchpadShown, Date() > followFocusAfter { showScratchpad(window) }

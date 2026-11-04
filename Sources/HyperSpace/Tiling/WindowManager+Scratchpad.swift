@@ -15,7 +15,7 @@ extension WindowManager {
         guard let name else {
             let pad = orderedWindows.filter(\.scratchpad)
             if let shown = pad.first(where: { $0.scratchpadShown && $0.id == focusedID }) {
-                hideScratchpad(shown)
+                hideScratchpad([shown])
             } else if let shown = pad.first(where: \.scratchpadShown) {
                 focus(shown)
             } else if let hidden = pad.first {
@@ -24,8 +24,12 @@ extension WindowManager {
             return
         }
         guard let (bundleID, mine) = appWindows(of: name) else { return }
-        if let window = mine.first(where: \.scratchpad) {
-            if window.scratchpadShown, window.id == focusedID { hideScratchpad(window) } else { showScratchpad(window) }
+        let pad = mine.filter(\.scratchpad)
+        if !pad.isEmpty {
+            // All of the app's scratchpad windows (it may have opened more from there) come and
+            // go together; the one you worked in last ends up in front.
+            let shown = pad.filter(\.scratchpadShown)
+            if shown.contains(where: { $0.id == focusedID }) { hideScratchpad(shown) } else { showScratchpad(pad) }
         } else if let window = mine.first(where: { $0.id == focusedID }) ?? mine.first {
             // Already open in the tiling: it moves to the scratchpad.
             window.scratchpad = true
@@ -83,7 +87,13 @@ extension WindowManager {
         }
     }
 
-    func showScratchpad(_ window: ManagedWindow) {
+    /// Shows several scratchpad windows, the one focused last on top.
+    func showScratchpad(_ windows: [ManagedWindow]) {
+        let sorted = windows.sorted { $0.focusedAt < $1.focusedAt }
+        for (index, window) in sorted.enumerated() { showScratchpad(window, focus: index == sorted.count - 1) }
+    }
+
+    func showScratchpad(_ window: ManagedWindow, focus takesFocus: Bool = true) {
         guard windows[window.id] === window, window.scratchpad else { return }
         enterScope()
         defer { leaveScope() }
@@ -122,19 +132,32 @@ extension WindowManager {
             return false
         }
         // Where it is going, not the corner it was parked in (another display maybe).
-        focus(window, at: frame)
+        if takesFocus { focus(window, at: frame) }
+        // Its dialogs come back with it (see `retile`).
+        if windows.values.contains(where: { $0.parent == window.id }) { scheduleRetile() }
         notifyWorkspace()
     }
 
-    private func hideScratchpad(_ window: ManagedWindow) {
+    private func hideScratchpad(_ pad: [ManagedWindow]) {
         enterScope()
         defer { leaveScope() }
         ignoreFocusChanges()
-        window.scratchpadShown = false
         let screens = currentScreens()
-        let frame = currentBounds()[window.id]
-        if let frame { hide(window, from: frame, screens: screens) }
-        log.debug("hide scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public))")
+        let bounds = currentBounds()
+        var frame: CGRect?
+        for window in pad {
+            window.scratchpadShown = false
+            if let shown = bounds[window.id] {
+                hide(window, from: shown, screens: screens)
+                frame = frame ?? shown
+            }
+            log.debug("hide scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public))")
+        }
+        // Its dialogs go with it.
+        for window in windows.values where window.hiddenFrame == nil {
+            guard let owner = window.parent, pad.contains(where: { $0.id == owner }), let shown = bounds[window.id] else { continue }
+            hide(window, from: shown, screens: screens)
+        }
         // Back to what you were doing, on the display it was shown on: the pointer stays there.
         let here = frame.flatMap { screens.isEmpty ? nil : screens[screens.index(for: $0)].id } ?? activeDisplay
         if let workspace = here.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
