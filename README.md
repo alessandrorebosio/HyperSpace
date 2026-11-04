@@ -225,8 +225,8 @@ dialogs (they can be closed but neither zoomed nor made full screen, like Empty 
 stay floating in any app; `float` tiles them anyway.
 **Scratchpad** (as in i3). One shortcut per app, e.g. `{ "keys": "meh+x", "action": "scratchpad com.anthropic.claudefordesktop" }`:
 the first time it opens the app (if not open) and shows it in the middle of the active display, above the other windows and
-out of the tiling; pressed again it hides it, then shows it again. It stays visible across workspace switches until
-you hide it, and if you reach it with ⌘Tab it shows by itself. `move-to-scratchpad` (e.g. `hyper+x`) sends the focused
+out of the tiling; pressed again it hides it, then shows it again. It closes when you switch workspace, and if you
+reach it with ⌘Tab it shows by itself. `move-to-scratchpad` (e.g. `hyper+x`) sends the focused
 window to the scratchpad or puts it back into the tiling of the current workspace. The size is a fraction of the display:
 `"scratchpad": { "width": 0.6, "height": 0.7 }` (default). Apps can also be managed from Settings → Window Rules →
 Scratchpad Apps. The scratchpad is remembered across restarts.

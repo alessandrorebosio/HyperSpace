@@ -94,7 +94,12 @@ extension WindowManager {
         log.debug("switch to workspace \(index) on display \(screen.id) (shown there: \(self.displayed[screen.id] ?? -1), focused: \(focusedWorkspace ?? -1))")
         if let current = focusedWorkspace, current != index {
             previousWorkspace = current
-            if let window = focused(), window.workspace == current { lastFocused[current] = window.id }
+            if let window = focused(), window.workspace == current, !window.scratchpad { lastFocused[current] = window.id }
+        }
+        // A real workspace change closes the scratchpad.
+        if focusedWorkspace != index || displayed[screen.id] != index {
+            let shown = windows.values.filter { $0.scratchpad && $0.scratchpadShown }
+            if !shown.isEmpty { parkScratchpad(shown, screens: screens, bounds: currentBounds()) }
         }
         if displayed[screen.id] != index {
             showWorkspace(index, on: screen.id)

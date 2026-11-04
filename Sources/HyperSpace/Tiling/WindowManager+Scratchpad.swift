@@ -143,7 +143,18 @@ extension WindowManager {
         defer { leaveScope() }
         ignoreFocusChanges()
         let screens = currentScreens()
-        let bounds = currentBounds()
+        let frame = parkScratchpad(pad, screens: screens, bounds: currentBounds())
+        // Back to what you were doing, on the display it was shown on: the pointer stays there.
+        let here = frame.flatMap { screens.screen(for: $0)?.id } ?? activeDisplay
+        if let workspace = here.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
+            focusWindow(in: workspace)
+        }
+    }
+
+    /// Parks scratchpad windows and their dialogs without touching the focus; returns the
+    /// frame of the first one that was on screen (to know which display it was on).
+    @discardableResult
+    func parkScratchpad(_ pad: [ManagedWindow], screens: [ScreenInfo], bounds: [CGWindowID: CGRect]) -> CGRect? {
         var frame: CGRect?
         for window in pad {
             window.scratchpadShown = false
@@ -158,11 +169,7 @@ extension WindowManager {
             guard let owner = window.parent, pad.contains(where: { $0.id == owner }), let shown = bounds[window.id] else { continue }
             hide(window, from: shown, screens: screens)
         }
-        // Back to what you were doing, on the display it was shown on: the pointer stays there.
-        let here = frame.flatMap { screens.screen(for: $0)?.id } ?? activeDisplay
-        if let workspace = here.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
-            focusWindow(in: workspace)
-        }
+        return frame
     }
 
     /// Centered in the visible area, `size` being fractions of it.
