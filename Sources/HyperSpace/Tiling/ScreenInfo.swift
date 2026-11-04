@@ -91,6 +91,11 @@ extension ScreenInfo {
 }
 
 extension Array where Element == ScreenInfo {
+    /// The display `rect` is on, or nil when there is no display.
+    func screen(for rect: CGRect) -> ScreenInfo? {
+        isEmpty ? nil : self[index(for: rect)]
+    }
+
     func index(for rect: CGRect) -> Int {
         let center = rect.center
         if let i = firstIndex(where: { $0.frame.contains(center) }) { return i }

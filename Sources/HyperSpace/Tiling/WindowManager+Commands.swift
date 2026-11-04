@@ -23,6 +23,9 @@ extension WindowManager {
         return windows[id]
     }
 
+    /// The workspace shown on the display the user works on.
+    var focusedWorkspace: Int? { focusedScreen().flatMap { displayed[$0.id] } }
+
     /// The display the user works on: the focused window's, else the one we last moved the
     /// focus to (an empty workspace has no window), else the one under the pointer.
     func focusedScreen(_ focusedWindow: ManagedWindow?? = nil) -> ScreenInfo? {
@@ -31,8 +34,8 @@ extension WindowManager {
         // On an empty workspace the window left behind may still look focused.
         if let id = heldDisplay, let screen = screens.first(where: { $0.id == id }) { return screen }
         if let window = focusedWindow ?? focused(), window.hiddenFrame == nil, display(showing: window.workspace) != nil,
-           let frame = currentBounds()[window.id] {
-            return screens[screens.index(for: frame)]
+           let frame = currentBounds()[window.id], let screen = screens.screen(for: frame) {
+            return screen
         }
         if let id = activeDisplay, let screen = screens.first(where: { $0.id == id }) { return screen }
         let pointer = AX.pointer
@@ -196,9 +199,7 @@ extension WindowManager {
             setFrame(window, resized)
             return
         }
-        let screens = currentScreens()
-        guard !screens.isEmpty else { return }
-        let screen = screens[screens.index(for: frame)]
+        guard let screen = currentScreens().screen(for: frame) else { return }
         let tiled = tiledWindows(in: window.workspace, bounds: bounds)
         guard let position = tiled.firstIndex(where: { $0 === window }), tiled.count > 1 else { return }
         let area = area(of: screen)

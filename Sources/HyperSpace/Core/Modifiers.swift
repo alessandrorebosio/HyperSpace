@@ -14,21 +14,29 @@ struct Modifiers: OptionSet, Hashable {
 
     init(rawValue: UInt8) { self.rawValue = rawValue }
 
+    /// Each modifier with its flag in a CGEvent and in an NSEvent: the one table both conversions read.
+    private static let flagTable: [(modifier: Modifiers, cg: CGEventFlags, ns: NSEvent.ModifierFlags)] = [
+        (.cmd, .maskCommand, .command),
+        (.alt, .maskAlternate, .option),
+        (.ctrl, .maskControl, .control),
+        (.shift, .maskShift, .shift),
+    ]
+
     init(_ flags: CGEventFlags) {
         var mods: Modifiers = []
-        if flags.contains(.maskCommand) { mods.insert(.cmd) }
-        if flags.contains(.maskAlternate) { mods.insert(.alt) }
-        if flags.contains(.maskControl) { mods.insert(.ctrl) }
-        if flags.contains(.maskShift) { mods.insert(.shift) }
+        for entry in Modifiers.flagTable where flags.contains(entry.cg) { mods.insert(entry.modifier) }
+        self = mods
+    }
+
+    init(_ flags: NSEvent.ModifierFlags) {
+        var mods: Modifiers = []
+        for entry in Modifiers.flagTable where flags.contains(entry.ns) { mods.insert(entry.modifier) }
         self = mods
     }
 
     var cgFlags: CGEventFlags {
         var flags: CGEventFlags = []
-        if contains(.cmd) { flags.insert(.maskCommand) }
-        if contains(.alt) { flags.insert(.maskAlternate) }
-        if contains(.ctrl) { flags.insert(.maskControl) }
-        if contains(.shift) { flags.insert(.maskShift) }
+        for entry in Modifiers.flagTable where contains(entry.modifier) { flags.insert(entry.cg) }
         return flags
     }
 
@@ -108,16 +116,5 @@ struct KeyCombo: Equatable {
         }
         let mods = try Modifiers.parse(tokens: tokens.dropLast()) { ConfigError("unknown modifier '\($0)' in '\(text)'") }
         return KeyCombo(keyCode: keyCode, modifiers: mods)
-    }
-}
-
-extension Modifiers {
-    init(_ flags: NSEvent.ModifierFlags) {
-        var mods: Modifiers = []
-        if flags.contains(.command) { mods.insert(.cmd) }
-        if flags.contains(.option) { mods.insert(.alt) }
-        if flags.contains(.control) { mods.insert(.ctrl) }
-        if flags.contains(.shift) { mods.insert(.shift) }
-        self = mods
     }
 }

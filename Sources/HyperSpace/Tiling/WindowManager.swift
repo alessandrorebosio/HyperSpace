@@ -136,6 +136,12 @@ final class WindowManager {
         workspace < config.workspaces.count ? config.workspaces[workspace] : "\(workspace + 1)"
     }
 
+    /// Whether the rules make a window float: a dialog, or an app or title rule. The title (an
+    /// AX read) is only asked for when a rule looks at titles.
+    private func shouldFloat(_ window: ManagedWindow, title: () -> String?) -> Bool {
+        window.isDialog || config.floats(app: window.bundleID, title: config.floatingWindows.isEmpty ? nil : title())
+    }
+
     // MARK: - What a command reads from the system, once
 
     /// The displays, the on-screen windows and the focused window cost a window-server query,
@@ -187,10 +193,8 @@ final class WindowManager {
         let rulesChanged = newConfig.floating != config.floating || newConfig.floatingWindows != config.floatingWindows
         config = newConfig
         if rulesChanged {
-            let byTitle = !config.floatingWindows.isEmpty
             for window in windows.values where !window.userOverride {
-                window.isFloating = window.isDialog
-                    || config.floats(app: window.bundleID, title: byTitle ? AX.string(window.element, kAXTitleAttribute) : nil)
+                window.isFloating = shouldFloat(window) { AX.string(window.element, kAXTitleAttribute) }
             }
         }
         // Fewer workspaces than before: their windows join the first one.
@@ -331,7 +335,7 @@ final class WindowManager {
         guard app.activationPolicy == .regular, !launches.contains(pid),
               app.launchDate.map({ Date().timeIntervalSince($0) < 30 }) ?? !app.isFinishedLaunching,
               !windows.values.contains(where: { $0.pid == pid }),
-              let workspace = focusedScreen().flatMap({ displayed[$0.id] }) else { return }
+              let workspace = focusedWorkspace else { return }
         log.debug("launch of \(app.bundleIdentifier ?? "?", privacy: .public) from workspace \(workspace)")
         launches.launched(pid, in: workspace)
     }
@@ -478,8 +482,7 @@ final class WindowManager {
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
         window.isDialog = probe.kind == .dialog || probe.dialogLike
-        window.isFloating = window.isDialog
-            || config.floats(app: watcher.bundleID, title: config.floatingWindows.isEmpty ? nil : probe.title)
+        window.isFloating = shouldFloat(window) { probe.title }
         // A dialog belongs to the window it was opened from: the app's main window, else the
         // app's window focused last, else any of its windows.
         let parent = window.isDialog ? dialogParent(of: watcher.pid, main: probe.mainWindow, excluding: id) : nil
@@ -525,10 +528,10 @@ final class WindowManager {
         } else {
             window.workspace = Self.newWindowWorkspace(assigned: assigned, restored: restored?.workspace, launch: launch,
                                                        workspaces: workspaceCount) { [self] in
-                if let frame = probe.frame, case let screens = currentScreens(), !screens.isEmpty {
-                    return displayed[screens[screens.index(for: frame)].id]
+                if let frame = probe.frame, let screen = currentScreens().screen(for: frame) {
+                    return displayed[screen.id]
                 }
-                return focusedScreen().flatMap { displayed[$0.id] }
+                return focusedWorkspace
             }
         }
         // An app with a rule you just opened takes you to its workspace, however its first
@@ -629,7 +632,7 @@ final class WindowManager {
             guard !config.floatingWindows.isEmpty,
                   let window = managed(element, pid: pid),
                   !window.userOverride else { return }
-            let floats = window.isDialog || config.floats(app: window.bundleID, title: AX.string(element, kAXTitleAttribute))
+            let floats = shouldFloat(window) { AX.string(element, kAXTitleAttribute) }
             guard floats != window.isFloating else { return }
             window.isFloating = floats
             scheduleRetile()
@@ -757,8 +760,8 @@ final class WindowManager {
                 // A dialog of a scratchpad window comes and goes with it.
                 if !owner.scratchpadShown {
                     if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
-                } else if let frame = bounds[owner.id] {
-                    restore(window, on: screens[screens.index(for: frame)], screens)
+                } else if let frame = bounds[owner.id], let screen = screens.screen(for: frame) {
+                    restore(window, on: screen, screens)
                 }
                 continue
             }
@@ -848,8 +851,7 @@ final class WindowManager {
         }
         lastFrontPID = window.pid
         let screens = currentScreens()
-        if let frame = frame ?? currentBounds()[window.id], !screens.isEmpty {
-            let screen = screens[screens.index(for: frame)]
+        if let frame = frame ?? currentBounds()[window.id], let screen = screens.screen(for: frame) {
             activeDisplay = screen.id
             bringPointer(to: frame.center, on: screen)
         }
@@ -1055,9 +1057,7 @@ final class WindowManager {
             }
         case .resize:
             // Resizing a tiled window drags the master/stack split instead.
-            let screens = currentScreens()
-            guard let frame = bounds[id], !screens.isEmpty else { break }
-            let screen = screens[screens.index(for: frame)]
+            guard let frame = bounds[id], let screen = currentScreens().screen(for: frame) else { break }
             var state = state(for: screen.id)
             let isMaster = tiledWindows(in: window.workspace, bounds: bounds).first === window
             let delta: CGFloat

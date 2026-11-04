@@ -92,6 +92,12 @@ extension WindowManager {
         return (state, list.map(\.element))
     }
 
+    /// Reads the windows' titles over AX (slow: not on the main thread, which is why the state
+    /// is written without them first).
+    static func fillTitles(_ state: inout WorkspaceState, _ elements: [AXUIElement]) {
+        for i in elements.indices { state.windows[i].title = AX.string(elements[i], kAXTitleAttribute) ?? "" }
+    }
+
     /// Saves a moment after a change, when something really changed. Not while windows are
     /// still being matched to the saved state, which would lose the apps not reopened yet.
     func scheduleSave() {
@@ -105,7 +111,7 @@ extension WindowManager {
             guard state != lastSavedShape else { return }
             lastSavedShape = state
             saveQueue.async {
-                for i in elements.indices { state.windows[i].title = AX.string(elements[i], kAXTitleAttribute) ?? "" }
+                WindowManager.fillTitles(&state, elements)
                 state.savedAt = Date()
                 state.save()
             }
@@ -116,7 +122,7 @@ extension WindowManager {
     func saveState() {
         guard running else { return }
         var (state, elements) = currentState()
-        for i in elements.indices { state.windows[i].title = AX.string(elements[i], kAXTitleAttribute) ?? "" }
+        WindowManager.fillTitles(&state, elements)
         if let restorer { state.windows += restorer.unclaimed }
         state.savedAt = Date()
         saveQueue.sync {}

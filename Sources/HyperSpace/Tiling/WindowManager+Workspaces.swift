@@ -90,7 +90,7 @@ extension WindowManager {
         // Even with nothing to focus (an empty workspace), the refocusing caused by hiding
         // the old windows must not bring the old workspace back.
         ignoreFocusChanges()
-        let focusedWorkspace = focusedScreen().flatMap { displayed[$0.id] }
+        let focusedWorkspace = self.focusedWorkspace
         log.debug("switch to workspace \(index) on display \(screen.id) (shown there: \(self.displayed[screen.id] ?? -1), focused: \(focusedWorkspace ?? -1))")
         if let current = focusedWorkspace, current != index {
             previousWorkspace = current
@@ -132,9 +132,8 @@ extension WindowManager {
 
     /// Parks a window in the bottom-right corner of its screen, nearly all of it off-screen.
     func hide(_ window: ManagedWindow, from frame: CGRect, screens: [ScreenInfo]) {
-        guard window.hiddenFrame == nil, !screens.isEmpty else { return }
+        guard window.hiddenFrame == nil, let screen = screens.screen(for: frame)?.frame else { return }
         window.hiddenFrame = frame
-        let screen = screens[screens.index(for: frame)].frame
         let element = window.element
         writer.perform(window.pid) { AX.setPosition(element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)) }
     }
@@ -150,8 +149,7 @@ extension WindowManager {
     /// `frame` on `screen`: as it is when already there, else moved from the display it is on
     /// keeping its position and size as shares of the visible area.
     static func place(_ frame: CGRect, on screen: ScreenInfo, _ screens: [ScreenInfo]) -> CGRect {
-        guard !screens.isEmpty else { return frame }
-        let from = screens[screens.index(for: frame)]
+        guard let from = screens.screen(for: frame) else { return frame }
         return from.id == screen.id ? frame : from.relocate(frame, to: screen)
     }
 

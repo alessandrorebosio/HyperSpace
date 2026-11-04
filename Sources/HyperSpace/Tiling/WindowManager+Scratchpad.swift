@@ -76,7 +76,7 @@ extension WindowManager {
             window.scratchpad = false
             window.scratchpadShown = false
             window.hiddenFrame = nil
-            window.workspace = focusedScreen().flatMap { displayed[$0.id] } ?? window.workspace
+            window.workspace = focusedWorkspace ?? window.workspace
             log.debug("window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) back into workspace \(window.workspace)")
             retile()
             focus(window)
@@ -159,7 +159,7 @@ extension WindowManager {
             hide(window, from: shown, screens: screens)
         }
         // Back to what you were doing, on the display it was shown on: the pointer stays there.
-        let here = frame.flatMap { screens.isEmpty ? nil : screens[screens.index(for: $0)].id } ?? activeDisplay
+        let here = frame.flatMap { screens.screen(for: $0)?.id } ?? activeDisplay
         if let workspace = here.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
             focusWindow(in: workspace)
         }
