@@ -73,6 +73,7 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 - Displays are remembered by **UUID** (`CGDisplayCreateUUIDFromDisplayID`), which stays the same when a monitor is plugged in again (its id may not).
 - A display disconnected: its workspaces move to the main display (their home becomes unavailable; a `homeOverride` pointing to a missing display is ignored), and the workspace it showed is remembered (`departed`). When it returns it **shows that workspace again**, with its windows and columns, and its layout/ratio.
 - **Standby or another input**: `DisplayMonitor` polls every 5 s (only with several displays). A display that is asleep or inactive (`CGDisplayIsAsleep` / `!CGDisplayIsActive`) for **60 s** is left out of the layout as if unplugged; it comes back on the first poll it is awake. Not applied when every display is dark (the Mac sleeping). A monitor switched to another input that macOS still reports as active cannot be told apart and is not left out.
+- macOS moves the windows of a removed display onto the remaining one, parked ones too: a parked window found in view is **parked again** (retiles run right away and at 0.5 s and 1.5 s after the change), and a floating one whose display is gone gets where macOS put it as its saved frame. Focus changes right after a display change do not switch workspaces.
 - After any display change `syncDisplays` re-assigns which workspace each display shows, and a retile follows.
 - The menu bar title is refreshed (see [Settings and menu](09-settings-and-menu.md)).
 

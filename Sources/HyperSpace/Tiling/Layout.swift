@@ -47,7 +47,10 @@ enum Layout {
     static func split(_ rect: CGRect, weights: [CGFloat], horizontally: Bool, gap: CGFloat) -> [CGRect] {
         let length = horizontally ? rect.width : rect.height
         let usable = length - gap * CGFloat(weights.count - 1)
-        let total = weights.reduce(0, +)
+        // Degenerate weights (all zero) would divide by zero: split evenly instead.
+        let sum = weights.reduce(0, +)
+        let weights = sum > 0 ? weights : weights.map { _ in 1 }
+        let total = sum > 0 ? sum : CGFloat(weights.count)
         var offset: CGFloat = 0
         return weights.enumerated().map { i, weight in
             // The last tile absorbs rounding so the edge stays flush.

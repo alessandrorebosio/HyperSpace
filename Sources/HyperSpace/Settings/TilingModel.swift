@@ -87,7 +87,7 @@ final class TilingModel: ObservableObject {
     private static let defaults = TilingConfig()
     /// The slider ranges (the config accepts the same ones).
     static let spacingRange = Int(TilingConfig.spacingRange.lowerBound)...Int(TilingConfig.spacingRange.upperBound)
-    static let accordionRange = 0...120
+    static let accordionRange = Int(TilingConfig.accordionPaddingRange.lowerBound)...Int(TilingConfig.accordionPaddingRange.upperBound)
 
     @Published private(set) var enabled = TilingModel.defaults.enabled
     @Published private(set) var layout = TilingModel.defaults.layout
@@ -154,15 +154,13 @@ final class TilingModel: ObservableObject {
 
     func setEnabled(_ on: Bool) { enabled = on; save() }
     func setLayout(_ kind: LayoutKind) { layout = kind; save() }
-    /// `commit` false while a slider is being dragged: the value shows at once, the config is
-    /// written (and the windows retiled) once, when the slider is released.
-    func setGap(_ value: Int, commit: Bool = true) { gap = value.clamped(to: Self.spacingRange); if commit { save() } }
-    func setPadding(_ value: Int, commit: Bool = true) { padding = value.clamped(to: Self.spacingRange); if commit { save() } }
+    /// The slider setters only update the shown value; `commitSpacing` writes them.
+    func setGap(_ value: Int) { gap = value.clamped(to: Self.spacingRange) }
+    func setPadding(_ value: Int) { padding = value.clamped(to: Self.spacingRange) }
+    func setAccordionPadding(_ value: Int) { accordionPadding = value.clamped(to: Self.accordionRange) }
+    /// Writes the current slider values (the config reload retiles once, on release).
+    func commitSpacing() { save() }
     func setMouseFollowsFocus(_ on: Bool) { mouseFollowsFocus = on; save() }
-    func setAccordionPadding(_ value: Int, commit: Bool = true) {
-        accordionPadding = value.clamped(to: Self.accordionRange)
-        if commit { save() }
-    }
 
     func addWorkspace() {
         workspaces.append(Workspace(name: TilingConfig.workspaceName(nil, at: workspaces.count), switchKeys: "", moveKeys: ""))

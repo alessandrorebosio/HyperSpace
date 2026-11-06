@@ -243,6 +243,7 @@ extension WindowManager {
     static func weight(at index: Int, of weights: [CGFloat], growingBy delta: CGFloat, length: CGFloat, gap: CGFloat) -> CGFloat {
         let usable = length - gap * CGFloat(weights.count - 1)
         let total = weights.reduce(0, +)
+        guard total > 0 else { return weights[index] }
         let others = total - weights[index]
         let minimum: CGFloat = 80
         let current = usable * weights[index] / total

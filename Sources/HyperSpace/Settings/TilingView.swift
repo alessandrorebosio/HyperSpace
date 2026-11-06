@@ -27,9 +27,11 @@ struct TilingView: View {
 
             Section {
                 SliderRow(title: "Gap between windows",
-                          value: model.gap, range: TilingModel.spacingRange, step: 2) { model.setGap($0, commit: $1) }
+                          value: model.gap, range: TilingModel.spacingRange, step: 2,
+                          onChange: { model.setGap($0) }, onCommit: model.commitSpacing)
                 SliderRow(title: "Margin around the screen",
-                          value: model.padding, range: TilingModel.spacingRange, step: 2) { model.setPadding($0, commit: $1) }
+                          value: model.padding, range: TilingModel.spacingRange, step: 2,
+                          onChange: { model.setPadding($0) }, onCommit: model.commitSpacing)
             } header: {
                 Text("Spacing")
             } footer: {
@@ -40,7 +42,8 @@ struct TilingView: View {
 
             Section {
                 SliderRow(title: "Visible edges",
-                          value: model.accordionPadding, range: TilingModel.accordionRange, step: 5) { model.setAccordionPadding($0, commit: $1) }
+                          value: model.accordionPadding, range: TilingModel.accordionRange, step: 5,
+                          onChange: { model.setAccordionPadding($0) }, onCommit: model.commitSpacing)
                 AccordionPreview(peek: model.accordionPadding)
                     .frame(height: 70)
                     .frame(maxWidth: .infinity)

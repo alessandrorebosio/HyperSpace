@@ -139,8 +139,32 @@ extension WindowManager {
     func hide(_ window: ManagedWindow, from frame: CGRect, screens: [ScreenInfo]) {
         guard window.hiddenFrame == nil, let screen = screens.screen(for: frame)?.frame else { return }
         window.hiddenFrame = frame
+        park(window, in: screen)
+    }
+
+    /// Keeps a parked window parked: macOS moves windows of an unplugged display onto the
+    /// remaining one, parked ones included, and they would stay in view. It goes back to the
+    /// corner; a floating one whose display is gone restores where macOS put it.
+    func keepHidden(_ window: ManagedWindow, bounds: [CGWindowID: CGRect], screens: [ScreenInfo]) {
+        guard let saved = window.hiddenFrame, let frame = bounds[window.id],
+              !Self.isParked(frame, on: screens),
+              Date().timeIntervalSince(window.movedByUs) > 0.5,
+              let screen = screens.screen(for: frame)?.frame else { return }
+        if !screens.contains(where: { $0.frame.contains(saved.center) }) { window.hiddenFrame = frame }
+        park(window, in: screen)
+    }
+
+    private func park(_ window: ManagedWindow, in screen: CGRect) {
+        window.movedByUs = Date()
         let element = window.element
         writer.perform(window.pid) { AX.setPosition(element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)) }
+    }
+
+    /// Whether a window shows at most a sliver on every screen (or none): parked, not in view.
+    static func isParked(_ frame: CGRect, on screens: [ScreenInfo]) -> Bool {
+        let seen = screens.map { frame.intersection($0.frame) }.filter { !$0.isNull }
+        guard let best = seen.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return true }
+        return best.width <= 40 || best.height <= 40 || best.width * best.height < 0.1 * frame.width * frame.height
     }
 
     /// A floating window returns to its frame, on the display now showing its workspace;

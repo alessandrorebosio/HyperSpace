@@ -256,7 +256,7 @@ final class EventTap {
     /// Returns true when the event must be swallowed.
     private func handleKey(_ event: CGEvent, down: Bool) -> Bool {
         let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
-        guard code < 128 else { return false }
+        guard (0..<128).contains(code) else { return false }
 
         let carrierIndex = Int(config.carrierTable[code])
         if carrierIndex >= 0 {
@@ -296,7 +296,7 @@ final class EventTap {
 
     private func handleButton(_ event: CGEvent, down: Bool) -> Bool {
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
-        guard button < 32, !buttonsSuspended else { return false }
+        guard (0..<32).contains(button), !buttonsSuspended else { return false }
         if down {
             let index = config.buttonTable[TapConfig.slot(button, Modifiers(event.flags))]
             guard index >= 0 else { return false }

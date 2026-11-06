@@ -189,6 +189,7 @@ struct TilingConfig {
     static let defaultMouseFollowsFocus = true
     static let defaultScratchpadSize = CGSize(width: 0.6, height: 0.7)
     static let defaultAccordionPadding: CGFloat = 30
+    static let accordionPaddingRange: ClosedRange<CGFloat> = 0...200
 
     var enabled = TilingConfig.defaultEnabled
     var layout = TilingConfig.defaultLayout
@@ -356,7 +357,7 @@ struct Config {
         tiling.floating = Set(raw.floating ?? [])
         tiling.floatingWindows = (raw.floatingWindows ?? []).compactMap { TilingConfig.floatingRule(app: $0.app, title: $0.title) }
         tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? defaults.mouseFollowsFocus
-        tiling.accordionPadding = raw.accordionPadding.map { CGFloat($0).clamped(to: 0...200) } ?? defaults.accordionPadding
+        tiling.accordionPadding = raw.accordionPadding.map { CGFloat($0).clamped(to: TilingConfig.accordionPaddingRange) } ?? defaults.accordionPadding
         func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat($0).clamped(to: 0.2...1) } ?? fallback }
         tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, defaults.scratchpadSize.width),
                                        height: fraction(raw.scratchpad?.height, defaults.scratchpadSize.height))

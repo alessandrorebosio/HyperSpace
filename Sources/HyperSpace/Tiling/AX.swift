@@ -105,7 +105,9 @@ enum AX {
         let mainWindow: CGWindowID?
     }
 
-    static func probe(_ element: AXUIElement, pid: pid_t) -> WindowProbe {
+    /// `main` is the app's main window ID when the caller already resolved it (once per app
+    /// for a batch); left `nil` it is read here.
+    static func probe(_ element: AXUIElement, pid: pid_t, main resolved: CGWindowID?? = nil) -> WindowProbe {
         let role = string(element, kAXRoleAttribute)
         let subrole = string(element, kAXSubroleAttribute)
         var settable: DarwinBoolean = false
@@ -118,7 +120,8 @@ enum AX {
         default: kind = .other
         }
         let frame = position(element).flatMap { origin in size(element).map { CGRect(origin: origin, size: $0) } }
-        let main = kind == .other ? nil : self.element(AXUIElementCreateApplication(pid), kAXMainWindowAttribute).flatMap(windowID)
+        let main = kind == .other ? nil
+            : resolved ?? self.element(AXUIElementCreateApplication(pid), kAXMainWindowAttribute).flatMap(windowID)
         return WindowProbe(element: element, id: windowID(element), role: role, subrole: subrole, kind: kind,
                            dialogLike: kind == .standard && isDialogLike(element),
                            title: kind == .other ? nil : string(element, kAXTitleAttribute), frame: frame, mainWindow: main)

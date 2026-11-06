@@ -6,7 +6,7 @@ struct ScreenState {
     var ratio: CGFloat
 }
 
-private struct DragSession {
+struct DragSession {
     let mode: DragMode
     let element: AXUIElement
     let pid: pid_t
@@ -54,12 +54,12 @@ final class WindowManager {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var retileScheduled = false
-    private var drag: DragSession?
+    var drag: DragSession?
     /// Dragging writes to the app on its AX queue, one write at a time with only the latest
     /// point waiting; `dragGeneration` tells the writes of an old drag from the current one.
-    private var dragWriteInFlight = false
-    private var dragPendingPoint: CGPoint?
-    private var dragGeneration = 0
+    var dragWriteInFlight = false
+    var dragPendingPoint: CGPoint?
+    var dragGeneration = 0
     private lazy var refcon = Unmanaged.passUnretained(self).toOpaque()
 
     /// The workspace each display shows.
@@ -310,8 +310,14 @@ final class WindowManager {
     }
 
     private func displaysChanged() {
+        // The focused window of the removed display moving must not switch workspaces.
+        ignoreFocusChanges()
         syncDisplays()
         scheduleRetile()
+        // macOS relocates the windows of the removed display a moment after the notification.
+        for delay in [0.5, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.scheduleRetile() }
+        }
         notifyWorkspace()
     }
 
@@ -430,7 +436,8 @@ final class WindowManager {
         let app = watcher.element
         pendingDiscoveries += 1
         writer.read(pid, {
-            AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid) }
+            let main = AX.element(app, kAXMainWindowAttribute).flatMap(AX.windowID)
+            return AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid, main: .some(main)) }
         }, then: { [weak self] probes in
             guard let self else { return }
             enterScope()
@@ -620,8 +627,13 @@ final class WindowManager {
         case kAXMovedNotification, kAXResizedNotification:
             // Moved or resized by hand: back to its tile once the mouse is released. Our own
             // moves land on the target frame, so the retile has nothing to do for them.
-            guard let window = managed(element, pid: pid),
-                  !window.isFloating, !window.scratchpad, window.hiddenFrame == nil,
+            guard let window = managed(element, pid: pid) else { return }
+            if window.hiddenFrame != nil {
+                // A parked window moved by macOS (a display went away): parked again.
+                if Date().timeIntervalSince(window.movedByUs) > 0.5 { scheduleRetile() }
+                return
+            }
+            guard !window.isFloating, !window.scratchpad,
                   // A window that cannot take its tile (a minimum size) must not loop.
                   Date().timeIntervalSince(window.movedByUs) > 0.5 else { return }
             scheduleSnapBack()
@@ -754,12 +766,14 @@ final class WindowManager {
         guard !screens.isEmpty else { return }
         let bounds = currentBounds()
         let shown = Set(displayed.values)
+        let tiledByWorkspace = Dictionary(grouping: orderedWindows.filter { Self.isTiled($0, bounds: bounds) }, by: \.workspace)
 
         for window in windows.values {
             if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
                 // A dialog of a scratchpad window comes and goes with it.
                 if !owner.scratchpadShown {
                     if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
+                    else { keepHidden(window, bounds: bounds, screens: screens) }
                 } else if let frame = bounds[owner.id], let screen = screens.screen(for: frame) {
                     restore(window, on: screen, screens)
                 }
@@ -767,13 +781,15 @@ final class WindowManager {
             }
             if window.scratchpad {
                 // Out of the workspaces: parked unless shown.
-                if !window.scratchpadShown, window.hiddenFrame == nil, let frame = bounds[window.id] {
-                    hide(window, from: frame, screens: screens)
+                if !window.scratchpadShown {
+                    if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
+                    else { keepHidden(window, bounds: bounds, screens: screens) }
                 }
                 continue
             }
             if !shown.contains(window.workspace) {
                 if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
+                else { keepHidden(window, bounds: bounds, screens: screens) }
             } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
                 restore(window, on: screen, screens)
             }
@@ -781,7 +797,7 @@ final class WindowManager {
 
         for screen in screens {
             guard let workspace = displayed[screen.id] else { continue }
-            let tiled = tiledWindows(in: workspace, bounds: bounds).filter { window in
+            let tiled = (tiledByWorkspace[workspace] ?? []).filter { window in
                 // A native full-screen window covers the whole display, menu bar included.
                 window.hiddenFrame != nil || !screens.contains { bounds[window.id]!.isClose(to: $0.frame) }
             }
@@ -804,7 +820,7 @@ final class WindowManager {
             for window in tiled {
                 guard let frame = frames[window.id] else { continue }
                 window.hiddenFrame = nil
-                if !(bounds[window.id]?.isClose(to: frame) ?? false) { setFrame(window, frame, from: bounds[window.id], screens: screens) }
+                if !(bounds[window.id]?.isClose(to: frame, tolerance: 1) ?? false) { setFrame(window, frame, from: bounds[window.id], screens: screens) }
             }
         }
         scheduleSave()
@@ -819,9 +835,11 @@ final class WindowManager {
 
     /// Tiled windows of a workspace that are on screen, in tiling order.
     func tiledWindows(in workspace: Int, bounds: [CGWindowID: CGRect]) -> [ManagedWindow] {
-        orderedWindows.filter {
-            $0.workspace == workspace && !$0.isFloating && !$0.scratchpad && bounds[$0.id] != nil
-        }
+        orderedWindows.filter { $0.workspace == workspace && Self.isTiled($0, bounds: bounds) }
+    }
+
+    private static func isTiled(_ window: ManagedWindow, bounds: [CGWindowID: CGRect]) -> Bool {
+        !window.isFloating && !window.scratchpad && bounds[window.id] != nil
     }
 
     /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
@@ -977,98 +995,6 @@ final class WindowManager {
         var state = state(for: id)
         change(&state)
         setState(state, for: id)
-        scheduleRetile()
-    }
-
-    // MARK: - Mouse drag (modifier + left drag moves, modifier + right drag resizes)
-
-    func beginDrag(_ mode: DragMode, at point: CGPoint) {
-        guard let element = AX.window(at: point),
-              let origin = AX.position(element), let size = AX.size(element) else { return }
-        // Focus and moves go through the app's AX queue, in order, off the main thread.
-        let pid = AX.pid(element)
-        writer.perform(pid) { AX.focus(element, pid: pid) }
-        dragGeneration += 1
-        dragWriteInFlight = false
-        dragPendingPoint = nil
-        drag = DragSession(mode: mode, element: element, pid: pid, id: AX.windowID(element), start: point,
-                           frame: CGRect(origin: origin, size: size))
-    }
-
-    func updateDrag(to point: CGPoint) {
-        guard let drag else { return }
-        // One write at a time: while the app is busy only the newest point waits.
-        if dragWriteInFlight {
-            dragPendingPoint = point
-        } else {
-            writeDrag(drag, to: point)
-        }
-    }
-
-    private func writeDrag(_ session: DragSession, to point: CGPoint) {
-        dragWriteInFlight = true
-        let generation = dragGeneration
-        let dx = point.x - session.start.x
-        let dy = point.y - session.start.y
-        let element = session.element
-        let frame = session.frame
-        let mode = session.mode
-        writer.perform(session.pid) { [weak self] in
-            switch mode {
-            case .move:
-                AX.setPosition(element, CGPoint(x: frame.minX + dx, y: frame.minY + dy))
-            case .resize:
-                let minimum = WindowManager.minimumWindowSize
-                AX.setSize(element, CGSize(width: max(minimum.width, frame.width + dx), height: max(minimum.height, frame.height + dy)))
-            }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, generation == dragGeneration else { return }
-                dragWriteInFlight = false
-                // The point that arrived meanwhile is written even if the button was released.
-                if let next = dragPendingPoint {
-                    dragPendingPoint = nil
-                    writeDrag(session, to: next)
-                }
-            }
-        }
-    }
-
-    func endDrag(at point: CGPoint) {
-        enterScope()
-        defer { leaveScope() }
-        guard let session = drag else { return }
-        drag = nil
-        guard running, let id = session.id, let window = windows[id], !window.isFloating else { return }
-
-        let bounds = currentBounds()
-        switch session.mode {
-        case .move:
-            // Dropping a tiled window onto another one swaps them; dropping it on another
-            // display moves it into the workspace shown there.
-            if let target = visible(bounds, tiledOnly: true).first(where: { $0.0.id != id && $0.1.contains(point) }) {
-                swapOrder(id, target.0.id)
-                if window.workspace == target.0.workspace {
-                    columns[window.workspace]?.swap(id, target.0.id)
-                }
-                window.workspace = target.0.workspace
-            } else if let screen = currentScreens().first(where: { $0.frame.contains(point) }),
-                      let workspace = displayed[screen.id] {
-                window.workspace = workspace
-            }
-        case .resize:
-            // Resizing a tiled window drags the master/stack split instead.
-            guard let frame = bounds[id], let screen = currentScreens().screen(for: frame) else { break }
-            var state = state(for: screen.id)
-            let isMaster = tiledWindows(in: window.workspace, bounds: bounds).first === window
-            let delta: CGFloat
-            switch state.layout {
-            case .tall: delta = (point.x - session.start.x) / screen.visible.width
-            case .wide: delta = (point.y - session.start.y) / screen.visible.height
-            case .columns, .monocle, .accordion: delta = 0
-            }
-            state.ratio = (state.ratio + (isMaster ? delta : -delta)).clamped(to: TilingConfig.ratioRange)
-            setState(state, for: screen.id)
-        }
         scheduleRetile()
     }
 }

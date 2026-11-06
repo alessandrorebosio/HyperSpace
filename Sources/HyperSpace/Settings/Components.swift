@@ -444,8 +444,10 @@ struct SliderRow: View {
     let value: Int
     let range: ClosedRange<Int>
     let step: Int
-    /// The new value, and whether it is final (the slider was released) or a drag in progress.
-    let onChange: (Int, Bool) -> Void
+    /// The value while the slider is dragged; not saved yet.
+    let onChange: (Int) -> Void
+    /// The slider was released: save the value.
+    let onCommit: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -454,9 +456,9 @@ struct SliderRow: View {
             // Continuous (no tick marks), rounded to `step`. Saved only on release: every save
             // reloads the config and retiles the windows.
             Slider(value: Binding(get: { Double(value) },
-                                  set: { onChange(Int(($0 / Double(step)).rounded()) * step, false) }),
+                                  set: { onChange(Int(($0 / Double(step)).rounded()) * step) }),
                    in: Double(range.lowerBound)...Double(range.upperBound)) { editing in
-                if !editing { onChange(value, true) }
+                if !editing { onCommit() }
             }
             .labelsHidden()
             .frame(minWidth: 120, maxWidth: 200)

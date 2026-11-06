@@ -494,3 +494,101 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
         #expect(translated.translated { $0 } == translated)
     }
 }
+
+@Suite struct ParkingTests {
+    private let screens = [ScreenInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 1000, height: 800), visible: CGRect(x: 0, y: 25, width: 1000, height: 775))]
+
+    @Test func parkedAtCorner() {
+        #expect(WindowManager.isParked(CGRect(x: 999, y: 799, width: 400, height: 300), on: screens))
+    }
+
+    @Test func insideScreenIsNotParked() {
+        #expect(!WindowManager.isParked(CGRect(x: 100, y: 100, width: 400, height: 300), on: screens))
+    }
+
+    @Test func offEveryScreenIsParked() {
+        #expect(WindowManager.isParked(CGRect(x: 3000, y: 100, width: 400, height: 300), on: screens))
+    }
+
+    @Test func halfOnScreenIsNotParked() {
+        #expect(!WindowManager.isParked(CGRect(x: 800, y: 100, width: 400, height: 300), on: screens))
+    }
+}
+
+@Suite struct ConfigWriterTests {
+    private let sample: [String: Any] = [
+        "tiling": ["enabled": true, "gap": 8, "layout": "tall"] as [String: Any],
+        "mouse": ["reverseScroll": false, "dragModifier": "cmd"] as [String: Any],
+        "keyboard": [
+            "remap": [["from": "capslock", "to": "hyper", "keyboard": "builtin"] as [String: Any]],
+        ] as [String: Any],
+        "bindings": [["keys": "cmd+a", "action": "say \"hi\" \\ a/b"] as [String: Any]],
+    ]
+
+    private func index(_ needle: String, in text: String) -> Int {
+        text.range(of: needle)?.lowerBound.utf16Offset(in: text) ?? -1
+    }
+
+    @Test func roundTripsThroughJSON() throws {
+        let text = ConfigWriter.text(for: sample)
+        let parsed = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        #expect(NSDictionary(dictionary: parsed).isEqual(to: sample))
+    }
+
+    @Test func topLevelKeysFollowTheKeyOrder() {
+        let text = ConfigWriter.text(for: sample)
+        let keyboard = index("\"keyboard\"", in: text)
+        let mouse = index("\"mouse\"", in: text)
+        let tiling = index("\"tiling\"", in: text)
+        #expect(keyboard >= 0 && keyboard < mouse && mouse < tiling)
+    }
+
+    @Test func keyboardComesLastInsideARemapRule() {
+        let text = ConfigWriter.text(for: ["keyboard": ["remap": [["keyboard": "builtin", "to": "hyper", "from": "capslock"]]]])
+        #expect(text.contains("{ \"from\": \"capslock\", \"to\": \"hyper\", \"keyboard\": \"builtin\" }"))
+    }
+
+    @Test func flatObjectsInArraysStayOnOneLine() {
+        let text = ConfigWriter.text(for: sample)
+        let line = text.split(separator: "\n").first { $0.contains("cmd+a") }
+        #expect(line?.contains("{ \"keys\"") == true && line?.contains("}") == true)
+    }
+
+    @Test func escapesQuotesAndBackslashesButNotSlashes() {
+        let text = ConfigWriter.text(for: ["a": "say \"hi\" \\ a/b"])
+        #expect(text.contains("\"say \\\"hi\\\" \\\\ a/b\""))
+    }
+
+    @Test func booleansAreNotNumbers() {
+        let text = ConfigWriter.text(for: ["on": true, "off": false, "one": 1])
+        #expect(text.contains("\"on\": true") && text.contains("\"off\": false") && text.contains("\"one\": 1"))
+    }
+}
+
+@Suite struct KeyboardMappingTests {
+    private func pairs(_ rules: [RemapRule], product: String = "Magic Keyboard", builtIn: Bool = false) -> [UInt64: UInt64] {
+        var result: [UInt64: UInt64] = [:]
+        for case let entry as NSDictionary in KeyboardRemapper.mapping(rules, product: product, builtIn: builtIn) {
+            let from = (entry["HIDKeyboardModifierMappingSrc"] as? NSNumber)?.uint64Value ?? 0
+            result[from] = (entry["HIDKeyboardModifierMappingDst"] as? NSNumber)?.uint64Value
+        }
+        return result
+    }
+
+    @Test func moreSpecificRuleWinsInEitherOrder() {
+        let generic = RemapRule(from: 1, to: 10, target: .all)
+        let specific = RemapRule(from: 1, to: 20, target: .product("magic"))
+        #expect(pairs([generic, specific]) == [1: 20])
+        #expect(pairs([specific, generic]) == [1: 20])
+    }
+
+    @Test func rulesForOtherKeyboardsAreExcluded() {
+        let rules = [
+            RemapRule(from: 1, to: 10, target: .product("Logitech")),
+            RemapRule(from: 2, to: 20, target: .builtIn),
+            RemapRule(from: 3, to: 30, target: .external),
+        ]
+        #expect(pairs(rules) == [3: 30])
+        #expect(pairs(rules, product: "Apple Internal Keyboard", builtIn: true) == [2: 20])
+    }
+}

@@ -13,10 +13,15 @@ enum ConfigWriter {
     private static func update(_ change: (inout [String: Any]) -> Void) throws {
         var root = read()
         change(&root)
-        let text = format(root, depth: 0) + "\n"
+        let text = text(for: root)
         // Nothing changed: no write, so no reload of the whole config.
         if let current = try? String(contentsOf: ConfigStore.url, encoding: .utf8), current == text { return }
         try text.write(to: ConfigStore.url, atomically: true, encoding: .utf8)
+    }
+
+    /// The file's text for `root` (apart from the write, what `update` saves).
+    static func text(for root: [String: Any]) -> String {
+        format(root, depth: 0) + "\n"
     }
 
     /// `update` for the settings pages: the error message, or nil when saved.
