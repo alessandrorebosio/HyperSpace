@@ -83,6 +83,19 @@ struct TilingOffNotice: View {
     }
 }
 
+/// A window in a layout picture: the main (or front) one strongly tinted, the others lighter.
+/// Windows of a stack (`stackShadow` set) are painted opaque first, so the ones behind do not
+/// show through the front one, which casts that shadow.
+private func drawCard(_ card: Path, in context: GraphicsContext, front: Bool, tint: Color,
+                      stackShadow: (opacity: Double, radius: CGFloat, y: CGFloat)?) {
+    if let shadow = stackShadow {
+        var shadowed = context
+        if front { shadowed.addFilter(.shadow(color: .black.opacity(shadow.opacity), radius: shadow.radius, y: shadow.y)) }
+        shadowed.fill(card, with: .color(Color(nsColor: .windowBackgroundColor)))
+    }
+    context.fill(card, with: .color(tint.opacity(front ? 0.85 : 0.35)))
+}
+
 /// Three windows as an accordion with the chosen edges, drawn to scale (a 1000 pt wide area).
 private struct AccordionPreview: View {
     let peek: Int
@@ -95,11 +108,8 @@ private struct AccordionPreview: View {
             for index in [0, 2, 1] {
                 let main = index == 1
                 let frame = main ? frames[index] : frames[index].insetBy(dx: 0, dy: 6)
-                let card = Path(roundedRect: frame, cornerRadius: 7, style: .continuous)
-                var shadowed = context
-                if main { shadowed.addFilter(.shadow(color: .black.opacity(0.25), radius: 4, y: 1.5)) }
-                shadowed.fill(card, with: .color(Color(nsColor: .windowBackgroundColor)))
-                context.fill(card, with: .color(Color.accentColor.opacity(main ? 0.85 : 0.35)))
+                drawCard(Path(roundedRect: frame, cornerRadius: 7, style: .continuous), in: context, front: main,
+                         tint: .accentColor, stackShadow: (opacity: 0.25, radius: 4, y: 1.5))
             }
         }
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.06)))
@@ -227,14 +237,8 @@ private struct LayoutThumbnail: View {
             for index in order {
                 let main = kind == .accordion ? index == 1 : index == 0
                 let frame = kind == .accordion && !main ? frames[index].insetBy(dx: 0, dy: 5) : frames[index]
-                let card = Path(roundedRect: frame, cornerRadius: corner, style: .continuous)
-                if kind == .accordion {
-                    // Opaque first, so the windows behind do not show through the front one.
-                    var shadowed = context
-                    if main { shadowed.addFilter(.shadow(color: .black.opacity(0.28), radius: 2.5, y: 1)) }
-                    shadowed.fill(card, with: .color(Color(nsColor: .windowBackgroundColor)))
-                }
-                context.fill(card, with: .color(tint.opacity(main ? 0.85 : 0.35)))
+                drawCard(Path(roundedRect: frame, cornerRadius: corner, style: .continuous), in: context, front: main,
+                         tint: tint, stackShadow: kind == .accordion ? (opacity: 0.28, radius: 2.5, y: 1) : nil)
             }
         }
         .background(

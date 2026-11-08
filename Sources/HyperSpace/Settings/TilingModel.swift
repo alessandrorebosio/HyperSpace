@@ -175,8 +175,8 @@ final class TilingModel: ObservableObject {
 
     /// The display choices for a workspace: automatic, the main display, every connected
     /// display by name, and the workspace's own pin even when that display is not connected.
-    func displayOptions(for workspace: Workspace) -> [DisplayOption] {
-        let screens = ScreenInfo.current()
+    /// `screens` is `ScreenInfo.current()`, read once for all the rows.
+    func displayOptions(for workspace: Workspace, screens: [ScreenInfo]) -> [DisplayOption] {
         var options = [DisplayOption(value: "", label: "Any display"), DisplayOption(value: "main", label: "Main display")]
         for (index, screen) in screens.enumerated() {
             let name = screen.name.isEmpty ? "Display \(index + 1)" : screen.name
@@ -209,10 +209,8 @@ final class TilingModel: ObservableObject {
     }
 
     func addFloatingWindow() {
-        let title = newFloatingTitle.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else { return }
-        let rule = FloatingWindowRule(app: newFloatingApp, title: title)
-        guard !floatingWindows.contains(rule) else { return }
+        guard let rule = TilingConfig.floatingRule(app: newFloatingApp, title: newFloatingTitle.trimmingCharacters(in: .whitespaces)),
+              !floatingWindows.contains(rule) else { return }
         floatingWindows.append(rule)
         newFloatingTitle = ""
         save()
@@ -427,7 +425,7 @@ final class TilingModel: ObservableObject {
         gap = ((tiling["gap"] as? NSNumber)?.intValue ?? Int(defaults.gap)).clamped(to: Self.spacingRange)
         padding = ((tiling["padding"] as? NSNumber)?.intValue ?? Int(defaults.padding)).clamped(to: Self.spacingRange)
         mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? defaults.mouseFollowsFocus
-        accordionPadding = (tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(defaults.accordionPadding)
+        accordionPadding = ((tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(defaults.accordionPadding)).clamped(to: Self.accordionRange)
         floating = tiling["floating"] as? [String] ?? []
         // The rules as the config reads them; one listed twice shows once (the list is keyed by rule).
         var rules: [FloatingWindowRule] = []

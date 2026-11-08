@@ -403,7 +403,7 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
 
     @Test func roundTrip() throws {
         var state = WorkspaceState(windows: [.init(app: "a", title: "t", workspace: 3)],
-                                   columns: ["3": [[0]]], displayed: ["1": 3], homeOverride: ["3": 2])
+                                   columns: ["3": [[0]]], displays: ["UUID-1": 3], moved: ["3": "UUID-2"])
         state.savedAt = Date(timeIntervalSince1970: 1_800_000_000)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

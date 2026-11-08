@@ -229,12 +229,12 @@ extension TilingConfig {
     /// empty; an empty app means any app.
     static func floatingRule(app: String?, title: String) -> FloatingWindowRule? {
         guard !title.isEmpty else { return nil }
-        return FloatingWindowRule(app: app.flatMap { $0.isEmpty ? nil : $0 }, title: title)
+        return FloatingWindowRule(app: app?.nilIfEmpty, title: title)
     }
 
     /// The name of a workspace: the one given, or its 1-based position when none (or empty).
     static func workspaceName(_ name: String?, at index: Int) -> String {
-        name.flatMap { $0.isEmpty ? nil : $0 } ?? "\(index + 1)"
+        name?.nilIfEmpty ?? "\(index + 1)"
     }
 
     /// Whether a window floats: its app is floating, or a title rule matches it.
@@ -242,6 +242,11 @@ extension TilingConfig {
         if let bundleID, floating.contains(bundleID) { return true }
         return floatingWindows.contains { $0.matches(app: bundleID, title: title) }
     }
+}
+
+extension String {
+    /// nil for the empty string.
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 extension Comparable {

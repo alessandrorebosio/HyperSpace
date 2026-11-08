@@ -96,11 +96,22 @@ extension CGRect {
     }
 
     func isClose(to other: CGRect, tolerance: CGFloat = 2) -> Bool {
-        abs(minX - other.minX) <= tolerance && abs(minY - other.minY) <= tolerance
-            && abs(width - other.width) <= tolerance && abs(height - other.height) <= tolerance
+        origin.isClose(to: other.origin, tolerance: tolerance) && size.isClose(to: other.size, tolerance: tolerance)
     }
 }
 
 extension CGPoint {
     func distance(to other: CGPoint) -> CGFloat { hypot(x - other.x, y - other.y) }
+
+    /// Both coordinates within `tolerance` points.
+    func isClose(to other: CGPoint, tolerance: CGFloat) -> Bool {
+        abs(x - other.x) <= tolerance && abs(y - other.y) <= tolerance
+    }
+}
+
+extension CGSize {
+    /// Both dimensions within `tolerance` points.
+    func isClose(to other: CGSize, tolerance: CGFloat) -> Bool {
+        abs(width - other.width) <= tolerance && abs(height - other.height) <= tolerance
+    }
 }

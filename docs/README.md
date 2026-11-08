@@ -4,8 +4,7 @@ HyperSpace is a macOS menu-bar app (Swift + AppKit, no dependencies) that combin
 **tiling window manager** with virtual workspaces, multiple displays and a scratchpad. This wiki describes what the app contains and how it works,
 written from the code in `Sources/HyperSpace/`. For a quick overview and install steps see the repository [README](../README.md).
 
-> Where the README and the code disagree, these pages follow the **code**. The differences are listed in
-> [README vs code](11-readme-vs-code.md).
+> Where the README and the code disagree, these pages follow the **code**.
 
 ## Index
 
@@ -21,7 +20,6 @@ written from the code in `Sources/HyperSpace/`. For a quick overview and install
 | [8. Scratchpad](08-scratchpad.md) | Per-app and generic scratchpad, size, centering, overlap |
 | [9. Settings window and menu bar](09-settings-and-menu.md) | Every settings page, the menu bar, the app menu |
 | [10. Permissions, troubleshooting, build and test](10-permissions-troubleshooting-build.md) | Accessibility, Copy Debug Info, `make app`, `make test` |
-| [11. README vs code](11-readme-vs-code.md) | Where the README does not match the code |
 
 ## At a glance
 

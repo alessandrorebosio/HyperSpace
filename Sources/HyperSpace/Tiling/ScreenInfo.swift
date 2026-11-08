@@ -96,6 +96,17 @@ extension Array where Element == ScreenInfo {
         isEmpty ? nil : self[index(for: rect)]
     }
 
+    /// The display with this id, if it is among them.
+    func first(id: CGDirectDisplayID) -> ScreenInfo? {
+        first { $0.id == id }
+    }
+
+    /// The display after the one with this id, wrapping around (in `ScreenInfo.current()` order).
+    func next(after id: CGDirectDisplayID) -> ScreenInfo? {
+        guard let index = firstIndex(where: { $0.id == id }) else { return nil }
+        return self[(index + 1) % count]
+    }
+
     func index(for rect: CGRect) -> Int {
         let center = rect.center
         if let i = firstIndex(where: { $0.frame.contains(center) }) { return i }

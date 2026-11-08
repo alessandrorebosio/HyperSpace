@@ -103,7 +103,7 @@ struct SettingsRoot: View {
             .navigationTitle(page.title)
             .environment(\.permissionMissing, page.needsPermission && !general.accessibilityGranted)
         }
-        .frame(minWidth: 720, minHeight: 460)
+        .frame(minWidth: SettingsWindowController.minimumSize.width, minHeight: SettingsWindowController.minimumSize.height)
         .modifier(GlassToolbar())
     }
 
@@ -181,6 +181,9 @@ private struct NoSidebarToggle: ViewModifier {
 /// Owns the settings window: sidebar with the input, window and app pages. It is built
 /// on demand and torn down on close, so it costs nothing while it is not open.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
+    /// The smallest the window gets; every page is laid out to fit it.
+    static let minimumSize = NSSize(width: 720, height: 460)
+
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
     private let actions: GeneralModel.Actions
@@ -204,25 +207,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             navigation.onSwitch = { [weak self] in self?.stopAllCaptures() }
             let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling,
                                     general: GeneralModel(actions: actions))
-            let controller = NSHostingController(rootView: root)
-            // Only a minimum size: the preferred size would pin the window and block resizing.
-            controller.sizingOptions = [.minSize]
-            // SwiftUI owns the toolbar and the title (the page's), so the sidebar is the system
-            // Liquid Glass one and lines up with the window controls. This only takes when the
-            // controller is set on an existing window, not with NSWindow(contentViewController:).
-            if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
-
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                                  backing: .buffered, defer: false)
-            window.contentViewController = controller
-            if #unavailable(macOS 14) { window.title = "HyperSpace" }
-            window.toolbarStyle = .unified
-            window.titlebarAppearsTransparent = true
-            window.isReleasedWhenClosed = false
+            let window = Self.makeWindow(root, size: NSSize(width: 900, height: 640))
             window.delegate = self
-            window.contentMinSize = NSSize(width: 720, height: 460)
-            window.setContentSize(NSSize(width: 900, height: 640))
             window.setFrameAutosaveName("HyperSpaceSettings")
             window.center()
             self.window = window
@@ -238,6 +224,29 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
         }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The settings window around `root`, not shown yet: the app's, and the one the snapshots draw.
+    static func makeWindow(_ root: SettingsRoot, size: NSSize) -> NSWindow {
+        let controller = NSHostingController(rootView: root)
+        // Only a minimum size: the preferred size would pin the window and block resizing.
+        controller.sizingOptions = [.minSize]
+        // SwiftUI owns the toolbar and the title (the page's), so the sidebar is the system
+        // Liquid Glass one and lines up with the window controls. This only takes when the
+        // controller is set on an existing window, not with NSWindow(contentViewController:).
+        if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
+
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.contentViewController = controller
+        if #unavailable(macOS 14) { window.title = "HyperSpace" }
+        window.toolbarStyle = .unified
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.contentMinSize = minimumSize
+        window.setContentSize(size)
+        return window
     }
 
     /// A key press or click being recorded on one page must not stay armed on another.

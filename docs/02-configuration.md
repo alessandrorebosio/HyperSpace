@@ -2,7 +2,7 @@
 
 ## File, creation and reload
 
-- **Path**: `~/.hyperspace/config.json` (`ConfigStore.url`). A config left in the old place, `~/.config/hyperspace/config.json`, is moved here at the first start (only if the new file does not exist yet); the old folder is removed when nothing else is left in it (a Finder `.DS_Store` does not count).
+- **Path**: `~/.hyperspace/config.json` (`ConfigStore.url`).
 - **Creation**: on first launch (or from *Edit Config…*) if the file is missing, the default config (`DefaultConfig.json`) is written.
 - **Automatic reload**: the file is watched with a kqueue `DispatchSource` (`write`, `extend`, `delete`, `rename`), at zero cost while untouched. Several events per save
   are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is briefly missing it retries after 1 s.
@@ -84,7 +84,7 @@ Every section and key is optional.
 | `padding` | number | `8` | minimum 0 |
 | `masterRatio` | number | `0.55` | clamped to 0.1…0.9 |
 | `mouseFollowsFocus` | bool | `true` | — |
-| `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (Settings: 0–120). Written only when not the default |
+| `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (the Settings slider has the same range). Written only when not the default |
 | `scratchpad.width` / `.height` | number | `0.6` / `0.7` | fractions of the display's visible area, clamped to 0.2…1 |
 | `floating` | `[string]` | `[]` | Bundle ids that are never tiled |
 | `floatingWindows[]` | `{ app?, title }` | `[]` | `title` required and non-empty (entries with an empty title are dropped); `app` absent or empty = any app |

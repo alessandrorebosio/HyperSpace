@@ -20,10 +20,6 @@ struct WorkspaceState: Codable, Equatable {
     var windows: [Window] = []
     /// Per workspace (as a string key), its columns as indices into `windows`.
     var columns: [String: [[Int]]] = [:]
-    /// Display ID (as a string) → workspace it shows. Kept for older versions; `displays` wins.
-    var displayed: [String: Int] = [:]
-    /// Workspace (as a string) → display ID it was moved to. Kept for older versions; `moved` wins.
-    var homeOverride: [String: UInt32] = [:]
     /// Display UUID → workspace it shows. Unlike the id, a UUID stays the same when the
     /// monitor is unplugged and plugged in again.
     var displays: [String: Int]?

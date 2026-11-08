@@ -114,7 +114,6 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 | `displays` | display UUID → workspace it shows (displays not connected included) |
 | `moved` | workspace → UUID of the display it was moved to |
 | `layouts` | display UUID → layout and master ratio |
-| `displayed`, `homeOverride` | the same by display id, for older versions (read only when the UUID fields are missing) |
 | `savedAt` | when |
 
 - **When**: 2 s after a change (and only if the state really changed, ignoring titles), and immediately on quit. Titles are read on the `HyperSpace.state` queue. Nothing is saved while a restore is still matching windows.

@@ -110,7 +110,7 @@ extension WindowManager {
         // Apps that size in steps (terminals) or have a minimum size miss the exact size:
         // centered on what they took, and the other scratchpad windows take it too.
         let element = window.element
-        let misses = { (size: CGSize) in abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1 }
+        let misses = { (size: CGSize) in !size.isClose(to: frame.size, tolerance: 1) }
         writer.perform(window.pid, retryAfter: 0.1) { [weak self] isRetry in
             guard var size = AX.size(element) else { return false }
             // Coming from another display, some apps resize themselves a moment after the
@@ -126,7 +126,7 @@ extension WindowManager {
                 DispatchQueue.main.async { self?.scratchpadFitted = (target, size) }
             }
             let centered = target.centered(size, rounded: true)
-            if abs(origin.x - centered.minX) > 1 || abs(origin.y - centered.minY) > 1 {
+            if !origin.isClose(to: centered.origin, tolerance: 1) {
                 AX.setPosition(element, centered.origin)
             }
             return false

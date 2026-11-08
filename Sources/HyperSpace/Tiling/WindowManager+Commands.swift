@@ -32,21 +32,23 @@ extension WindowManager {
         let screens = currentScreens()
         guard !screens.isEmpty else { return nil }
         // On an empty workspace the window left behind may still look focused.
-        if let id = heldDisplay, let screen = screens.first(where: { $0.id == id }) { return screen }
+        if let id = heldDisplay, let screen = screens.first(id: id) { return screen }
         if let window = focusedWindow ?? focused(), window.hiddenFrame == nil, display(showing: window.workspace) != nil,
            let frame = currentBounds()[window.id], let screen = screens.screen(for: frame) {
             return screen
         }
-        if let id = activeDisplay, let screen = screens.first(where: { $0.id == id }) { return screen }
+        if let id = activeDisplay, let screen = screens.first(id: id) { return screen }
         let pointer = AX.pointer
         return screens.first { $0.frame.contains(pointer) } ?? screens.first
     }
 
-    /// Windows of the displayed workspaces that are on screen, with their frames.
+    /// Windows of the displayed workspaces that are on screen, with their frames; `tiledOnly`
+    /// leaves out floating and scratchpad windows.
     func visible(_ bounds: [CGWindowID: CGRect], tiledOnly: Bool = false) -> [(ManagedWindow, CGRect)] {
         let shown = Set(displayed.values)
         return windows.values.compactMap { window in
-            guard shown.contains(window.workspace), window.hiddenFrame == nil, !(tiledOnly && window.isFloating) else { return nil }
+            guard shown.contains(window.workspace), window.hiddenFrame == nil,
+                  !(tiledOnly && (window.isFloating || window.scratchpad)) else { return nil }
             return bounds[window.id].map { (window, $0) }
         }
     }
@@ -271,8 +273,7 @@ extension WindowManager {
         defer { leaveScope() }
         let screens = currentScreens()
         guard running, screens.count > 1, let source = focusedScreen(), let workspace = displayed[source.id],
-              let sourceIndex = screens.firstIndex(where: { $0.id == source.id }) else { return }
-        let target = screens[(sourceIndex + 1) % screens.count]
+              let target = screens.next(after: source.id) else { return }
         // Pinned in the config: it stays on its display.
         if pinnedDisplay(of: workspace, screens) != nil {
             log.debug("workspace \(workspace) is pinned to display \(source.id): not moved")
@@ -314,9 +315,8 @@ extension WindowManager {
         enterScope()
         defer { leaveScope() }
         let screens = currentScreens()
-        guard screens.count > 1, let current = focusedScreen(),
-              let index = screens.firstIndex(where: { $0.id == current.id }) else { return }
-        guard let workspace = displayed[screens[(index + 1) % screens.count].id] else { return notifyWorkspace() }
+        guard screens.count > 1, let current = focusedScreen(), let next = screens.next(after: current.id) else { return }
+        guard let workspace = displayed[next.id] else { return notifyWorkspace() }
         let window = focusWindow(in: workspace)
         notifyWorkspace(focused: .some(window))
     }

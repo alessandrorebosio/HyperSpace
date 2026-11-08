@@ -14,7 +14,7 @@ import SwiftUI
 enum SettingsSnapshot {
     private static let flag = "--render-settings"
     private static let useScreencapture = ProcessInfo.processInfo.environment["HYPERSPACE_SNAPSHOT_SCREENCAPTURE"] == "1"
-    private static let sizes = [NSSize(width: 720, height: 460), NSSize(width: 900, height: 640)]
+    private static let sizes = [SettingsWindowController.minimumSize, NSSize(width: 900, height: 640)]
     private static let scale = 2
 
     /// The folder given after the flag, when the app was started to render the pages.
@@ -71,20 +71,8 @@ enum SettingsSnapshot {
 
     /// The settings window as the app builds it, invisible, fully on screen.
     private static func makeWindow(_ root: SettingsRoot, size: NSSize, appearance: NSAppearance?) -> NSWindow {
-        let controller = NSHostingController(rootView: root)
-        controller.sizingOptions = [.minSize]
-        if #available(macOS 14, *) { controller.sceneBridgingOptions = [.all] }
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
-        window.contentViewController = controller
-        if #unavailable(macOS 14) { window.title = "HyperSpace" }
-        window.toolbarStyle = .unified
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
+        let window = SettingsWindowController.makeWindow(root, size: size)
         window.appearance = appearance
-        window.contentMinSize = NSSize(width: 720, height: 460)
-        window.setContentSize(size)
         // Inside the visible area of the screen, so AppKit has no reason to move or clip it.
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
         window.setFrameTopLeftPoint(NSPoint(x: visible.minX + 40, y: visible.maxY - 40))

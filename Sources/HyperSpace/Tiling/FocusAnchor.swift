@@ -76,12 +76,7 @@ final class FocusAnchor: NSObject, NSWindowDelegate {
     private func click() {
         guard NSEvent.pressedMouseButtons == 0 else { return }
         AX.warpPointer(to: point)
-        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-            guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
-            event.flags = []
-            event.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
-            event.post(tap: .cghidEventTap)
-        }
+        Pointer.click([], at: point)
     }
 
     func windowDidResignKey(_ notification: Notification) {

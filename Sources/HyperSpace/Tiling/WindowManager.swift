@@ -397,9 +397,7 @@ final class WindowManager {
         let screens = currentScreens()
         guard let main = screens.first else { return }
         for (id, frame) in currentBounds() {
-            guard let window = windows[id] else { continue }
-            let visible = screens.map { $0.frame.intersection(frame) }.map { $0.isNull ? 0 : $0.width * $0.height }.max() ?? 0
-            guard visible < frame.width * frame.height * 0.1 else { continue }
+            guard let window = windows[id], Self.isParked(frame, on: screens) else { continue }
             setFrame(window, main.centered(frame.size))
         }
     }
@@ -772,8 +770,7 @@ final class WindowManager {
             if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
                 // A dialog of a scratchpad window comes and goes with it.
                 if !owner.scratchpadShown {
-                    if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
-                    else { keepHidden(window, bounds: bounds, screens: screens) }
+                    parkOrKeepHidden(window, bounds: bounds, screens: screens)
                 } else if let frame = bounds[owner.id], let screen = screens.screen(for: frame) {
                     restore(window, on: screen, screens)
                 }
@@ -781,15 +778,11 @@ final class WindowManager {
             }
             if window.scratchpad {
                 // Out of the workspaces: parked unless shown.
-                if !window.scratchpadShown {
-                    if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
-                    else { keepHidden(window, bounds: bounds, screens: screens) }
-                }
+                if !window.scratchpadShown { parkOrKeepHidden(window, bounds: bounds, screens: screens) }
                 continue
             }
             if !shown.contains(window.workspace) {
-                if window.hiddenFrame == nil, let frame = bounds[window.id] { hide(window, from: frame, screens: screens) }
-                else { keepHidden(window, bounds: bounds, screens: screens) }
+                parkOrKeepHidden(window, bounds: bounds, screens: screens)
             } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
                 restore(window, on: screen, screens)
             }
@@ -922,8 +915,7 @@ final class WindowManager {
             // Across displays some apps answer the move with a size of their own (kept from
             // the old display, or clamped to it): once more, now that it is on the new one.
             if !sameDisplay, failure == .success, let size = AX.size(element), let origin = AX.position(element),
-               abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
-                || abs(origin.x - frame.minX) > 1 || abs(origin.y - frame.minY) > 1 {
+               !CGRect(origin: origin, size: size).isClose(to: frame, tolerance: 1) {
                 AX.setPosition(element, frame.origin)
                 AX.setSize(element, frame.size)
             }
@@ -949,8 +941,8 @@ final class WindowManager {
     /// display only what changed, shrinking before moving so the window never sticks out.
     static func frameSteps(from current: CGRect?, to target: CGRect, sameDisplay: Bool) -> [FrameStep] {
         guard let current, sameDisplay else { return [.size, .position, .size] }
-        let sizeChanges = abs(current.width - target.width) > 1 || abs(current.height - target.height) > 1
-        let originChanges = abs(current.minX - target.minX) > 1 || abs(current.minY - target.minY) > 1
+        let sizeChanges = !current.size.isClose(to: target.size, tolerance: 1)
+        let originChanges = !current.origin.isClose(to: target.origin, tolerance: 1)
         switch (sizeChanges, originChanges) {
         case (false, false): return []
         case (true, false): return [.size]

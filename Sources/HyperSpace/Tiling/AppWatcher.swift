@@ -38,10 +38,6 @@ final class AppWatcher {
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 
-    var windows: [AXUIElement] {
-        AX.elements(element, kAXWindowsAttribute)
-    }
-
     /// Per-window notifications: closed, moved or resized (by hand, to snap it back), and
     /// retitled (for title floating rules).
     func watch(_ window: AXUIElement) {

@@ -10,26 +10,13 @@ extension WindowManager {
     func loadSavedState() {
         guard let state = WorkspaceState.load() else { return }
         let screens = currentScreens()
-        let ids = Set(screens.map(\.id))
         let byUUID = Dictionary(screens.map { ($0.uuid, $0.id) }, uniquingKeysWith: { a, _ in a })
-        // Displays by UUID (any display the monitor was plugged into); older states by id.
-        if let moved = state.moved {
-            for (key, uuid) in moved {
-                if let workspace = Int(key), workspace < workspaceCount { homeOverride[workspace] = uuid }
-            }
-        } else {
-            for (key, display) in state.homeOverride {
-                if let workspace = Int(key), workspace < workspaceCount, ids.contains(display) { homeOverride[workspace] = ScreenInfo.uuid(of: display) }
-            }
+        // Displays by UUID: any display the monitor was plugged into.
+        for (key, uuid) in state.moved ?? [:] {
+            if let workspace = Int(key), workspace < workspaceCount { homeOverride[workspace] = uuid }
         }
-        if let shown = state.displays {
-            for (uuid, workspace) in shown where workspace < workspaceCount {
-                if let display = byUUID[uuid] { displayed[display] = workspace } else { departed[uuid] = workspace }
-            }
-        } else {
-            for (key, workspace) in state.displayed {
-                if let display = CGDirectDisplayID(key), ids.contains(display), workspace < workspaceCount { displayed[display] = workspace }
-            }
+        for (uuid, workspace) in state.displays ?? [:] where workspace < workspaceCount {
+            if let display = byUUID[uuid] { displayed[display] = workspace } else { departed[uuid] = workspace }
         }
         accordionWorkspaces = Set((state.accordionWorkspaces ?? []).filter { $0 < workspaceCount })
         for (uuid, saved) in state.layouts ?? [:] {
@@ -83,7 +70,6 @@ extension WindowManager {
         state.accordionWorkspaces = accordionWorkspaces.isEmpty ? nil : accordionWorkspaces.sorted()
         var shown = departed
         for (display, workspace) in displayed {
-            state.displayed[String(display)] = workspace
             shown[ScreenInfo.uuid(of: display)] = workspace
         }
         state.displays = shown

@@ -11,7 +11,7 @@ extension WindowManager {
     /// until that display is back.
     func home(of workspace: Int, _ screens: [ScreenInfo]) -> ScreenInfo? {
         let id = Self.homeDisplay(of: workspace, movedTo: movedTo(workspace, screens), displays: screens.map(\.id))
-        return screens.first { $0.id == id }
+        return id.flatMap { screens.first(id: $0) }
     }
 
     /// The connected display a workspace is pinned to, if any.
@@ -154,6 +154,15 @@ extension WindowManager {
         park(window, in: screen)
     }
 
+    /// A window that must be out of sight: parked now if it is on screen, else kept parked.
+    func parkOrKeepHidden(_ window: ManagedWindow, bounds: [CGWindowID: CGRect], screens: [ScreenInfo]) {
+        if window.hiddenFrame == nil, let frame = bounds[window.id] {
+            hide(window, from: frame, screens: screens)
+        } else {
+            keepHidden(window, bounds: bounds, screens: screens)
+        }
+    }
+
     private func park(_ window: ManagedWindow, in screen: CGRect) {
         window.movedByUs = Date()
         let element = window.element
@@ -188,7 +197,7 @@ extension WindowManager {
         let bounds = currentBounds()
         for window in members where window.isFloating && !window.scratchpad && window.hiddenFrame == nil {
             guard let frame = bounds[window.id], let id = display(showing: window.workspace),
-                  let screen = screens.first(where: { $0.id == id }) else { continue }
+                  let screen = screens.first(id: id) else { continue }
             let target = Self.place(frame, on: screen, screens)
             if !target.isClose(to: frame) { setFrame(window, target, from: frame, screens: screens) }
         }
@@ -208,7 +217,7 @@ extension WindowManager {
             focus(target)
             return target
         } else if let id = display(showing: workspace), case let screens = currentScreens(),
-                  let screen = screens.first(where: { $0.id == id }) {
+                  let screen = screens.first(id: id) {
             activeDisplay = id
             // Already holding the focus there (the same workspace asked again, a held key
             // repeating): nothing to do, the pointer is not clicked again.
@@ -302,7 +311,7 @@ extension WindowManager {
             let entries = members.map { window -> WorkspaceSummary.Window in
                 let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
                 apps[window.pid] = app
-                let title = AX.string(window.element, kAXTitleAttribute).flatMap { $0.isEmpty ? nil : $0 }
+                let title = AX.string(window.element, kAXTitleAttribute)?.nilIfEmpty
                 return WorkspaceSummary.Window(app: app?.localizedName ?? window.bundleID ?? "App",
                                                title: title, icon: app?.icon)
             }

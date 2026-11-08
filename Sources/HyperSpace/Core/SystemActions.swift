@@ -180,15 +180,16 @@ enum Pointer {
         }
     }
 
-    /// Left click at the current pointer position with modifiers held.
-    static func click(_ mods: Modifiers) {
-        click(down: .leftMouseDown, up: .leftMouseUp, button: .left) { $0.flags = mods.cgFlags }
+    /// Left click with modifiers held, at `point` (global top-left coordinates) or at the pointer.
+    static func click(_ mods: Modifiers, at point: CGPoint? = nil) {
+        click(down: .leftMouseDown, up: .leftMouseUp, button: .left, at: point) { $0.flags = mods.cgFlags }
     }
 
-    /// A press and a release at the pointer, marked as ours so the tap lets them through;
-    /// `configure` adjusts each event before it is posted.
-    private static func click(down: CGEventType, up: CGEventType, button: CGMouseButton, configure: (CGEvent) -> Void) {
-        guard let location = CGEvent(source: nil)?.location else { return }
+    /// A press and a release at `point` or the pointer, marked as ours so the tap lets them
+    /// through; `configure` adjusts each event before it is posted.
+    private static func click(down: CGEventType, up: CGEventType, button: CGMouseButton, at point: CGPoint? = nil,
+                              configure: (CGEvent) -> Void) {
+        guard let location = point ?? CGEvent(source: nil)?.location else { return }
         for type in [down, up] {
             guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: button) else { return }
             configure(event)

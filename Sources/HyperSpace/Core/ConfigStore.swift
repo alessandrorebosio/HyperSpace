@@ -5,9 +5,6 @@ import AppKit
 final class ConfigStore {
     static let url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".hyperspace/config.json")
-    /// Where earlier versions kept it: moved to `url` on first start.
-    private static let legacyURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".config/hyperspace/config.json")
 
     var onChange: ((Result<Config, Error>) -> Void)?
 
@@ -15,7 +12,6 @@ final class ConfigStore {
     private var pendingReload: DispatchWorkItem?
 
     func start() {
-        migrateLegacyConfig()
         writeDefaultIfMissing()
         reload()
         watch()
@@ -28,25 +24,6 @@ final class ConfigStore {
     func openInEditor() {
         writeDefaultIfMissing()
         NSWorkspace.shared.open(Self.url)
-    }
-
-    /// A config in the old place (`~/.config/hyperspace`) moves to the new one, so there is
-    /// only ever one file; the old folder goes too once empty.
-    private func migrateLegacyConfig() {
-        let fm = FileManager.default
-        guard !fm.fileExists(atPath: Self.url.path), fm.fileExists(atPath: Self.legacyURL.path) else { return }
-        do {
-            try fm.createDirectory(at: Self.url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.moveItem(at: Self.legacyURL, to: Self.url)
-            let folder = Self.legacyURL.deletingLastPathComponent()
-            // Finder's .DS_Store does not count.
-            if let left = try? fm.contentsOfDirectory(atPath: folder.path), left.allSatisfy({ $0 == ".DS_Store" }) {
-                try? fm.removeItem(at: folder)
-            }
-            log.info("config moved to \(Self.url.path, privacy: .public)")
-        } catch {
-            log.error("cannot move the config to \(Self.url.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-        }
     }
 
     private func writeDefaultIfMissing() {

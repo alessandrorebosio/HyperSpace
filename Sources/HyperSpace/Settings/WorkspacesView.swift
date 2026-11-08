@@ -5,6 +5,8 @@ struct WorkspacesView: View {
     @ObservedObject var model: TilingModel
 
     var body: some View {
+        // Read once per redraw (a keystroke in a name field), not once per workspace row.
+        let screens = ScreenInfo.current()
         Form {
             PageHero(page: .workspaces)
             PermissionNotice()
@@ -26,7 +28,7 @@ struct WorkspacesView: View {
                                 ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
                                 Picker("Display", selection: Binding(get: { workspace.display },
                                                                      set: { model.setDisplay($0, for: workspace.id) })) {
-                                    ForEach(model.displayOptions(for: workspace), id: \.self) { option in
+                                    ForEach(model.displayOptions(for: workspace, screens: screens), id: \.self) { option in
                                         Text(option.label).tag(option.value)
                                     }
                                 }
