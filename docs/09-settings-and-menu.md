@@ -75,7 +75,7 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 - **Layout**: the five layouts as thumbnails, drawn with the current gap, margin and accordion edges; the chosen one is ringed in the accent color.
 - **Spacing**: *Gap between windows* and *Margin around the screen* (0–64 pt, step 2).
 - **Accordion**: *Visible edges* (`accordionPadding`, 0–120 pt, step 5) with a to-scale preview; used by the Accordion layout and by workspaces stacked with the `accordion` shortcut.
-- **Focus**: *Pointer follows focus*.
+- **Focus**: *Pointer follows focus* (to the display that gets the focus, and to its middle on a workspace switch).
 
 ### Workspaces
 - **Workspaces** (*+ Add Workspace*): a grid with **Name** (renames are saved 0.5 s after typing and carry the app rules along), **Show workspace** and **Move window here** shortcuts, **Display** (*Any display*, *Main display*, or a connected monitor by name: pins the workspace there), remove.

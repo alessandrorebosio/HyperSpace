@@ -25,7 +25,7 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift` an
 - Each display **shows exactly one** of its workspaces (the lowest-numbered one by default), or none if no workspace lives there.
 - `workspace n` (**`switchWorkspace`**) shows n on *its* display, remembers what it replaced, and focuses its last focused window (or the first one; with no windows, it moves the pointer to the display
   centre and makes that display the active one through the focus anchor, see [Empty workspaces](#empty-workspaces)). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
-- Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
+- Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty), and switching workspace puts it in the middle of the display's visible area (not when the workspace was already the focused one, nor while a mouse button is held); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
 
 ## Pinned workspaces
 

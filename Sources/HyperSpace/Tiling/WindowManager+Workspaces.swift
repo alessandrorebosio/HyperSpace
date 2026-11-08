@@ -108,6 +108,11 @@ extension WindowManager {
         // The focus moves asynchronously: the menu bar is told what it will be, not what the
         // old window still is (an empty workspace has no focus change to correct it later).
         let target = focusWindow(in: index)
+        // A real switch takes the pointer to the middle of the display (pointer follows focus);
+        // not while a button is held, which would end a drag.
+        if focusedWorkspace != index, config.mouseFollowsFocus, NSEvent.pressedMouseButtons == 0 {
+            AX.warpPointer(to: screen.visible.center)
+        }
         notifyWorkspace(focused: .some(target))
     }
 

@@ -56,7 +56,7 @@ struct TilingView: View {
             .disabled(!model.enabled)
 
             Section {
-                SettingRow(title: "Pointer follows focus", detail: "The pointer moves to the display that gets the focus.") {
+                SettingRow(title: "Pointer follows focus", detail: "The pointer goes to the display that gets the focus, and to its middle when you switch workspace.") {
                     Toggle("Pointer follows focus", isOn: Binding(get: { model.mouseFollowsFocus }, set: { model.setMouseFollowsFocus($0) }))
                         .toggleStyle(.switch)
                         .labelsHidden()

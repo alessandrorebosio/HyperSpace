@@ -96,7 +96,7 @@ Every section and key is optional.
 | `gap` | number | `8` | minimum 0 |
 | `padding` | number | `8` | minimum 0 |
 | `masterRatio` | number | `0.55` | clamped to 0.1…0.9 |
-| `mouseFollowsFocus` | bool | `true` | — |
+| `mouseFollowsFocus` | bool | `true` | The pointer follows the focus to another display, and goes to the middle of the display on a workspace switch. |
 | `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (the Settings slider has the same range). Written only when not the default |
 | `scratchpad.width` / `.height` | number | `0.6` / `0.7` | fractions of the display's visible area, clamped to 0.2…1 |
 | `floating` | `[string]` | `[]` | Bundle ids that are never tiled |
