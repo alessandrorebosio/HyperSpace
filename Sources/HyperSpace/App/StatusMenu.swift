@@ -207,6 +207,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Where the text of every item starts: the symbols sit in the slot before it.
     static let textIndent: CGFloat = 34
     private static let iconSlot: CGFloat = 24
+
+    /// Height above the baseline of a one-line item's middle, where its icons are centered.
+    /// macOS 26 and later draw an item's text low in its row: the capitals' middle sits about
+    /// 1.25 pt below the row's (measured on a 2x screen). Icons centered on the capitals then
+    /// look low; they go to the row's middle, like the images of the system's own menus.
+    static func rowMiddle(_ font: NSFont) -> CGFloat { font.capHeight / 2 + 1.5 }
     private static let wideIconSlot: CGFloat = 28
 
     /// macOS 27 no longer draws `NSMenuItem.image` in this menu, so the symbol goes at the
@@ -217,7 +223,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let title = NSMutableAttributedString()
         if let icon = symbolImage(symbol, color: color, pointSize: font.pointSize,
                                   slot: NSSize(width: iconSlot, height: 16)) {
-            title.append(attachment(icon, y: (font.capHeight - icon.size.height) / 2))
+            title.append(attachment(icon, y: rowMiddle(font) - icon.size.height / 2))
         }
         title.append(NSAttributedString(string: text, attributes: [.font: font].merging(attributes) { $1 }))
         return title
@@ -382,7 +388,7 @@ extension StatusMenu {
                 icon.size = NSSize(width: 18, height: 18)
                 let attachment = NSTextAttachment()
                 attachment.image = icon
-                attachment.bounds = CGRect(x: 0, y: -4, width: 18, height: 18)
+                attachment.bounds = CGRect(x: 0, y: (Self.rowMiddle(font) - 9).rounded(), width: 18, height: 18)
                 title.append(NSAttributedString(attachment: attachment))
                 title.append(NSAttributedString(string: " ", attributes: [.font: font]))
             }
