@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The Mouse & Trackpad page: scroll direction, the trackpad's edge sliders and the actions of
-/// the extra buttons.
+/// The Mouse page: scroll direction and the actions of the extra buttons.
 struct MouseView: View {
     @ObservedObject var model: MouseModel
 
@@ -18,20 +17,6 @@ struct MouseView: View {
                 }
             } header: {
                 Text("Scrolling")
-            }
-
-            Section {
-                SettingRow(title: "Edge sliders", detail: "Slide one finger up or down along the left or right edge.") {
-                    Toggle("Edge sliders", isOn: Binding(get: { model.edgeSliders }, set: { model.setEdgeSliders($0) }))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-                edgePicker("Left edge", selection: model.leftEdge, left: true)
-                edgePicker("Right edge", selection: model.rightEdge, left: false)
-            } header: {
-                Text("Trackpad")
-            } footer: {
-                SectionFooter("The pointer stays still while you slide. Brightness changes the built-in display and Apple displays.")
             }
 
             Section {
@@ -53,15 +38,6 @@ struct MouseView: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    private func edgePicker(_ title: String, selection: EdgeAction, left: Bool) -> some View {
-        Picker(title, selection: Binding(get: { selection }, set: { model.setEdge($0, left: left) })) {
-            ForEach(EdgeAction.allCases, id: \.self) { action in
-                Text(MouseModel.edgeLabel(action)).tag(action)
-            }
-        }
-        .disabled(!model.edgeSliders)
     }
 }
 

@@ -66,7 +66,7 @@ opens the settings. With more than one workspace configured the icon is replaced
 display (`1 2`, the focused display's one in a filled box).
 
 The menu in the top bar starts with **Tiling** (on/off). With more than one workspace configured it lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Wireless keyboards, mice and trackpads follow with their battery level (**Devices**). Below, **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 720×460) and has a sidebar:
-**Input** (**Keyboard**, **Mouse & Trackpad**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
+**Input** (**Keyboard**, **Mouse**, **Trackpad**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
 **HyperSpace** (**General**: version, launch at login, config file with Edit/Show in Finder, Accessibility permission, Quit).
 At the bottom of the sidebar a status line always says whether HyperSpace is running, needs the Accessibility
 permission or has a config error. Every page opens with its icon, name and a one-line summary;
@@ -156,8 +156,8 @@ they can be remapped but not used in `bindings`.
 
 ### Mouse
 
-From **Settings… → Mouse & Trackpad**: a switch to reverse the scroll wheel, the trackpad's edge sliders and the button mapping.
-With **Edge sliders** on, one finger slid up or down along the left or right edge of the trackpad changes the display
+From **Settings… → Mouse**: a switch to reverse the scroll wheel and the button mapping.
+From **Settings… → Trackpad**: with **Edge sliders** on, one finger slid up or down along the left or right edge of the trackpad changes the display
 brightness or the volume (each edge can be set to either, or nothing); the pointer stays still meanwhile.
 **Add Button**, click the mouse button over the window (holding modifiers if you want the
 mapping to apply only with them), then press the combination it should send, pick a ready-made action
@@ -282,7 +282,7 @@ Floating (an app with no title = all its windows). It also applies to windows th
 ```
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
-├── Settings/   window with a Keyboard/Mouse & Trackpad, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
+├── Settings/   window with a Keyboard/Mouse/Trackpad, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
 ├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions,
 │               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),

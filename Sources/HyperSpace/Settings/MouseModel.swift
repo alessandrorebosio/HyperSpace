@@ -1,7 +1,7 @@
 import AppKit
 
-/// State of the mouse and trackpad settings. Every change is written to config.json at once;
-/// the config watcher then applies it to the event tap and the edge sliders.
+/// State of the mouse settings. Every change is written to config.json at once;
+/// the config watcher then applies it to the event tap.
 final class MouseModel: ObservableObject {
     struct Rule: Identifiable, Equatable {
         let id = UUID()
@@ -21,9 +21,6 @@ final class MouseModel: ObservableObject {
 
     @Published var rules: [Rule] = []
     @Published private(set) var reverseScroll = TapConfig.defaultReverseScroll
-    @Published private(set) var edgeSliders = TrackpadConfig.defaultEdgeSliders
-    @Published private(set) var leftEdge = TrackpadConfig.defaultLeftEdge
-    @Published private(set) var rightEdge = TrackpadConfig.defaultRightEdge
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
 
@@ -125,24 +122,6 @@ final class MouseModel: ObservableObject {
         save()
     }
 
-    func setEdgeSliders(_ on: Bool) {
-        edgeSliders = on
-        save()
-    }
-
-    func setEdge(_ action: EdgeAction, left: Bool) {
-        if left { leftEdge = action } else { rightEdge = action }
-        save()
-    }
-
-    static func edgeLabel(_ action: EdgeAction) -> String {
-        switch action {
-        case .volume: return "Volume"
-        case .brightness: return "Display brightness"
-        case .none: return "Nothing"
-        }
-    }
-
     func warning(for rule: Rule) -> String? {
         guard rule.isComplete else { return nil }
         let duplicate = rules.contains {
@@ -234,13 +213,6 @@ final class MouseModel: ObservableObject {
     private func load() {
         let mouse = ConfigWriter.read()["mouse"] as? [String: Any]
         reverseScroll = mouse?["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
-        let trackpad = ConfigWriter.read()["trackpad"] as? [String: Any]
-        func edge(_ key: String, _ fallback: EdgeAction) -> EdgeAction {
-            (trackpad?[key] as? String).flatMap { EdgeAction(rawValue: $0.lowercased()) } ?? fallback
-        }
-        edgeSliders = trackpad?["edgeSliders"] as? Bool ?? TrackpadConfig.defaultEdgeSliders
-        leftEdge = edge("leftEdge", TrackpadConfig.defaultLeftEdge)
-        rightEdge = edge("rightEdge", TrackpadConfig.defaultRightEdge)
         // In the order of the file: when two rules share a button, the last one wins.
         rules = (mouse?["buttons"] as? [[String: Any]] ?? []).map {
             Rule(button: $0["button"] as? Int,
@@ -260,14 +232,6 @@ final class MouseModel: ObservableObject {
                 return entry
             }
             root["mouse"] = mouse
-            // Left out of a file that never had it, while the sliders are off.
-            if edgeSliders || root["trackpad"] != nil {
-                var trackpad = root["trackpad"] as? [String: Any] ?? [:]
-                trackpad["edgeSliders"] = edgeSliders
-                trackpad["leftEdge"] = leftEdge.rawValue
-                trackpad["rightEdge"] = rightEdge.rawValue
-                root["trackpad"] = trackpad
-            }
         }
     }
 }

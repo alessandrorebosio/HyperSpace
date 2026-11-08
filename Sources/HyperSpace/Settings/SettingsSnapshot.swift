@@ -39,6 +39,7 @@ enum SettingsSnapshot {
         let eventTap = EventTap(drag: DragController(windowManager: windowManager)) { _ in }
         let keyboard = RemapModel(remapper: KeyboardRemapper(), eventTap: eventTap)
         let mouse = MouseModel(eventTap: eventTap)
+        let trackpad = TrackpadModel()
         let tiling = TilingModel(eventTap: eventTap)
         let general = GeneralModel(actions: GeneralModel.Actions(openConfig: {}, problem: { nil }))
 
@@ -50,7 +51,7 @@ enum SettingsSnapshot {
                     // animation or scroll position left over from the previous one.
                     let navigation = SettingsNavigation()
                     navigation.page = page
-                    let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling, general: general)
+                    let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, trackpad: trackpad, tiling: tiling, general: general)
                     let window = makeWindow(root, size: size, appearance: NSAppearance(named: appearance))
                     settle(window, seconds: 0.8)
                     let name = "\(page.fileName)-\(appearanceName)-\(Int(size.width))x\(Int(size.height)).png"
@@ -140,6 +141,7 @@ extension SettingsNavigation.Page {
         switch self {
         case .keyboard: return "keyboard"
         case .mouse: return "mouse"
+        case .trackpad: return "trackpad"
         case .tiling: return "tiling"
         case .workspaces: return "workspaces"
         case .windowRules: return "window-rules"

@@ -34,7 +34,7 @@ The menu is rebuilt only when it opens (`menuNeedsUpdate`).
 
 ### Layout
 
-**Sidebar**: **Input** → Keyboard, Mouse & Trackpad; **Windows** → Tiling, Workspaces, Window Rules, Shortcuts; **HyperSpace** → General. There is no search: seven pages.
+**Sidebar**: **Input** → Keyboard, Mouse, Trackpad; **Windows** → Tiling, Workspaces, Window Rules, Shortcuts; **HyperSpace** → General. There is no search: eight pages.
 At the bottom of the sidebar a **status bar** is always in sight: app icon, name and a colored dot with *Running* (green), *Accessibility needed* (orange) or *Needs attention* (red, a config error). It only shows the state: a click does nothing (every problem has its fix on General). The state comes from `GeneralModel.health`, shared with the General page.
 
 **Every page** is a grouped `Form` with the same structure, top to bottom:
@@ -65,10 +65,12 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 - **Remaps** (*+ Add Remap*): source key cap → target key cap, the ▾ menu with all keys (grouped as in the key table), the keyboard picker (All keyboards, Built-in, All external, or a connected keyboard by name), a duplicate warning, remove.
   Recording: the source takes the first key; the target takes a key, a modifier+key combination, or modifiers alone (hold them together, release). Remaps are suspended while recording. Incomplete rules are not saved. ([details](03-keyboard.md#remapping-from-settings))
 
-### Mouse & Trackpad
+### Mouse
 - **Scrolling**: *Reverse scroll wheel* (mice with a wheel only).
-- **Trackpad**: the *Edge sliders* switch and, for the *Left edge* and *Right edge*, Volume, Display brightness or Nothing (dimmed while the switch is off). ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
 - **Buttons** (*+ Add Button*): mouse button (with modifiers, recorded by clicking it over the window) → action (keys to send, a ready-made action from ▾, or *Disable Button*). A new mapping goes straight from the button to its action. ([details](04-mouse.md))
+
+### Trackpad
+- **Edge sliders**: the switch and, for the *Left edge* and *Right edge*, Volume, Display brightness or Nothing (dimmed while the switch is off). No Accessibility notice: the sliders start without waiting for the permission. ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
 
 ### Tiling
 - **Hero switch**: tiling on or off (`tiling.enabled`). Off: the other sections are dimmed and kept.
@@ -109,7 +111,7 @@ While recording, key bindings are suspended (so an existing shortcut reaches the
 |---|---|
 | `SettingsWindowController.swift` | `SettingsNavigation` (pages: names, icons, colors, summaries), `SettingsRoot` (sidebar and status bar), the window controller |
 | `Components.swift` | The shared components above, and `CaptureModel` (the key-cap click shared by the three models: `toggleCapture`) |
-| `RemapView.swift`, `MouseView.swift` | Keyboard and Mouse & Trackpad pages |
+| `RemapView.swift`, `MouseView.swift`, `TrackpadView.swift` | Keyboard, Mouse and Trackpad pages (`TrackpadModel` is in its view's file) |
 | `TilingView.swift` | Tiling page, layout thumbnails, accordion preview, `TilingOffNotice` |
 | `WorkspacesView.swift`, `WindowRulesView.swift`, `ShortcutsView.swift` | The other window pages |
 | `GeneralView.swift` | `GeneralModel` and the General page |

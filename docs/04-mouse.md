@@ -87,4 +87,4 @@ Off by default. When on, **one finger slid up or down along the left or right ed
 - A second finger (a scroll, a two-finger click) ends the slider until every finger is lifted; a finger that starts outside the bands, or on an edge set to `none`, is never a slider. Clicks and taps are not affected.
 - Built-in trackpads and Magic Trackpads are used; the Magic Mouse (whose surface is also a multitouch device) is not. Trackpads connected later are picked up when macOS reports them and after waking.
 - The touches come from Apple's private **MultitouchSupport** framework (as in BetterTouchTool or MiddleClick), loaded at run time: the recognition is in `EdgeSliderTracker` (pure, tested), the framework glue in `EdgeSliders`. If the framework is missing or changes, the sliders do nothing and *Copy Debug Info* says so.
-- Settings: **Mouse & Trackpad → Trackpad**: the *Edge sliders* switch and a menu per edge.
+- Settings: the **Trackpad** page: the *Edge sliders* switch and a menu per edge.

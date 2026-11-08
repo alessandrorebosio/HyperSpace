@@ -4,15 +4,16 @@ import SwiftUI
 /// Which page of the settings window is shown.
 final class SettingsNavigation: ObservableObject {
     enum Page: Hashable, CaseIterable {
-        case keyboard, mouse, tiling, workspaces, windowRules, shortcuts, settings
+        case keyboard, mouse, trackpad, tiling, workspaces, windowRules, shortcuts, settings
 
         /// Pages whose features stay off without the Accessibility permission.
-        var needsPermission: Bool { self != .keyboard && self != .settings }
+        var needsPermission: Bool { self != .keyboard && self != .trackpad && self != .settings }
 
         var title: String {
             switch self {
             case .keyboard: return "Keyboard"
-            case .mouse: return "Mouse & Trackpad"
+            case .mouse: return "Mouse"
+            case .trackpad: return "Trackpad"
             case .tiling: return "Tiling"
             case .workspaces: return "Workspaces"
             case .windowRules: return "Window Rules"
@@ -25,6 +26,7 @@ final class SettingsNavigation: ObservableObject {
             switch self {
             case .keyboard: return "keyboard.fill"
             case .mouse: return "computermouse.fill"
+            case .trackpad: return "rectangle.and.hand.point.up.left.fill"
             case .tiling: return "rectangle.split.3x1.fill"
             case .workspaces: return "square.stack.3d.up.fill"
             case .windowRules: return "macwindow.on.rectangle"
@@ -37,6 +39,7 @@ final class SettingsNavigation: ObservableObject {
             switch self {
             case .keyboard, .settings: return Color(red: 0.49, green: 0.50, blue: 0.54)
             case .mouse: return Color(red: 0.10, green: 0.48, blue: 0.96)
+            case .trackpad: return Color(red: 0.05, green: 0.66, blue: 0.72)
             case .tiling: return Color(red: 0.31, green: 0.33, blue: 0.90)
             case .workspaces: return Color(red: 0.58, green: 0.30, blue: 0.88)
             case .windowRules: return Color(red: 0.97, green: 0.53, blue: 0.05)
@@ -48,7 +51,8 @@ final class SettingsNavigation: ObservableObject {
         var summary: String {
             switch self {
             case .keyboard: return "Remap keys, on every keyboard or just one, and lock the keyboard to clean it."
-            case .mouse: return "Mouse buttons, the scroll direction and the trackpad's edges as sliders."
+            case .mouse: return "Give extra mouse buttons an action and choose the scroll direction."
+            case .trackpad: return "Use the left and right edges as sliders for the volume and the brightness."
             case .tiling: return "How windows are arranged on each display."
             case .workspaces: return "Virtual workspaces, their shortcuts and the apps that open in each."
             case .windowRules: return "Windows that float and apps kept in the scratchpad."
@@ -69,6 +73,7 @@ struct SettingsRoot: View {
     @ObservedObject var navigation: SettingsNavigation
     let keyboard: RemapModel
     let mouse: MouseModel
+    let trackpad: TrackpadModel
     let tiling: TilingModel
     @ObservedObject var general: GeneralModel
 
@@ -77,7 +82,7 @@ struct SettingsRoot: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $navigation.page) {
-                sidebarSection("Input", [.keyboard, .mouse])
+                sidebarSection("Input", [.keyboard, .mouse, .trackpad])
                 sidebarSection("Windows", [.tiling, .workspaces, .windowRules, .shortcuts])
                 sidebarSection("HyperSpace", [.settings])
             }
@@ -93,6 +98,7 @@ struct SettingsRoot: View {
                 switch page {
                 case .keyboard: RemapView(model: keyboard)
                 case .mouse: MouseView(model: mouse)
+                case .trackpad: TrackpadView(model: trackpad)
                 case .tiling: TilingView(model: tiling)
                 case .workspaces: WorkspacesView(model: tiling)
                 case .windowRules: WindowRulesView(model: tiling)
@@ -201,7 +207,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let tiling = TilingModel(eventTap: eventTap)
             let navigation = SettingsNavigation()
             navigation.onSwitch = { [weak self] in self?.stopAllCaptures() }
-            let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, tiling: tiling,
+            let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, trackpad: TrackpadModel(), tiling: tiling,
                                     general: GeneralModel(actions: actions))
             let window = Self.makeWindow(root, size: NSSize(width: 900, height: 640))
             window.delegate = self
