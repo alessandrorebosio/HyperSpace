@@ -35,10 +35,11 @@ enum ConfigWriter {
     }
 
     private static let keyOrder = [
-        "keyboard", "mouse", "tiling",
+        "keyboard", "mouse", "trackpad", "tiling",
         "hyperKey", "remap", "bindings",
         "keys", "from", "to", "button", "modifiers", "action",
         "reverseScroll", "dragModifier", "buttons",
+        "edgeSliders", "leftEdge", "rightEdge",
         "enabled", "layout", "gap", "padding", "masterRatio", "accordionPadding", "mouseFollowsFocus", "scratchpad", "floating", "floatingWindows", "workspaces", "assign",
         "name", "switch", "move", "display", "app", "title", "workspace",
     ]

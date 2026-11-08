@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ConfigStore()
     private let remapper = KeyboardRemapper()
     private let windowManager = WindowManager()
+    private let edgeSliders = EdgeSliders()
     private lazy var runner = ActionRunner(windowManager: windowManager) { [weak self] in
         self?.store.reload()
     }
@@ -103,6 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "Keyboard: \(eventTap.isKeyboardLocked ? "locked" : "active"); keyboards: " +
                 remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
         ]
+        let trackpad = config?.trackpad ?? TrackpadConfig()
+        lines.append(trackpad.edgeSliders
+            ? "Trackpad edge sliders: left \(trackpad.leftEdge.rawValue), right \(trackpad.rightEdge.rawValue); "
+                + (edgeSliders.isAvailable ? "\(edgeSliders.deviceCount) trackpad(s)" : "MultitouchSupport not available")
+            : "Trackpad edge sliders: off")
         if let problem = statusMenu.problem { lines.append("Problem: \(problem.text)") }
         lines.append(windowManager.debugReport())
         return lines.joined(separator: "\n")
@@ -110,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         remapper.reset()
+        edgeSliders.stop()
         windowManager.saveState()
         windowManager.restoreHiddenWindows()
     }
@@ -133,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.config = config
             statusMenu.tilingEnabled = config.tiling.enabled
             remapper.apply(config.remaps)
+            edgeSliders.apply(config.trackpad)
             if config.tap.suppressCapsLock { CapsLock.turnOff() }
             if trusted { applyTrusted(config) }
             // A missing permission stays reported until it is granted.

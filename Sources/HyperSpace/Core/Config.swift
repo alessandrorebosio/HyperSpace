@@ -29,6 +29,12 @@ struct RawConfig: Decodable {
         var dragModifier: String?
         var buttons: [Button]?
     }
+    /// Sliders along the left and right edges of the trackpad.
+    struct Trackpad: Decodable {
+        var edgeSliders: Bool?
+        var leftEdge: String?
+        var rightEdge: String?
+    }
     struct Button: Decodable {
         var button: Int
         var modifiers: String?
@@ -81,6 +87,7 @@ struct RawConfig: Decodable {
 
     var keyboard: Keyboard?
     var mouse: Mouse?
+    var trackpad: Trackpad?
     var tiling: Tiling?
 }
 
@@ -256,11 +263,33 @@ extension Comparable {
     }
 }
 
+/// What sliding a finger along an edge of the trackpad changes.
+enum EdgeAction: String, CaseIterable {
+    case volume
+    case brightness
+    case none
+}
+
+/// The edge sliders of the trackpad: one finger slid up or down along the left or right edge.
+struct TrackpadConfig: Equatable {
+    static let defaultEdgeSliders = false
+    static let defaultLeftEdge = EdgeAction.brightness
+    static let defaultRightEdge = EdgeAction.volume
+
+    var edgeSliders = TrackpadConfig.defaultEdgeSliders
+    var leftEdge = TrackpadConfig.defaultLeftEdge
+    var rightEdge = TrackpadConfig.defaultRightEdge
+
+    /// Whether any edge does something: with nothing to do the trackpads are not watched.
+    var isActive: Bool { edgeSliders && (leftEdge != .none || rightEdge != .none) }
+}
+
 /// Validated, compiled configuration.
 struct Config {
     var remaps: [RemapRule] = []
     var tap = TapConfig()
     var tiling = TilingConfig()
+    var trackpad = TrackpadConfig()
 
     static func load(from url: URL) throws -> Config {
         let data = try Data(contentsOf: url)
@@ -293,6 +322,9 @@ struct Config {
         }
         if let mouse = raw.mouse {
             try parseMouse(mouse)
+        }
+        if let trackpad = raw.trackpad {
+            try parseTrackpad(trackpad)
         }
 
         // `hyperKey` is shorthand for a remap to "hyper" on every keyboard.
@@ -331,6 +363,19 @@ struct Config {
         }
         let capsLock = KeyCodes.lookup("caps_lock")?.hidUsage
         tap.suppressCapsLock = remaps.contains { $0.from == capsLock }
+    }
+
+    private mutating func parseTrackpad(_ raw: RawConfig.Trackpad) throws {
+        func edge(_ text: String?, _ fallback: EdgeAction, _ key: String) throws -> EdgeAction {
+            guard let text, !text.isEmpty else { return fallback }
+            guard let action = EdgeAction(rawValue: text.lowercased()) else {
+                throw ConfigError("\(key) must be volume, brightness or none (got '\(text)')")
+            }
+            return action
+        }
+        trackpad.edgeSliders = raw.edgeSliders ?? TrackpadConfig.defaultEdgeSliders
+        trackpad.leftEdge = try edge(raw.leftEdge, TrackpadConfig.defaultLeftEdge, "leftEdge")
+        trackpad.rightEdge = try edge(raw.rightEdge, TrackpadConfig.defaultRightEdge, "rightEdge")
     }
 
     private mutating func parseMouse(_ mouse: RawConfig.Mouse) throws {

@@ -66,7 +66,7 @@ opens the settings. With more than one workspace configured the icon is replaced
 display (`1 2`, the focused display's one in a filled box).
 
 The menu in the top bar starts with **Tiling** (on/off). With more than one workspace configured it lists the workspaces that have open apps, each with the icons of its apps next to it (✓ on the visible ones, window titles in the tooltip): a click shows the workspace. Wireless keyboards, mice and trackpads follow with their battery level (**Devices**). Below, **Lock Keyboard** (which becomes **Unlock Keyboard**), **Settings…** (⌘,), **Copy Debug Info** (copies to the clipboard the state of displays, workspaces and windows, with shortened titles, and the latest problems with apps: to paste when something goes wrong) and **Quit**. If there is a problem it shows at the top: a click opens the Accessibility permission or, for a config error, the file. While the window is open HyperSpace shows in the Dock and in ⌘Tab, with its own menu bar (⌘W closes it); once closed, it is back in the top bar only. The window follows the Liquid Glass style, is resizable (at least 720×460) and has a sidebar:
-**Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
+**Input** (**Keyboard**, **Mouse & Trackpad**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
 **HyperSpace** (**General**: version, launch at login, config file with Edit/Show in Finder, Accessibility permission, Quit).
 At the bottom of the sidebar a status line always says whether HyperSpace is running, needs the Accessibility
 permission or has a config error. Every page opens with its icon, name and a one-line summary;
@@ -156,7 +156,9 @@ they can be remapped but not used in `bindings`.
 
 ### Mouse
 
-From **Settings… → Mouse**: a switch to reverse the scroll wheel and the button mapping.
+From **Settings… → Mouse & Trackpad**: a switch to reverse the scroll wheel, the trackpad's edge sliders and the button mapping.
+With **Edge sliders** on, one finger slid up or down along the left or right edge of the trackpad changes the display
+brightness or the volume (each edge can be set to either, or nothing); the pointer stays still meanwhile.
 **Add Button**, click the mouse button over the window (holding modifiers if you want the
 mapping to apply only with them), then press the combination it should send, pick a ready-made action
 or **Disable Button**. Ready-made actions:
@@ -169,13 +171,15 @@ or **Disable Button**. Ready-made actions:
 - **Browser**: open link in new tab (⌘-click under the pointer), reload, new/close/reopen tab, next/previous tab.
 - **Edit**: copy, paste, cut, undo, redo, zoom.
 - **System**: Mission Control, app windows, show Desktop, Spotlight, screenshot, full screen, lock screen.
-- **Media**: play/pause, next/previous track, volume, mute.
+- **Media**: play/pause, next/previous track, volume, mute, brightness.
 
 | Key | Meaning |
 |---|---|
 | `reverseScroll` | Reverses scrolling **of scroll wheels only** (trackpads and Magic Mouse stay "natural"). |
 | `dragModifier` | Modifiers + left drag = move window; + right drag = resize. On a tiled window: dropping it on another swaps them; resizing moves the master/stack split in `tall` and `wide` (in the other layouts the window goes back to its tile). |
 | `buttons` | Mouse button (2 = middle, 3 = back, 4 = forward, …) with optional `modifiers` → action (`none` disables it). |
+
+`trackpad`: `edgeSliders` (off by default), `leftEdge` and `rightEdge` (`volume`, `brightness` or `none`).
 
 ### Tiling
 
@@ -270,7 +274,7 @@ Floating (an app with no title = all its windows). It also applies to windows th
 | `none` | Does nothing: disables the key or button it is bound to |
 | `navigate back\|forward` | Back/forward with the frontmost app's shortcut |
 | `system mission_control\|app_windows\|show_desktop` | Mission Control, app windows, show Desktop (via the Dock) |
-| `media play_pause\|next\|previous\|volume_up\|volume_down\|mute` | Media keys |
+| `media play_pause\|next\|previous\|volume_up\|volume_down\|mute\|brightness_up\|brightness_down` | Media keys |
 | `click <modifiers>` | Left click under the pointer with modifiers (e.g. `click cmd`) |
 
 ## Architecture
@@ -278,12 +282,12 @@ Floating (an app with no title = all its windows). It also applies to windows th
 ```
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
-├── Settings/   window with a Keyboard/Mouse, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
+├── Settings/   window with a Keyboard/Mouse & Trackpad, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
 ├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions,
 │               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),
 │               KeyboardLayout, CapsLock, KeyboardLock
-├── Mouse/      DragController (tap → window manager bridge)
+├── Mouse/      DragController (tap → window manager bridge), EdgeSliders (trackpad edge sliders)
 └── Tiling/     WindowManager (+ Scratchpad, SavedState, Workspaces, Commands, Debug extensions), ManagedWindow,
                 ColumnLayout, AppWatcher (AXObserver), AXWriter (per-app writes), WorkspaceState (saved workspaces),
                 LaunchTracker, Layout, ScreenInfo, DisplayMonitor, FocusAnchor, AX helpers

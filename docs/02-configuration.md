@@ -35,6 +35,11 @@
     "dragModifier": "ctrl+alt",
     "buttons": [ { "button": 3, "modifiers": "", "action": "navigate back" } ]
   },
+  "trackpad": {
+    "edgeSliders": true,
+    "leftEdge": "brightness",
+    "rightEdge": "volume"
+  },
   "tiling": {
     "enabled": true,
     "layout": "columns",
@@ -73,6 +78,14 @@ Every section and key is optional.
 | `buttons[].button` | int | required | **2 to 31** (0 and 1 are left/right click: error). 2 = middle, 3 = back, 4 = forward. |
 | `buttons[].modifiers` | string | `""` | Modifiers only; the mapping applies only with exactly those. |
 | `buttons[].action` | string | required | See [Actions](05-actions.md). |
+
+### `trackpad`
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `edgeSliders` | bool | `false` | One finger slid along the left or right edge of the trackpad ([details](04-mouse.md#trackpad-edge-sliders-trackpad)). |
+| `leftEdge` | string | `brightness` | `volume`, `brightness` or `none`; anything else is a config error. |
+| `rightEdge` | string | `volume` | The same. |
 
 ### `tiling`
 

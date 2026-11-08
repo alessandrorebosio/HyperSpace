@@ -145,6 +145,9 @@ enum MediaKey: String {
     case volumeUp = "volume_up"
     case volumeDown = "volume_down"
     case mute
+    /// The display's brightness: the built-in one and Apple displays (not other monitors).
+    case brightnessUp = "brightness_up"
+    case brightnessDown = "brightness_down"
 
     /// NX_KEYTYPE_* from IOKit/hidsystem/ev_keymap.h.
     private var keyType: Int {
@@ -152,6 +155,8 @@ enum MediaKey: String {
         case .volumeUp: return 0
         case .volumeDown: return 1
         case .mute: return 7
+        case .brightnessUp: return 2
+        case .brightnessDown: return 3
         case .playPause: return 16
         case .next: return 19
         case .previous: return 20

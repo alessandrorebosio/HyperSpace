@@ -59,7 +59,7 @@ Details in [Scratchpad](08-scratchpad.md).
 |---|---|---|
 | `navigate` | `back` \| `forward` | Back/forward using the frontmost app's menu item ([Mouse](04-mouse.md#navigate-backforward)). |
 | `system` | `mission_control` \| `app_windows` \| `show_desktop` | Mission Control, app windows, show desktop, via `CoreDockSendNotification` (works even when the system shortcuts are disabled or changed). |
-| `media` | `play_pause` \| `next` \| `previous` \| `volume_up` \| `volume_down` \| `mute` | Media keys as `NX_SYSDEFINED` events (key down + key up). |
+| `media` | `play_pause` \| `next` \| `previous` \| `volume_up` \| `volume_down` \| `mute` \| `brightness_up` \| `brightness_down` | Media keys as `NX_SYSDEFINED` events (key down + key up). |
 | `click` | modifiers, e.g. `click cmd` | Left click under the pointer with those modifiers. Empty argument = no modifiers; unknown modifier = error. |
 
 ## Typical error messages

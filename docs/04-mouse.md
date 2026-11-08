@@ -42,7 +42,7 @@ or choose **Disable Button**. Mappings are suspended during capture so the butto
 | **Browser** | Open Link in New Tab → `click cmd`; Reload → `key cmd+r`; New Tab → `key cmd+t`; Close Tab → `key cmd+w`; Reopen Closed Tab → `key shift+cmd+t`; Next Tab → `key ctrl+tab`; Previous Tab → `key ctrl+shift+tab` |
 | **Edit** | Copy/Paste/Cut/Undo → `key cmd+c/v/x/z`; Redo → `key shift+cmd+z`; Zoom In/Out → `key cmd+=` / `key cmd+-` |
 | **System** | Mission Control, App Windows, Show Desktop → `system …`; Spotlight → `key cmd+space`; Screenshot → `key shift+cmd+5`; Toggle Full Screen → `key ctrl+cmd+f`; Lock Screen → `key ctrl+cmd+q` |
-| **Media** | Play/Pause, Next/Previous Track, Volume Up/Down, Mute → `media …` |
+| **Media** | Play/Pause, Next/Previous Track, Volume Up/Down, Mute, Brightness Up/Down → `media …` |
 
 ### `navigate back|forward`
 
@@ -77,3 +77,14 @@ On release, for a window **in the tiling** (not floating, tiling on):
 | Resize (`columns`/`monocle`/`accordion` layout) | no effect on the layout: the window returns to its place |
 
 A **floating window** stays where you leave it. See also [Tiling](06-tiling.md#drag-and-drop-and-snap-back).
+
+## Trackpad edge sliders (`trackpad`)
+
+Off by default. When on, **one finger slid up or down along the left or right edge** of a trackpad changes what that edge is set to: `volume`, `brightness` (the display's, through the system brightness keys: the built-in display and Apple displays, not other monitors) or `none`. The defaults are brightness on the left, volume on the right.
+
+- Each edge band is 8% of the trackpad's width. A finger put down there is a slider from the start; every 5% of the trackpad's height it moves is one notch (a key press, with the system's volume or brightness indicator), so the full height is 20 notches.
+- **The pointer is held still** while the finger is down in the band (`CGAssociateMouseAndMouseCursorPosition`); it may move a pixel or two before the touch is recognised. Moving sideways by more than 5% of the width before the first notch makes it an ordinary pointer move: the hold lifts and the finger is ignored until lifted.
+- A second finger (a scroll, a two-finger click) ends the slider until every finger is lifted; a finger that starts outside the bands, or on an edge set to `none`, is never a slider. Clicks and taps are not affected.
+- Built-in trackpads and Magic Trackpads are used; the Magic Mouse (whose surface is also a multitouch device) is not. Trackpads connected later are picked up when macOS reports them and after waking.
+- The touches come from Apple's private **MultitouchSupport** framework (as in BetterTouchTool or MiddleClick), loaded at run time: the recognition is in `EdgeSliderTracker` (pure, tested), the framework glue in `EdgeSliders`. If the framework is missing or changes, the sliders do nothing and *Copy Debug Info* says so.
+- Settings: **Mouse & Trackpad → Trackpad**: the *Edge sliders* switch and a menu per edge.

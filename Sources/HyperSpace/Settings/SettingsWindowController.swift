@@ -12,7 +12,7 @@ final class SettingsNavigation: ObservableObject {
         var title: String {
             switch self {
             case .keyboard: return "Keyboard"
-            case .mouse: return "Mouse"
+            case .mouse: return "Mouse & Trackpad"
             case .tiling: return "Tiling"
             case .workspaces: return "Workspaces"
             case .windowRules: return "Window Rules"
@@ -48,7 +48,7 @@ final class SettingsNavigation: ObservableObject {
         var summary: String {
             switch self {
             case .keyboard: return "Remap keys, on every keyboard or just one, and lock the keyboard to clean it."
-            case .mouse: return "Give extra mouse buttons an action and choose the scroll direction."
+            case .mouse: return "Mouse buttons, the scroll direction and the trackpad's edges as sliders."
             case .tiling: return "How windows are arranged on each display."
             case .workspaces: return "Virtual workspaces, their shortcuts and the apps that open in each."
             case .windowRules: return "Windows that float and apps kept in the scratchpad."
