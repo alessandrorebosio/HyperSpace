@@ -56,8 +56,10 @@ struct TilingView: View {
             .disabled(!model.enabled)
 
             Section {
-                Toggle(isOn: Binding(get: { model.mouseFollowsFocus }, set: { model.setMouseFollowsFocus($0) })) {
-                    RowLabel("Pointer follows focus", detail: "When the focus moves to another display, the pointer goes there too.")
+                SettingRow(title: "Pointer follows focus", detail: "The pointer moves to the display that gets the focus.") {
+                    Toggle("Pointer follows focus", isOn: Binding(get: { model.mouseFollowsFocus }, set: { model.setMouseFollowsFocus($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
                 }
             } header: {
                 Text("Focus")

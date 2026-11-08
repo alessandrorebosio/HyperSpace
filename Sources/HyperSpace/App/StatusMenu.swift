@@ -102,46 +102,45 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     /// The workspaces left to right, the focused one in a filled box with its name cut out,
-    /// like the focused workspace button of i3bar. A lock and ⚠︎ go before them when needed.
+    /// like the focused workspace button of i3bar. A lock and a warning sign go before them
+    /// when needed. Symbols are centered on the bar, names on their cap height (the box's middle).
     static func workspacesImage(names: [String], focused: Int, locked: Bool, problem: Bool) -> NSImage {
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
         let height = NSStatusBar.system.thickness
-        let padding: CGFloat = 5, gap: CGFloat = 2, boxHeight = min(height - 4, 18)
-        let lock = locked ? lockImage : nil
-        let warning = problem ? NSAttributedString(string: "⚠︎", attributes: attributes) : nil
-        let sizes = names.map { ($0 as NSString).size(withAttributes: attributes) }
+        let padding: CGFloat = 5, gap: CGFloat = 2, symbolGap: CGFloat = 4, boxHeight = min(height - 4, 18)
+        let symbols = [locked ? lockImage : nil, problem ? warningImage : nil].compactMap { $0 }
+        let widths = names.map { ceil(($0 as NSString).size(withAttributes: attributes).width) }
+        // On whole half points, so a 2x display draws the edges sharp.
+        let half = { (value: CGFloat) in (value * 2).rounded() / 2 }
+        let baseline = half((height - font.capHeight) / 2)
 
-        var width: CGFloat = 0
-        if let lock { width += lock.size.width + 4 }
-        if let warning { width += warning.size().width + 4 }
-        width += sizes.reduce(0) { $0 + $1.width + padding * 2 } + gap * CGFloat(max(names.count - 1, 0))
+        var width = symbols.reduce(0) { $0 + $1.size.width + symbolGap }
+        width += widths.reduce(0) { $0 + $1 + padding * 2 } + gap * CGFloat(max(names.count - 1, 0))
 
         let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) { _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             var x: CGFloat = 0
-            if let lock {
-                lock.draw(in: NSRect(x: x, y: (height - lock.size.height) / 2, width: lock.size.width, height: lock.size.height))
-                x += lock.size.width + 4
-            }
-            if let warning {
-                let size = warning.size()
-                warning.draw(at: NSPoint(x: x, y: (height - size.height) / 2))
-                x += size.width + 4
+            for symbol in symbols {
+                // Centered by its alignment rect: the drawing, without the room below for a baseline.
+                let shape = symbol.alignmentRect
+                symbol.draw(in: NSRect(x: x, y: half((height - shape.height) / 2 - shape.minY),
+                                       width: symbol.size.width, height: symbol.size.height))
+                x += symbol.size.width + symbolGap
             }
             for (index, name) in names.enumerated() {
-                let size = sizes[index]
-                let box = NSRect(x: x, y: (height - boxHeight) / 2, width: size.width + padding * 2, height: boxHeight)
-                let origin = NSPoint(x: box.minX + padding, y: (height - size.height) / 2)
+                let box = NSRect(x: x, y: half((height - boxHeight) / 2), width: widths[index] + padding * 2, height: boxHeight)
+                // Without `.usesLineFragmentOrigin` the rect's origin is the baseline.
+                let line = NSRect(x: box.minX + padding, y: baseline, width: widths[index], height: 0)
                 if index == focused {
                     NSColor.black.setFill()
                     NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
                     context.saveGState()
                     context.setBlendMode(.destinationOut)
-                    (name as NSString).draw(at: origin, withAttributes: attributes)
+                    (name as NSString).draw(with: line, options: [], attributes: attributes)
                     context.restoreGState()
                 } else {
-                    (name as NSString).draw(at: origin, withAttributes: attributes)
+                    (name as NSString).draw(with: line, options: [], attributes: attributes)
                 }
                 x = box.maxX + gap
             }
@@ -152,13 +151,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return image
     }
 
-    private static let lockImage: NSImage? = {
+    private static let lockImage = barSymbol("lock", description: "Keyboard locked")
+    private static let warningImage = barSymbol("exclamationmark.triangle", description: "Problem")
+
+    /// A symbol for the bar, the size of the names next to it.
+    private static func barSymbol(_ name: String, description: String) -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize - 1, weight: .medium)
-        let image = NSImage(systemSymbolName: "lock", accessibilityDescription: "Keyboard locked")?
-            .withSymbolConfiguration(config)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: description)?.withSymbolConfiguration(config)
         image?.isTemplate = true
         return image
-    }()
+    }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()

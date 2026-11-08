@@ -84,8 +84,10 @@ struct GeneralView: View {
             }
 
             Section {
-                Toggle(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) })) {
-                    RowLabel("Launch at login", detail: "Start HyperSpace when you log in.")
+                SettingRow(title: "Launch at login", detail: "Start HyperSpace when you log in.") {
+                    Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
                 }
             } header: {
                 Text("Startup")
@@ -119,15 +121,13 @@ struct GeneralView: View {
             }
 
             Section {
-                LabeledContent {
+                SettingRow(title: "Accessibility", detail: "The only permission HyperSpace asks for.") {
                     if model.accessibilityGranted {
                         Label("Allowed", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     } else {
                         Button("Open System Settings…") { Permissions.openSettings() }
                     }
-                } label: {
-                    RowLabel("Accessibility", detail: "The only permission HyperSpace asks for.")
                 }
             } header: {
                 Text("Permission")

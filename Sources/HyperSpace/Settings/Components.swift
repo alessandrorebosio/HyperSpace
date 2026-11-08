@@ -136,6 +136,22 @@ struct RowLabel: View {
     }
 }
 
+/// A setting with a line of explanation under its title and its control on the right,
+/// vertically centered on both lines (a Form row would align the control with the first).
+struct SettingRow<Control: View>: View {
+    let title: String
+    var detail: String?
+    @ViewBuilder var control: () -> Control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            RowLabel(title, detail: detail)
+            Spacer(minLength: 12)
+            control()
+        }
+    }
+}
+
 /// What an empty list shows, centered, instead of nothing.
 struct EmptyRow: View {
     let symbol: String
@@ -162,15 +178,22 @@ struct SectionFooter: View {
         self.error = error
     }
 
+    // A grouped Form puts footers on the trailing side (for buttons): text reads from the leading edge.
     var body: some View {
-        if let error {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-        } else {
-            Text(text).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            } else {
+                Text(text).foregroundStyle(.secondary)
+            }
         }
+        .font(.caption)
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
+        // In line with the section's title and rows, which the Form insets by as much.
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

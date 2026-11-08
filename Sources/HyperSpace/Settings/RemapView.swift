@@ -10,10 +10,12 @@ struct RemapView: View {
 
             Section {
                 KeyboardLockRow(model: model)
-                Picker(selection: $model.lockMinutes) {
-                    ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
-                } label: {
-                    RowLabel("Unlock automatically", detail: "When nobody unlocks it with the mouse first.")
+                SettingRow(title: "Unlock automatically", detail: "When nobody unlocks it with the mouse first.") {
+                    Picker("Unlock automatically", selection: $model.lockMinutes) {
+                        ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
                 }
                 .disabled(model.isKeyboardLocked)
             } header: {

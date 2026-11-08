@@ -10,8 +10,10 @@ struct MouseView: View {
             PermissionNotice()
 
             Section {
-                Toggle(isOn: Binding(get: { model.reverseScroll }, set: { model.setReverseScroll($0) })) {
-                    RowLabel("Reverse scroll wheel", detail: "Mice with a wheel only: trackpads and Magic Mouse keep the system direction.")
+                SettingRow(title: "Reverse scroll wheel", detail: "Wheel mice only: trackpads keep the system direction.") {
+                    Toggle("Reverse scroll wheel", isOn: Binding(get: { model.reverseScroll }, set: { model.setReverseScroll($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
                 }
             } header: {
                 Text("Scrolling")
