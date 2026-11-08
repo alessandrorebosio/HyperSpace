@@ -103,7 +103,7 @@ AppDelegate.apply
 | `left/rightMouseDown/Dragged/Up` | `dragModifier` is set |
 | all keys + `NX_SYSDEFINED` | only while the keyboard is locked |
 
-Mouse movement is never intercepted.
+Mouse movement is intercepted only with the trackpad edge sliders on: every move is let through untouched except while a slider holds the pointer.
 
 ## Window manager: how it reacts
 

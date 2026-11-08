@@ -108,6 +108,9 @@ struct TapConfig: Equatable {
     var dragModifier: Modifiers?
     /// Caps lock is remapped: keep the caps lock state off (see `CapsLock`).
     var suppressCapsLock = false
+    /// The trackpad edge sliders are on: pointer moves are watched, to hold the pointer still
+    /// while a slider is in progress (`EventTap.setPointerHeld`).
+    var holdsPointer = false
 
     static func slot(_ code: Int, _ mods: Modifiers) -> Int {
         code << 4 | Int(mods.rawValue)
@@ -173,6 +176,9 @@ struct TapConfig: Equatable {
         }
         if reverseScroll {
             add(.scrollWheel)
+        }
+        if holdsPointer {
+            add(.mouseMoved)
         }
         if dragModifier != nil {
             add(.leftMouseDown); add(.leftMouseDragged); add(.leftMouseUp)
@@ -326,6 +332,7 @@ struct Config {
         if let trackpad = raw.trackpad {
             try parseTrackpad(trackpad)
         }
+        tap.holdsPointer = self.trackpad.isActive
 
         // `hyperKey` is shorthand for a remap to "hyper" on every keyboard.
         var rawRemaps = keyboard?.remap ?? []

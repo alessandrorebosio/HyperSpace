@@ -10,7 +10,7 @@ import os
 /// MiddleClick), loaded at run time: if it is missing or changed, the sliders just do nothing.
 /// Its callbacks arrive on a thread of its own; the notches are posted on the main thread as the
 /// system's own volume and brightness keys, so macOS shows its usual indicator.
-/// While a slider is in progress the pointer is held still (`CGAssociateMouseAndMouseCursorPosition`).
+/// While a slider is in progress the pointer is held still by the event tap (`onHoldChange`).
 /// Trackpads are only watched while a slider is on; ones connected later are picked up from
 /// IOKit match notifications and on wake.
 final class EdgeSliders {
@@ -36,7 +36,12 @@ final class EdgeSliders {
     private var wakeObserver: NSObjectProtocol?
     private var pendingRestart: DispatchWorkItem?
 
-    init() {
+    /// Called when a slider starts or ends, to hold the pointer still meanwhile; on the
+    /// multitouch thread (or the main thread when the sliders stop), so it must be thread-safe.
+    private let onHoldChange: (Bool) -> Void
+
+    init(onHoldChange: @escaping (Bool) -> Void) {
+        self.onHoldChange = onHoldChange
         Self.shared = self
     }
 
@@ -75,7 +80,7 @@ final class EdgeSliders {
         devices = []
         deviceList = nil
         state.withLock { $0.trackers = [:]; $0.holding = false }
-        setHolding(false)
+        onHoldChange(false)
     }
 
     private func start() {
@@ -146,7 +151,7 @@ final class EdgeSliders {
     }
 
     /// Multitouch thread: one frame of one trackpad. The main thread is only bothered when a
-    /// notch is crossed or the hold starts or ends (frames come about 100 times a second).
+    /// notch is crossed (frames come about 100 times a second).
     fileprivate func frame(_ device: UnsafeMutableRawPointer, _ touches: [EdgeTouch]) {
         let key = Int(bitPattern: device)
         let (steps, holdChange) = state.withLock { state -> ([EdgeStep], Bool?) in
@@ -157,16 +162,12 @@ final class EdgeSliders {
             defer { state.holding = holding }
             return (steps, holding != state.holding ? holding : nil)
         }
-        guard !steps.isEmpty || holdChange != nil else { return }
-        DispatchQueue.main.async { [weak self] in
-            if let holdChange { self?.setHolding(holdChange) }
+        // Straight to the event tap: the sooner the hold starts, the less the pointer moves.
+        if let holdChange { onHoldChange(holdChange) }
+        guard !steps.isEmpty else { return }
+        DispatchQueue.main.async {
             for step in steps { Self.post(step) }
         }
-    }
-
-    /// Main thread.
-    private func setHolding(_ holding: Bool) {
-        CGAssociateMouseAndMouseCursorPosition(holding ? 0 : 1)
     }
 
     private static func post(_ step: EdgeStep) {

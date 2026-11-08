@@ -12,7 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ConfigStore()
     private let remapper = KeyboardRemapper()
     private let windowManager = WindowManager()
-    private let edgeSliders = EdgeSliders()
+    /// The tap is captured here, on the main thread: the hold is set from the multitouch thread.
+    private lazy var edgeSliders = EdgeSliders { [eventTap] held in eventTap.setPointerHeld(held) }
     private lazy var runner = ActionRunner(windowManager: windowManager) { [weak self] in
         self?.store.reload()
     }

@@ -656,6 +656,10 @@ struct EdgeSliderTests {
         let on = try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(raw.utf8)))
         #expect(on.trackpad == TrackpadConfig(edgeSliders: true, leftEdge: .volume, rightEdge: .none))
         #expect(on.trackpad.isActive)
+        // Pointer moves are watched only with the sliders on, to hold the pointer during a slide.
+        let moved = CGEventMask(1) << CGEventType.mouseMoved.rawValue
+        #expect(on.tap.holdsPointer && on.tap.eventMask & moved != 0)
+        #expect(!off.tap.holdsPointer && off.tap.eventMask & moved == 0)
         let bad = #"{ "trackpad": { "leftEdge": "mute" } }"#
         #expect(throws: ConfigError.self) { try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(bad.utf8))) }
     }

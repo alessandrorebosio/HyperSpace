@@ -298,7 +298,7 @@ Choices made for performance and minimal permissions:
 - **A single active event tap** (`CGEventTap` at HID level) shared by keyboard and mouse, on a **dedicated**
   high-priority **thread**: window work (main thread) can never slow input down.
   An active tap needs only Accessibility (a passive tap would need Input Monitoring).
-- **It subscribes only to the events in use.** Mouse movements are never intercepted; scrolling only if
+- **It subscribes only to the events in use.** Mouse movements are intercepted only with the trackpad edge sliders on (to hold the pointer during a slide); scrolling only if
   `reverseScroll` is on; with an empty config the tap is not installed at all.
 - **Lean hot path**: no locks of its own, and no allocation except the event a combination posts; bindings are compiled into `[Int16]` tables indexed by
   `keyCode << 4 | modifiers`; the config reaches the tap thread with `CFRunLoopPerformBlock`.

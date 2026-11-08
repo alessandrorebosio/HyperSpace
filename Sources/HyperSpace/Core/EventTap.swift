@@ -47,6 +47,8 @@ final class EventTap {
     private var keyBindingsSuspended = false
     private var dragMode: DragMode?
     private var keyboardLocked = false
+    /// Where the pointer is held while a trackpad edge slider is in progress.
+    private var heldPointer: CGPoint?
 
     init(drag: DragController, onAction: @escaping (Action) -> Void) {
         self.drag = drag
@@ -108,6 +110,7 @@ final class EventTap {
         clearSwallowedKeys()
         if includingMouse {
             dragMode = nil
+            heldPointer = nil
             clearSwallowedButtons()
         }
     }
@@ -154,6 +157,16 @@ final class EventTap {
             }
         }
         if newMask != mask || (tap == nil && newMask != 0) { installTap(mask: newMask) }
+    }
+
+    /// Holds the pointer where it is, or lets it go (the trackpad edge sliders). Safe to call
+    /// from any thread: the multitouch thread calls it, so the hold starts without a detour
+    /// through the main thread.
+    func setPointerHeld(_ held: Bool) {
+        onTapThread { [self] in
+            guard config.holdsPointer || !held else { return }
+            heldPointer = held ? (heldPointer ?? CGEvent(source: nil)?.location) : nil
+        }
     }
 
     func setButtonsSuspended(_ suspended: Bool) {
@@ -237,6 +250,14 @@ final class EventTap {
         case .scrollWheel:
             reverseScrollIfNeeded(event)
             return pass
+        case .mouseMoved:
+            guard let held = heldPointer else { return pass }
+            // Dropped; and should the pointer have moved anyway, it goes back.
+            if !event.location.isClose(to: held, tolerance: 0.5) {
+                CGWarpMouseCursorPosition(held)
+                CGAssociateMouseAndMouseCursorPosition(1)
+            }
+            return nil
         case .leftMouseDown, .rightMouseDown:
             return beginDrag(event, mode: type == .leftMouseDown ? .move : .resize) ? nil : pass
         case .leftMouseDragged, .rightMouseDragged:
