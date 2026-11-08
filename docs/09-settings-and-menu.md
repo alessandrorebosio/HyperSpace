@@ -120,4 +120,4 @@ While recording, key bindings are suspended (so an existing shortcut reaches the
 
 ## Names and icons caching
 
-`TilingModel` caches app names and icons by bundle id (`appInfo`), because rows ask on every redraw and LaunchServices is slow. The list of running apps (`runningApps`) is kept until an app launches or quits, and `MouseModel` builds its preset-name lookup once. The menu bar icon is redrawn only when what it shows changes.
+`AppLauncher` caches app names and icons by bundle id (`appInfo`), because rows ask on every redraw and LaunchServices is slow. The list of running apps (`runningApps`) is kept until an app launches or quits, and `MouseModel` builds its preset-name lookup once. The menu bar icon is redrawn only when what it shows changes.

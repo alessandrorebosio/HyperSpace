@@ -194,7 +194,7 @@ final class WindowManager {
         config = newConfig
         if rulesChanged {
             for window in windows.values where !window.userOverride {
-                window.isFloating = shouldFloat(window) { AX.string(window.element, kAXTitleAttribute) }
+                window.isFloating = shouldFloat(window) { window.title }
             }
         }
         // Fewer workspaces than before: their windows join the first one.
@@ -487,6 +487,7 @@ final class WindowManager {
         }
         let window = ManagedWindow(id: id, element: element, pid: watcher.pid, bundleID: watcher.bundleID)
         window.isDialog = probe.kind == .dialog || probe.dialogLike
+        window.title = probe.title
         window.isFloating = shouldFloat(window) { probe.title }
         // A dialog belongs to the window it was opened from: the app's main window, else the
         // app's window focused last, else any of its windows.
@@ -638,14 +639,18 @@ final class WindowManager {
         case kAXFocusedWindowChangedNotification:
             scheduleFocusUpdate()
         case kAXTitleChangedNotification:
-            // Many windows set their title a moment after opening: title rules apply then.
-            guard !config.floatingWindows.isEmpty,
-                  let window = managed(element, pid: pid),
-                  !window.userOverride else { return }
-            let floats = shouldFloat(window) { AX.string(element, kAXTitleAttribute) }
-            guard floats != window.isFloating else { return }
-            window.isFloating = floats
-            scheduleRetile()
+            // Read on the app's AX queue: a slow app must not hold up the main thread. Many
+            // windows set their title a moment after opening: title rules apply then.
+            guard let window = managed(element, pid: pid) else { return }
+            writer.read(pid, { AX.string(element, kAXTitleAttribute) }, then: { [weak self] title in
+                guard let self, windows[window.id] === window else { return }
+                window.title = title
+                guard !config.floatingWindows.isEmpty, !window.userOverride else { return }
+                let floats = shouldFloat(window) { title }
+                guard floats != window.isFloating else { return }
+                window.isFloating = floats
+                scheduleRetile()
+            })
         default:
             scheduleRetile()
         }
@@ -885,8 +890,8 @@ final class WindowManager {
 
     /// Moves the pointer to `point` when it is on another display than `screen`.
     func bringPointer(to point: CGPoint, on screen: ScreenInfo) {
-        guard config.mouseFollowsFocus, !screen.frame.contains(AX.pointer) else { return }
-        AX.warpPointer(to: point)
+        guard config.mouseFollowsFocus, !screen.frame.contains(Pointer.location) else { return }
+        Pointer.warp(to: point)
     }
 
     /// `current`, when known, lets a move within a display skip the writes it does not need.

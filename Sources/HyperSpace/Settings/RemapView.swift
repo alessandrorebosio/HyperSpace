@@ -107,7 +107,7 @@ private struct RuleRow: View {
             KeyCap(text: sourceText, minWidth: 96, placeholder: rule.from.isEmpty, active: model.capturing == .from(rule.id)) {
                 model.toggleCapture(.from(rule.id))
             }
-            Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            RuleArrow()
             KeyCap(text: targetText, minWidth: 96, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
                 model.toggleCapture(.to(rule.id))
             }
@@ -135,10 +135,7 @@ private struct RuleRow: View {
     }
 
     private var trailing: some View {
-        HStack(spacing: 8) {
-            WarningBadge(text: model.warning(for: rule))
-            RemoveButton { model.remove(rule.id) }
-        }
+        RuleTrailing(warning: model.warning(for: rule)) { model.remove(rule.id) }
     }
 
     private var sourceText: String {

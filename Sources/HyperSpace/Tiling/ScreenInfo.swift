@@ -34,6 +34,10 @@ struct ScreenInfo {
 }
 
 extension ScreenInfo {
+    /// Height of the main display: AppKit's bottom-left coordinates and the top-left ones of AX
+    /// and CGEvent mirror each other around it.
+    static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
+
     /// The display's UUID: unlike its id, the same every time the monitor is plugged in.
     var uuid: String { Self.uuid(of: id) }
 

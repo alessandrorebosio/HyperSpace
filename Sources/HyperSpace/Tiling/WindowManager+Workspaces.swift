@@ -111,7 +111,7 @@ extension WindowManager {
         // A real switch takes the pointer to the middle of the display (pointer follows focus);
         // not while a button is held, which would end a drag.
         if focusedWorkspace != index, config.mouseFollowsFocus, NSEvent.pressedMouseButtons == 0 {
-            AX.warpPointer(to: screen.visible.center)
+            Pointer.warp(to: screen.visible.center)
         }
         notifyWorkspace(focused: .some(target))
     }
@@ -302,8 +302,8 @@ extension WindowManager {
 
     // MARK: - Menu
 
-    /// Every workspace with its windows in tiling order. Reads window titles, so it is
-    /// meant for when the menu opens, not for hot paths.
+    /// Every workspace with its windows in tiling order, for when the menu opens. Titles are
+    /// the ones kept up to date by the title notifications: no AX round trip here.
     func summaries() -> [WorkspaceSummary] {
         enterScope()
         defer { leaveScope() }
@@ -316,7 +316,7 @@ extension WindowManager {
             let entries = members.map { window -> WorkspaceSummary.Window in
                 let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
                 apps[window.pid] = app
-                let title = AX.string(window.element, kAXTitleAttribute)?.nilIfEmpty
+                let title = window.title?.nilIfEmpty
                 return WorkspaceSummary.Window(app: app?.localizedName ?? window.bundleID ?? "App",
                                                title: title, icon: app?.icon)
             }

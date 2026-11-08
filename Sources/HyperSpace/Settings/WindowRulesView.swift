@@ -81,7 +81,7 @@ private struct NewFloatingRule: View {
             Picker("App", selection: $model.newFloatingApp) {
                 Text("Any app").tag(String?.none)
                 Divider()
-                ForEach(TilingModel.runningApps, id: \.bundleID) { app in
+                ForEach(AppLauncher.runningApps, id: \.bundleID) { app in
                     Text(app.name).tag(Optional(app.bundleID))
                 }
             }

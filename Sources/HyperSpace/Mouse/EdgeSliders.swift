@@ -31,9 +31,8 @@ final class EdgeSliders {
     private var deviceList: CFArray?
     private var devices: [UnsafeMutableRawPointer] = []
     private var config = TrackpadConfig()
-    private var notifyPort: IONotificationPortRef?
-    private var iterator: io_iterator_t = 0
-    private var wakeObserver: NSObjectProtocol?
+    /// Set while a slider is on: trackpads connected later, and wakes, restart the listening.
+    private var deviceWatcher: DeviceWatcher?
     private var pendingRestart: DispatchWorkItem?
 
     /// Called when a slider starts or ends, to hold the pointer still meanwhile; on the
@@ -61,10 +60,12 @@ final class EdgeSliders {
         }
         if newConfig.isActive {
             if devices.isEmpty { start() }
-            watchDevices()
+            if deviceWatcher == nil {
+                deviceWatcher = DeviceWatcher(matching: "AppleMultitouchDevice") { [weak self] in self?.scheduleRestart() }
+            }
         } else {
             stop()
-            unwatchDevices()
+            deviceWatcher = nil
         }
     }
 
@@ -113,41 +114,6 @@ final class EdgeSliders {
         }
         pendingRestart = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
-    }
-
-    private func watchDevices() {
-        guard notifyPort == nil, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
-        notifyPort = port
-        IONotificationPortSetDispatchQueue(port, .main)
-        let result = IOServiceAddMatchingNotification(
-            port, kIOFirstMatchNotification, IOServiceMatching("AppleMultitouchDevice"),
-            { refcon, iterator in
-                EdgeSliders.drain(iterator)
-                guard let refcon else { return }
-                Unmanaged<EdgeSliders>.fromOpaque(refcon).takeUnretainedValue().scheduleRestart()
-            },
-            Unmanaged.passUnretained(self).toOpaque(), &iterator
-        )
-        // The notification only arms once the iterator has been drained.
-        if result == KERN_SUCCESS { Self.drain(iterator) }
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.scheduleRestart() }
-    }
-
-    private func unwatchDevices() {
-        if iterator != 0 { IOObjectRelease(iterator) }
-        iterator = 0
-        if let notifyPort { IONotificationPortDestroy(notifyPort) }
-        notifyPort = nil
-        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
-        wakeObserver = nil
-    }
-
-    private static func drain(_ iterator: io_iterator_t) {
-        while case let service = IOIteratorNext(iterator), service != 0 {
-            IOObjectRelease(service)
-        }
     }
 
     /// Multitouch thread: one frame of one trackpad. The main thread is only bothered when a

@@ -80,7 +80,7 @@ AppDelegate.apply
   ├─ CapsLock.turnOff()                          if caps lock is remapped
   └─ if Accessibility granted → applyTrusted:
         ├─ EventTap.apply(config.tap)            binding/button tables, carriers, scroll, drag (skipped when unchanged)
-        └─ WindowManager.apply(config.tiling)    layout, gaps, rules, workspaces, scratchpad (window titles are re-read only when the floating rules changed)
+        └─ WindowManager.apply(config.tiling)    layout, gaps, rules, workspaces, scratchpad (floating rules re-checked against the titles kept from title notifications)
 ```
 
 - **Shortcuts** (`keyboard.bindings`, workspace `switch`/`move`, mouse buttons) are compiled into `[Int16]` tables indexed by `keyCode << 4 | modifiers` (and `button << 4 | modifiers`); each entry is an index into `TapConfig.actions`.

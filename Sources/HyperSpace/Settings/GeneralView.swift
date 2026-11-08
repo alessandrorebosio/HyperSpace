@@ -12,8 +12,8 @@ final class GeneralModel: ObservableObject {
 
     @Published private(set) var launchAtLogin = false
     @Published private(set) var accessibilityGranted = false
-    /// Outcome of the last action on this page.
-    @Published private(set) var status: (text: String, ok: Bool)?
+    /// What needs attention: the problem shown in the menu bar, or the last action that failed here.
+    @Published private(set) var problem: String?
 
     let actions: Actions
     private var activation: Any?
@@ -35,7 +35,7 @@ final class GeneralModel: ObservableObject {
     func refresh() {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         accessibilityGranted = Permissions.isTrusted(prompt: false)
-        status = actions.problem().map { ($0, false) }
+        problem = actions.problem()
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -46,7 +46,7 @@ final class GeneralModel: ObservableObject {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            status = ("Launch at login: \(error.localizedDescription)", false)
+            problem = "Launch at login: \(error.localizedDescription)"
         }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -58,7 +58,7 @@ final class GeneralModel: ObservableObject {
     /// How the app is doing, in a few words with a color: on the sidebar and the General page.
     var health: (text: String, color: Color) {
         if !accessibilityGranted { return ("Accessibility needed", .orange) }
-        if let status, !status.ok { return ("Needs attention", .red) }
+        if problem != nil { return ("Needs attention", .red) }
         return ("Running", .green)
     }
 
@@ -75,13 +75,8 @@ struct GeneralView: View {
                 AppCard(model: model)
             }
 
-            if !model.accessibilityGranted {
-                Section {
-                    NoticeRow(symbol: "lock.shield.fill", color: .orange, title: "Accessibility permission needed",
-                              detail: "Key remapping already works. Shortcuts, mouse buttons and window management need HyperSpace to be allowed in Privacy & Security → Accessibility.",
-                              button: "Open System Settings…") { Permissions.openSettings() }
-                }
-            }
+            PermissionNotice(detail: "Key remapping already works. Shortcuts, mouse buttons and window management need HyperSpace to be allowed in Privacy & Security → Accessibility.")
+                .environment(\.permissionMissing, !model.accessibilityGranted)
 
             Section {
                 SettingRow(title: "Launch at login", detail: "Start HyperSpace when you log in.") {
@@ -104,9 +99,9 @@ struct GeneralView: View {
                 } label: {
                     RowLabel("Config file")
                 }
-                if let status = model.status {
-                    Label(status.text, systemImage: status.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(status.ok ? Color.green : Color.orange)
+                if let problem = model.problem {
+                    Label(problem, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {

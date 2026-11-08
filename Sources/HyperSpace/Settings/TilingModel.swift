@@ -235,37 +235,11 @@ final class TilingModel: ObservableObject {
     }
 
     var assignmentCandidates: [(name: String, bundleID: String)] {
-        Self.runningApps.filter { app in !assignments.contains { $0.app == app.bundleID } }
-    }
-
-    /// The regular apps running, by name. The pages ask on every redraw (a keystroke in a
-    /// text field), so the list is kept until an app launches or quits.
-    static var runningApps: [(name: String, bundleID: String)] {
-        if let cached = cachedApps { return cached }
-        watchRunningApps()
-        let apps = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
-            .compactMap { app in app.bundleIdentifier.map { (app.localizedName ?? $0, $0) } }
-            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
-        cachedApps = apps
-        return apps
-    }
-
-    private static var cachedApps: [(name: String, bundleID: String)]?
-    private static var appObservers: [NSObjectProtocol] = []
-
-    private static func watchRunningApps() {
-        guard appObservers.isEmpty else { return }
-        let center = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            appObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                TilingModel.cachedApps = nil
-            })
-        }
+        AppLauncher.runningApps.filter { app in !assignments.contains { $0.app == app.bundleID } }
     }
 
     var scratchpadCandidates: [(name: String, bundleID: String)] {
-        Self.runningApps.filter { app in !scratchpadApps.contains { $0.bundleID == app.bundleID } }
+        AppLauncher.runningApps.filter { app in !scratchpadApps.contains { $0.bundleID == app.bundleID } }
     }
 
     fileprivate static let togglePrefix = "scratchpad "
@@ -319,28 +293,6 @@ final class TilingModel: ObservableObject {
         assignments.removeAll { $0.id == id }
         save()
     }
-
-    /// Names and icons by bundle id: rows ask on every redraw, LaunchServices is slow.
-    private static var appInfo: [String: (name: String, icon: NSImage?)] = [:]
-
-    private static func info(_ bundleID: String) -> (name: String, icon: NSImage?) {
-        if let info = appInfo[bundleID] { return info }
-        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-        let info = (name: url.map { Self.appDisplayName(at: $0) } ?? bundleID,
-                    icon: url.map { NSWorkspace.shared.icon(forFile: $0.path) })
-        appInfo[bundleID] = info
-        return info
-    }
-
-    /// The name Finder shows for the app, less a trailing ".app" (shown when extensions are on).
-    private static func appDisplayName(at url: URL) -> String {
-        let name = FileManager.default.displayName(atPath: url.path)
-        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
-    }
-
-    static func appName(_ bundleID: String) -> String { info(bundleID).name }
-
-    static func appIcon(_ bundleID: String) -> NSImage? { info(bundleID).icon }
 
     /// Typing a name saves shortly after the last keystroke.
     func rename(_ id: UUID, to name: String) {
@@ -420,7 +372,7 @@ final class TilingModel: ObservableObject {
         let tiling = root["tiling"] as? [String: Any] ?? [:]
         let defaults = Self.defaults
         enabled = tiling["enabled"] as? Bool ?? defaults.enabled
-        layout = (tiling["layout"] as? String).flatMap { LayoutKind(rawValue: $0.lowercased()) } ?? defaults.layout
+        layout = (tiling["layout"] as? String).flatMap { LayoutKind(configText: $0) } ?? defaults.layout
         // The config clamps these too: what a hand-edited file holds shows as it will apply.
         gap = ((tiling["gap"] as? NSNumber)?.intValue ?? Int(defaults.gap)).clamped(to: Self.spacingRange)
         padding = ((tiling["padding"] as? NSNumber)?.intValue ?? Int(defaults.padding)).clamped(to: Self.spacingRange)

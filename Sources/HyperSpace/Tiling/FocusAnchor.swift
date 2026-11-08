@@ -42,10 +42,9 @@ final class FocusAnchor: NSObject, NSWindowDelegate {
     /// Puts it in the middle of the visible area of `screen` (AX coordinates) and makes
     /// HyperSpace active there.
     func show(on screen: ScreenInfo) {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let center = screen.visible.center
         point = center
-        window.setFrameOrigin(NSPoint(x: center.x - 1, y: primaryHeight - center.y - 1))
+        window.setFrameOrigin(NSPoint(x: center.x - 1, y: ScreenInfo.primaryHeight - center.y - 1))
         window.orderFrontRegardless()
         shown = true
         window.makeKey()
@@ -75,7 +74,7 @@ final class FocusAnchor: NSObject, NSWindowDelegate {
     /// Not while a button is held (a drag of yours would end).
     private func click() {
         guard NSEvent.pressedMouseButtons == 0 else { return }
-        AX.warpPointer(to: point)
+        Pointer.warp(to: point)
         Pointer.click([], at: point)
     }
 

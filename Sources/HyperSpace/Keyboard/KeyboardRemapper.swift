@@ -71,12 +71,10 @@ final class KeyboardRemapper {
     private var rules: [RemapRule] = []
     /// While set, every keyboard sends its physical keys (used to capture keys in the editor).
     private var suspended = false
-    private var notifyPort: IONotificationPortRef?
-    private var iterator: io_iterator_t = 0
-    private var wakeObserver: NSObjectProtocol?
+    private var deviceWatcher: DeviceWatcher?
 
     init() {
-        watchKeyboards()
+        deviceWatcher = DeviceWatcher(matching: "IOHIDEventService") { [weak self] in self?.keyboardsChanged() }
     }
 
     func apply(_ rules: [RemapRule]) {
@@ -150,28 +148,6 @@ final class KeyboardRemapper {
         } as NSArray
     }
 
-    private func watchKeyboards() {
-        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
-        notifyPort = port
-        IONotificationPortSetDispatchQueue(port, .main)
-
-        let result = IOServiceAddMatchingNotification(
-            port, kIOFirstMatchNotification, IOServiceMatching("IOHIDEventService"),
-            { refcon, iterator in
-                KeyboardRemapper.drain(iterator)
-                guard let refcon else { return }
-                Unmanaged<KeyboardRemapper>.fromOpaque(refcon).takeUnretainedValue().keyboardsChanged()
-            },
-            Unmanaged.passUnretained(self).toOpaque(), &iterator
-        )
-        // The notification only arms once the iterator has been drained.
-        if result == KERN_SUCCESS { Self.drain(iterator) }
-
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.keyboardsChanged() }
-    }
-
     /// The HID service client shows up shortly after the IOKit registry entry.
     private func keyboardsChanged() {
         for delay in [0.3, 1.5] {
@@ -179,12 +155,6 @@ final class KeyboardRemapper {
                 self?.sync()
                 self?.onKeyboardsChanged?()
             }
-        }
-    }
-
-    private static func drain(_ iterator: io_iterator_t) {
-        while case let service = IOIteratorNext(iterator), service != 0 {
-            IOObjectRelease(service)
         }
     }
 }

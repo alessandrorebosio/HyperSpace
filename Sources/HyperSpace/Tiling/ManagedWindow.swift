@@ -26,6 +26,9 @@ final class ManagedWindow {
     var scratchpadShown = false
     /// When it last had the focus: tells which window of its app you work in.
     var focusedAt = Date.distantPast
+    /// The title as last read (when found, then on every title change notification), so the
+    /// menu and the floating rules need no AX round trip on the main thread.
+    var title: String?
 
     init(id: CGWindowID, element: AXUIElement, pid: pid_t, bundleID: String?) {
         self.id = id

@@ -5,17 +5,22 @@ import Foundation
 /// binding/remap). The ConfigStore watcher picks the write up and applies it.
 enum ConfigWriter {
     static func read() -> [String: Any] {
-        guard let data = try? Data(contentsOf: ConfigStore.url),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        parse(try? Data(contentsOf: ConfigStore.url))
+    }
+
+    private static func parse(_ data: Data?) -> [String: Any] {
+        guard let data, let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         return root
     }
 
     private static func update(_ change: (inout [String: Any]) -> Void) throws {
-        var root = read()
+        // Read once: parsed to edit, and compared with what would be written.
+        let current = try? Data(contentsOf: ConfigStore.url)
+        var root = parse(current)
         change(&root)
         let text = text(for: root)
         // Nothing changed: no write, so no reload of the whole config.
-        if let current = try? String(contentsOf: ConfigStore.url, encoding: .utf8), current == text { return }
+        if let current, String(data: current, encoding: .utf8) == text { return }
         try text.write(to: ConfigStore.url, atomically: true, encoding: .utf8)
     }
 

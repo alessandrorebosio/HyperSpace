@@ -6,6 +6,9 @@ enum Direction: String {
 
 enum LayoutKind: String, CaseIterable {
     case tall, wide, columns, monocle, accordion
+
+    /// A name as written in the config, in any case.
+    init?(configText text: String) { self.init(rawValue: text.lowercased()) }
 }
 
 /// Everything a key binding or mouse button can trigger.
@@ -75,7 +78,7 @@ enum Action: Equatable {
         case "focus": return .focus(try direction())
         case "swap": return arg.lowercased() == "master" ? .swapMaster : .swap(try direction())
         case "layout":
-            guard let kind = LayoutKind(rawValue: arg.lowercased()) else { throw ConfigError("unknown layout in '\(text)'") }
+            guard let kind = LayoutKind(configText: arg) else { throw ConfigError("unknown layout in '\(text)'") }
             return .setLayout(kind)
         case "ratio":
             guard let delta = Double(arg) else { throw ConfigError("expected a number in '\(text)'") }

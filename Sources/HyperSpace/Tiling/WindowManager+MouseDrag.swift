@@ -79,16 +79,14 @@ extension WindowManager {
                 window.workspace = workspace
             }
         case .resize:
-            // Resizing a tiled window drags the master/stack split instead.
+            // Resizing a tiled window drags the master/stack split instead (tall and wide only).
             guard let frame = bounds[id], let screen = currentScreens().screen(for: frame) else { break }
             var state = state(for: screen.id)
+            guard state.layout == .tall || state.layout == .wide else { break }
             let isMaster = tiledWindows(in: window.workspace, bounds: bounds).first === window
-            let delta: CGFloat
-            switch state.layout {
-            case .tall: delta = (point.x - session.start.x) / screen.visible.width
-            case .wide: delta = (point.y - session.start.y) / screen.visible.height
-            case .columns, .monocle, .accordion: delta = 0
-            }
+            let delta = state.layout == .tall
+                ? (point.x - session.start.x) / screen.visible.width
+                : (point.y - session.start.y) / screen.visible.height
             state.ratio = (state.ratio + (isMaster ? delta : -delta)).clamped(to: TilingConfig.ratioRange)
             setState(state, for: screen.id)
         }

@@ -56,12 +56,12 @@ struct AppLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let icon = TilingModel.appIcon(bundleID) {
+            if let icon = AppLauncher.icon(bundleID) {
                 Image(nsImage: icon).resizable().interpolation(.high).frame(width: 22, height: 22)
             } else {
                 Image(systemName: "app.dashed").font(.title3).foregroundStyle(.tertiary).frame(width: 22, height: 22)
             }
-            Text(TilingModel.appName(bundleID)).lineLimit(1).truncationMode(.tail)
+            Text(AppLauncher.name(bundleID)).lineLimit(1).truncationMode(.tail)
         }
         .help(bundleID)
     }
@@ -259,13 +259,13 @@ extension EnvironmentValues {
 /// Shown under the hero of a page that needs the Accessibility permission, while it is missing.
 struct PermissionNotice: View {
     @Environment(\.permissionMissing) private var missing
+    var detail = "These settings do nothing until HyperSpace is allowed in Privacy & Security → Accessibility."
 
     var body: some View {
         if missing {
             Section {
                 NoticeRow(symbol: "lock.shield.fill", color: .orange, title: "Accessibility permission needed",
-                          detail: "These settings do nothing until HyperSpace is allowed in Privacy & Security → Accessibility.",
-                          button: "Open System Settings…") { Permissions.openSettings() }
+                          detail: detail, button: "Open System Settings…") { Permissions.openSettings() }
             }
         }
     }
@@ -326,6 +326,26 @@ private struct KeyCapBackground: View {
             .overlay(shape.strokeBorder(active ? Color.accentColor : Color.primary.opacity(0.13),
                                         lineWidth: active ? 1.5 : 0.5))
             .overlay(shape.stroke(Color.accentColor.opacity(active ? 0.25 : 0), lineWidth: 4))
+    }
+}
+
+/// The arrow between what a rule takes and what it gives (a key and its remap, a button and its action).
+struct RuleArrow: View {
+    var body: some View {
+        Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+    }
+}
+
+/// The end of a rule row: its warning, if any, and its remove button.
+struct RuleTrailing: View {
+    let warning: String?
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            WarningBadge(text: warning)
+            RemoveButton(action: remove)
+        }
     }
 }
 

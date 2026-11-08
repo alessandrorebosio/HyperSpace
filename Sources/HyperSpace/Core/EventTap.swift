@@ -165,7 +165,7 @@ final class EventTap {
     func setPointerHeld(_ held: Bool) {
         onTapThread { [self] in
             guard config.holdsPointer || !held else { return }
-            heldPointer = held ? (heldPointer ?? CGEvent(source: nil)?.location) : nil
+            heldPointer = held ? (heldPointer ?? Pointer.eventLocation) : nil
         }
     }
 
@@ -253,10 +253,7 @@ final class EventTap {
         case .mouseMoved:
             guard let held = heldPointer else { return pass }
             // Dropped; and should the pointer have moved anyway, it goes back.
-            if !event.location.isClose(to: held, tolerance: 0.5) {
-                CGWarpMouseCursorPosition(held)
-                CGAssociateMouseAndMouseCursorPosition(1)
-            }
+            if !event.location.isClose(to: held, tolerance: 0.5) { Pointer.warp(to: held) }
             return nil
         case .leftMouseDown, .rightMouseDown:
             return beginDrag(event, mode: type == .leftMouseDown ? .move : .resize) ? nil : pass

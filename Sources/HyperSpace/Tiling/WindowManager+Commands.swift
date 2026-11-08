@@ -38,7 +38,7 @@ extension WindowManager {
             return screen
         }
         if let id = activeDisplay, let screen = screens.first(id: id) { return screen }
-        let pointer = AX.pointer
+        let pointer = Pointer.location
         return screens.first { $0.frame.contains(pointer) } ?? screens.first
     }
 
@@ -144,15 +144,13 @@ extension WindowManager {
             return
         }
         if let neighbor = accordionNeighbor(of: current, direction, bounds) {
-            swapOrder(current.id, neighbor.id)
-            Swift.swap(&current.weight, &neighbor.weight)
+            exchangePlaces(current, neighbor)
             retile()
             return
         }
         let candidates = visible(bounds, tiledOnly: true).filter { $0.0.id != current.id }
         guard let target = Layout.neighbor(of: origin, direction, among: candidates), let targetFrame = bounds[target.id] else { return }
-        swapOrder(current.id, target.id)
-        Swift.swap(&current.weight, &target.weight)
+        exchangePlaces(current, target)
         Swift.swap(&current.workspace, &target.workspace)
         // Exchanging frames also carries the windows across displays.
         setFrame(current, targetFrame, from: origin)
@@ -168,6 +166,12 @@ extension WindowManager {
               let master = tiledWindows(in: current.workspace, bounds: bounds).first, master !== current else { return }
         swapOrder(current.id, master.id)
         scheduleRetile()
+    }
+
+    /// Two windows trade their place in the tiling order and their share of the split.
+    private func exchangePlaces(_ a: ManagedWindow, _ b: ManagedWindow) {
+        swapOrder(a.id, b.id)
+        Swift.swap(&a.weight, &b.weight)
     }
 
     func swapOrder(_ a: CGWindowID, _ b: CGWindowID) {

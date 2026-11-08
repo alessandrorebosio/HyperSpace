@@ -274,6 +274,9 @@ enum EdgeAction: String, CaseIterable {
     case volume
     case brightness
     case none
+
+    /// A name as written in the config, in any case.
+    init?(configText text: String) { self.init(rawValue: text.lowercased()) }
 }
 
 /// The edge sliders of the trackpad: one finger slid up or down along the left or right edge.
@@ -375,7 +378,7 @@ struct Config {
     private mutating func parseTrackpad(_ raw: RawConfig.Trackpad) throws {
         func edge(_ text: String?, _ fallback: EdgeAction, _ key: String) throws -> EdgeAction {
             guard let text, !text.isEmpty else { return fallback }
-            guard let action = EdgeAction(rawValue: text.lowercased()) else {
+            guard let action = EdgeAction(configText: text) else {
                 throw ConfigError("\(key) must be volume, brightness or none (got '\(text)')")
             }
             return action
@@ -405,7 +408,7 @@ struct Config {
         let defaults = TilingConfig()
         tiling.enabled = raw.enabled ?? defaults.enabled
         if let layout = raw.layout {
-            guard let kind = LayoutKind(rawValue: layout.lowercased()) else { throw ConfigError("unknown layout '\(layout)'") }
+            guard let kind = LayoutKind(configText: layout) else { throw ConfigError("unknown layout '\(layout)'") }
             tiling.layout = kind
         }
         tiling.gap = raw.gap.map { CGFloat($0).clamped(to: TilingConfig.spacingRange) } ?? defaults.gap

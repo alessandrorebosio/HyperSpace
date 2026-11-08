@@ -51,7 +51,7 @@ private struct MouseRuleRow: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 buttonCap
-                arrow
+                RuleArrow()
                 actionCap
                 Spacer(minLength: 12)
                 trailing
@@ -63,15 +63,11 @@ private struct MouseRuleRow: View {
                     trailing
                 }
                 HStack(spacing: 8) {
-                    arrow
+                    RuleArrow()
                     actionCap
                 }
             }
         }
-    }
-
-    private var arrow: some View {
-        Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
     }
 
     private var buttonCap: some View {
@@ -101,10 +97,7 @@ private struct MouseRuleRow: View {
     }
 
     private var trailing: some View {
-        HStack(spacing: 8) {
-            WarningBadge(text: model.warning(for: rule))
-            RemoveButton { model.remove(rule.id) }
-        }
+        RuleTrailing(warning: model.warning(for: rule)) { model.remove(rule.id) }
     }
 
     private var buttonText: String {

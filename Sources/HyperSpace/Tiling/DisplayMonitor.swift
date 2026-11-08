@@ -4,8 +4,9 @@ import Foundation
 /// Notices displays that are still connected but show nothing: asleep (standby) or switched
 /// to another input, which macOS keeps listing. After `grace` of that, the display counts as
 /// unplugged (`ScreenInfo.current()` leaves it out): its workspaces move to the displays that
-/// are left, and come back as soon as it wakes. Polls only while several displays are connected,
-/// and never takes away every display (the whole Mac asleep is not a display gone).
+/// are left, and come back as soon as it wakes. Polls every few seconds while tiling runs; with a
+/// single display a poll is one cheap call and changes nothing. It never takes away every display
+/// (the whole Mac asleep is not a display gone).
 final class DisplayMonitor {
     /// Displays left out of the layout. Main thread only.
     private(set) static var absent: Set<CGDirectDisplayID> = []

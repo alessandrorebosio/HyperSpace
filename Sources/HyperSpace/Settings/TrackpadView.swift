@@ -33,7 +33,7 @@ final class TrackpadModel: ObservableObject {
     private func load() {
         let trackpad = ConfigWriter.read()["trackpad"] as? [String: Any]
         func edge(_ key: String, _ fallback: EdgeAction) -> EdgeAction {
-            (trackpad?[key] as? String).flatMap { EdgeAction(rawValue: $0.lowercased()) } ?? fallback
+            (trackpad?[key] as? String).flatMap { EdgeAction(configText: $0) } ?? fallback
         }
         edgeSliders = trackpad?["edgeSliders"] as? Bool ?? TrackpadConfig.defaultEdgeSliders
         leftEdge = edge("leftEdge", TrackpadConfig.defaultLeftEdge)
