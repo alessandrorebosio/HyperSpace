@@ -69,7 +69,7 @@ The menu in the top bar starts with **Tiling** (on/off). With more than one work
 **Input** (**Keyboard**, **Mouse**), **Windows** (**Tiling**, **Workspaces**, **Window Rules**, **Shortcuts**) and
 **HyperSpace** (**General**: version, launch at login, config file with Edit/Show in Finder, Accessibility permission, Quit).
 At the bottom of the sidebar a status line always says whether HyperSpace is running, needs the Accessibility
-permission or has a config error (a click opens General). Every page opens with its icon, name and a one-line summary;
+permission or has a config error. Every page opens with its icon, name and a one-line summary;
 lists have their **+ Add** button in the section header, keys and shortcuts are drawn as key caps (click one, then
 press the keys), and tiling is switched on and off from the top of the Tiling page.
 Without the Accessibility permission the pages that need it show a notice at the top with **Open System Settings…**

@@ -35,7 +35,7 @@ The menu is rebuilt only when it opens (`menuNeedsUpdate`).
 ### Layout
 
 **Sidebar**: **Input** → Keyboard, Mouse; **Windows** → Tiling, Workspaces, Window Rules, Shortcuts; **HyperSpace** → General. There is no search: seven pages.
-At the bottom of the sidebar a **status bar** is always in sight: app icon, name and a colored dot with *Running* (green), *Accessibility needed* (orange) or *Needs attention* (red, a config error). A click opens General, where every problem has its fix. The state comes from `GeneralModel.health`, shared with the General page.
+At the bottom of the sidebar a **status bar** is always in sight: app icon, name and a colored dot with *Running* (green), *Accessibility needed* (orange) or *Needs attention* (red, a config error). It only shows the state: a click does nothing (every problem has its fix on General). The state comes from `GeneralModel.health`, shared with the General page.
 
 **Every page** is a grouped `Form` with the same structure, top to bottom:
 1. **Hero** (`PageHero`): the page's icon (44 pt), its name and one line saying what it is for. Tiling puts its on/off switch on the right of the hero, like Wi-Fi in System Settings.
