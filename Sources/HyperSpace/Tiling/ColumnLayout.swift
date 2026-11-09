@@ -138,7 +138,7 @@ struct ColumnLayout {
         columns[column].weight = weight
     }
 
-    func frames(in area: CGRect, gap: CGFloat, peek: CGFloat = 30, weight: (CGWindowID) -> CGFloat) -> [CGWindowID: CGRect] {
+    func frames(in area: CGRect, gap: CGFloat, peek: CGFloat, weight: (CGWindowID) -> CGFloat) -> [CGWindowID: CGRect] {
         guard !columns.isEmpty else { return [:] }
         var result: [CGWindowID: CGRect] = [:]
         let columnRects = Layout.split(area, weights: columns.map(\.weight), horizontally: true, gap: gap)

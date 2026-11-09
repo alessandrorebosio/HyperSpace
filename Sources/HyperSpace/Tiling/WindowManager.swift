@@ -35,7 +35,7 @@ final class WindowManager {
     private(set) var config = TilingConfig()
     /// Called with the workspace shown on each display (left to right) and the index of
     /// the focused display, or nil when workspaces are not in use.
-    var onWorkspaceChange: (((names: [String], focused: Int)?) -> Void)?
+    var onWorkspaceChange: ((WorkspaceBar?) -> Void)?
     /// Called when tiling is turned on or off by the toggle-tiling action.
     var onEnabledChange: ((Bool) -> Void)?
     /// Until then apps opened with a rule do not take you to their workspace: they are the
@@ -107,8 +107,9 @@ final class WindowManager {
     /// The display of an empty workspace holding the focus (the focus anchor is there): the
     /// display you work on, even while the window left behind still looks focused to macOS.
     var heldDisplay: CGDirectDisplayID?
-    /// Last value sent to `onWorkspaceChange`, so the menu bar is redrawn only on change.
-    var lastNotice: (names: [String], focused: Int)??
+    /// Last value sent to `onWorkspaceChange` (nil: none sent yet), so the menu bar is
+    /// redrawn only on change.
+    var lastNotice: WorkspaceBar??
     /// Workspaces apps were opened from, for the windows they show while loading.
     private var launches = LaunchTracker()
     private var focusUpdateScheduled = false
@@ -121,8 +122,8 @@ final class WindowManager {
     var restoredState: WorkspaceState?
     var restoredIndex: [CGWindowID: Int] = [:]
     var saveScheduled = false
-    /// The last state written, without titles, so an unchanged state is not written again.
-    var lastSavedShape: WorkspaceState?
+    /// The last state written (its date left out), so an unchanged state is not written again.
+    var lastSaved: WorkspaceState?
     let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
     /// The last problems talking to apps, for the debug report.
     var issues: [String] = []
@@ -316,9 +317,7 @@ final class WindowManager {
         adopt(pending[...])
         // Right after a login or a WindowServer restart, or on a busy Mac, apps can answer AX
         // with placeholder elements: look again once they have settled.
-        for delay in [2.0, 6.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.rescan() }
-        }
+        DispatchQueue.main.asyncAfter(delays: [2, 6]) { [weak self] in self?.rescan() }
     }
 
     private func displaysChanged() {
@@ -327,9 +326,7 @@ final class WindowManager {
         syncDisplays()
         scheduleRetile()
         // macOS relocates the windows of the removed display a moment after the notification.
-        for delay in [0.5, 1.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.scheduleRetile() }
-        }
+        DispatchQueue.main.asyncAfter(delays: [0.5, 1.5]) { [weak self] in self?.scheduleRetile() }
         notifyWorkspace()
     }
 
@@ -337,11 +334,9 @@ final class WindowManager {
     /// announcing it: look again a few times, so an app with a rule goes to its workspace
     /// right away instead of when it is focused.
     private func lookAgainAfterLaunch(_ pid: pid_t) {
-        for delay in [0.5, 1.5, 3.0, 6.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, let watcher = apps[pid] else { return }
-                discover(watcher)
-            }
+        DispatchQueue.main.asyncAfter(delays: [0.5, 1.5, 3, 6]) { [weak self] in
+            guard let self, let watcher = apps[pid] else { return }
+            discover(watcher)
         }
     }
 
@@ -866,11 +861,11 @@ final class WindowManager {
         !window.isFloating && !window.scratchpad && bounds[window.id] != nil
     }
 
-    /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
-    /// not from the user, and must not switch workspaces.
     /// Counts focus requests, so a retry of an old one gives up.
     var focusRequest = 0
 
+    /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
+    /// not from the user, and must not switch workspaces.
     func ignoreFocusChanges() {
         followFocusAfter = Date().addingTimeInterval(0.6)
     }
@@ -899,9 +894,8 @@ final class WindowManager {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             // A later focus (another workspace, keys pressed in a row) wins over this retry.
-            guard self?.focusRequest == request,
+            guard let self, focusRequest == request,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
-            guard let self else { return }
             note("focus did not take for \(window.bundleID ?? "?") window \(window.id), retrying")
             ignoreFocusChanges()
             NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
@@ -909,9 +903,14 @@ final class WindowManager {
         }
     }
 
+    /// The dialogs of a window: they share its workspace and come and go with it.
+    func dialogWindows(of window: ManagedWindow) -> [ManagedWindow] {
+        windows.values.filter { $0.parent == window.id }
+    }
+
     /// The dialogs of a window that are on screen: they come to the front with it.
     private func dialogs(of window: ManagedWindow) -> [AXUIElement] {
-        windows.values.filter { $0.parent == window.id && $0.hiddenFrame == nil && !$0.scratchpad }.map(\.element)
+        dialogWindows(of: window).filter { $0.hiddenFrame == nil && !$0.scratchpad }.map(\.element)
     }
 
     /// Moves the pointer to `point` when it is on another display than `screen`.
@@ -958,9 +957,7 @@ final class WindowManager {
         // Others resize themselves a moment later, for the scale of the new display; that
         // resize comes too soon to count as the user's, so look again once it is done.
         if current != nil, !sameDisplay, !window.isFloating, !window.scratchpad {
-            for delay in [0.3, 0.8] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.scheduleRetile() }
-            }
+            DispatchQueue.main.asyncAfter(delays: [0.3, 0.8]) { [weak self] in self?.scheduleRetile() }
         }
     }
 

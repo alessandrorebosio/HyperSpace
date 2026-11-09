@@ -23,6 +23,16 @@ final class LocalEventMonitor {
     deinit { stop() }
 }
 
+extension Array where Element: Identifiable {
+    /// Changes the element with `id`; false when there is none.
+    @discardableResult
+    mutating func update(id: Element.ID, _ change: (inout Element) -> Void) -> Bool {
+        guard let index = firstIndex(where: { $0.id == id }) else { return false }
+        change(&self[index])
+        return true
+    }
+}
+
 // MARK: - Icons
 
 /// A white symbol on a colored rounded square, as in System Settings: the sidebar (20 pt),
@@ -148,6 +158,34 @@ struct SettingRow<Control: View>: View {
             RowLabel(title, detail: detail)
             Spacer(minLength: 12)
             control()
+        }
+    }
+}
+
+/// A switch whose title is hidden (the row around it shows one), reading a model's value
+/// and changing it through the model's setter.
+struct SettingSwitch: View {
+    let title: String
+    let isOn: Bool
+    let set: (Bool) -> Void
+
+    var body: some View {
+        Toggle(title, isOn: Binding(get: { isOn }, set: set))
+            .toggleStyle(.switch)
+            .labelsHidden()
+    }
+}
+
+/// A setting that is a switch: title and explanation on the left, the switch on the right.
+struct SwitchRow: View {
+    let title: String
+    var detail: String?
+    let isOn: Bool
+    let set: (Bool) -> Void
+
+    var body: some View {
+        SettingRow(title: title, detail: detail) {
+            SettingSwitch(title: title, isOn: isOn, set: set)
         }
     }
 }

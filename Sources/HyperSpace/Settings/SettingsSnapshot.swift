@@ -37,11 +37,8 @@ enum SettingsSnapshot {
         // The models, built the way the settings window builds them, with nothing behind them.
         let windowManager = WindowManager()
         let eventTap = EventTap(drag: DragController(windowManager: windowManager), onAction: { _ in }, onOverview: { _ in })
-        let keyboard = RemapModel(remapper: KeyboardRemapper(), eventTap: eventTap)
-        let mouse = MouseModel(eventTap: eventTap)
-        let trackpad = TrackpadModel()
-        let tiling = TilingModel(eventTap: eventTap)
-        let general = GeneralModel(actions: GeneralModel.Actions(openConfig: {}, problem: { nil }))
+        let models = SettingsModels(remapper: KeyboardRemapper(), eventTap: eventTap,
+                                    actions: GeneralModel.Actions(openConfig: {}, problem: { nil }))
 
         var failures = 0
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
@@ -51,7 +48,7 @@ enum SettingsSnapshot {
                     // animation or scroll position left over from the previous one.
                     let navigation = SettingsNavigation()
                     navigation.page = page
-                    let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, trackpad: trackpad, tiling: tiling, general: general)
+                    let root = SettingsRoot(navigation: navigation, models: models)
                     let window = makeWindow(root, size: size, appearance: NSAppearance(named: appearance))
                     settle(window, seconds: 0.8)
                     let name = "\(page.fileName)-\(appearanceName)-\(Int(size.width))x\(Int(size.height)).png"

@@ -65,7 +65,6 @@ enum KeyboardLayout {
             for code in UInt16(0)..<128 {
                 var deadKeys: UInt32 = 0
                 var length = 0
-                for i in chars.indices { chars[i] = 0 }
                 let status = UCKeyTranslate(
                     layout, code, UInt16(kUCKeyActionDown), 0, UInt32(LMGetKbdType()),
                     OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, chars.count, &length, &chars

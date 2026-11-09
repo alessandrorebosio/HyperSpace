@@ -27,8 +27,8 @@ final class EventTap {
     private var layoutObserver: NSObjectProtocol?
 
     private let onAction: (Action) -> Void
-    /// The workspace overview: shown with the key held (its key code), hidden on release (nil).
-    private let onOverview: (UInt16?) -> Void
+    /// The workspace overview: shown while its key is held (true), hidden on release (false).
+    private let onOverview: (Bool) -> Void
     private let drag: DragController
     private var runLoop: CFRunLoop!
 
@@ -54,7 +54,7 @@ final class EventTap {
     /// Where the pointer is held while a trackpad edge slider is in progress.
     private var heldPointer: CGPoint?
 
-    init(drag: DragController, onAction: @escaping (Action) -> Void, onOverview: @escaping (UInt16?) -> Void) {
+    init(drag: DragController, onAction: @escaping (Action) -> Void, onOverview: @escaping (Bool) -> Void) {
         self.drag = drag
         self.onAction = onAction
         self.onOverview = onOverview
@@ -131,7 +131,7 @@ final class EventTap {
         guard overviewKey >= 0 else { return }
         overviewKey = -1
         let onOverview = onOverview
-        DispatchQueue.main.async { onOverview(nil) }
+        DispatchQueue.main.async { onOverview(false) }
     }
 
     /// Tap thread: the same for mouse buttons.
@@ -306,7 +306,7 @@ final class EventTap {
                 guard overviewKey != code else { return true }
                 overviewKey = code
                 let onOverview = onOverview
-                DispatchQueue.main.async { onOverview(UInt16(code)) }
+                DispatchQueue.main.async { onOverview(true) }
                 return true
             }
             dispatch(action)

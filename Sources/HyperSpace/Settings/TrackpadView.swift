@@ -31,22 +31,20 @@ final class TrackpadModel: ObservableObject {
     }
 
     private func load() {
-        let trackpad = ConfigWriter.read()["trackpad"] as? [String: Any]
+        let trackpad = ConfigWriter.read(section: "trackpad")
         func edge(_ key: String, _ fallback: EdgeAction) -> EdgeAction {
-            (trackpad?[key] as? String).flatMap { EdgeAction(configText: $0) } ?? fallback
+            (trackpad[key] as? String).flatMap { EdgeAction(configText: $0) } ?? fallback
         }
-        edgeSliders = trackpad?["edgeSliders"] as? Bool ?? TrackpadConfig.defaultEdgeSliders
+        edgeSliders = trackpad["edgeSliders"] as? Bool ?? TrackpadConfig.defaultEdgeSliders
         leftEdge = edge("leftEdge", TrackpadConfig.defaultLeftEdge)
         rightEdge = edge("rightEdge", TrackpadConfig.defaultRightEdge)
     }
 
     private func save() {
-        saveError = ConfigWriter.save { root in
-            var trackpad = root["trackpad"] as? [String: Any] ?? [:]
+        saveError = ConfigWriter.save(section: "trackpad") { trackpad in
             trackpad["edgeSliders"] = edgeSliders
             trackpad["leftEdge"] = leftEdge.rawValue
             trackpad["rightEdge"] = rightEdge.rawValue
-            root["trackpad"] = trackpad
         }
     }
 }
@@ -60,11 +58,8 @@ struct TrackpadView: View {
             PageHero(page: .trackpad)
 
             Section {
-                SettingRow(title: "Edge sliders", detail: "Slide one finger up or down along the left or right edge.") {
-                    Toggle("Edge sliders", isOn: Binding(get: { model.edgeSliders }, set: { model.setEdgeSliders($0) }))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
+                SwitchRow(title: "Edge sliders", detail: "Slide one finger up or down along the left or right edge.",
+                          isOn: model.edgeSliders, set: model.setEdgeSliders)
                 edgePicker("Left edge", selection: model.leftEdge, left: true)
                 edgePicker("Right edge", selection: model.rightEdge, left: false)
             } footer: {

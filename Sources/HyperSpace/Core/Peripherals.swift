@@ -3,7 +3,12 @@ import IOKit
 
 /// Battery level of a wireless keyboard, mouse or trackpad.
 struct PeripheralBattery: Equatable {
-    enum Kind { case keyboard, mouse, trackpad, other }
+    /// In the order the menu lists them.
+    enum Kind: Int, Comparable {
+        case keyboard, mouse, trackpad, other
+
+        static func < (a: Kind, b: Kind) -> Bool { a.rawValue < b.rawValue }
+    }
 
     let name: String
     let kind: Kind
@@ -39,7 +44,7 @@ enum Peripherals {
                 found.append(battery)
             }
         }
-        return found.sorted { ($0.kind.rank, $0.name) < ($1.kind.rank, $1.name) }
+        return found.sorted { ($0.kind, $0.name) < ($1.kind, $1.name) }
     }
 
     private static func battery(of service: io_object_t) -> PeripheralBattery? {
@@ -66,16 +71,5 @@ enum Peripherals {
     private static func property(_ service: io_object_t, _ key: String) -> Any? {
         IORegistryEntrySearchCFProperty(service, kIOServicePlane, key as CFString, kCFAllocatorDefault,
                                         IOOptionBits(kIORegistryIterateRecursively | kIORegistryIterateParents))
-    }
-}
-
-private extension PeripheralBattery.Kind {
-    var rank: Int {
-        switch self {
-        case .keyboard: return 0
-        case .mouse: return 1
-        case .trackpad: return 2
-        case .other: return 3
-        }
     }
 }

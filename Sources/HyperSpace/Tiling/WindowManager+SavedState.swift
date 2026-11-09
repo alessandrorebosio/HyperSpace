@@ -46,15 +46,15 @@ extension WindowManager {
         }
     }
 
-    /// The state to save, without titles (read later, off the main thread), and the windows
-    /// whose titles go with it.
-    private func currentState() -> (state: WorkspaceState, elements: [AXUIElement]) {
+    /// The state to save. Titles are the cached ones (kept up to date by the title
+    /// notifications): no AX round trip, on the main thread or off it.
+    private func currentState() -> WorkspaceState {
         let list = orderedWindows.filter { $0.bundleID != nil }
         var index: [CGWindowID: Int] = [:]
         var state = WorkspaceState(savedAt: .distantPast)
         for (i, window) in list.enumerated() {
             index[window.id] = i
-            state.windows.append(.init(app: window.bundleID!, title: "", workspace: window.workspace,
+            state.windows.append(.init(app: window.bundleID!, title: window.title ?? "", workspace: window.workspace,
                                        floating: window.userOverride ? window.isFloating : nil,
                                        scratchpad: window.scratchpad ? true : nil))
         }
@@ -75,13 +75,7 @@ extension WindowManager {
         state.displays = shown
         state.moved = Dictionary(uniqueKeysWithValues: homeOverride.map { (String($0.key), $0.value) })
         state.layouts = screenStates.mapValues { .init(layout: $0.layout.rawValue, ratio: Double($0.ratio)) }
-        return (state, list.map(\.element))
-    }
-
-    /// Reads the windows' titles over AX (slow: not on the main thread, which is why the state
-    /// is written without them first).
-    static func fillTitles(_ state: inout WorkspaceState, _ elements: [AXUIElement]) {
-        for i in elements.indices { state.windows[i].title = AX.string(elements[i], kAXTitleAttribute) ?? "" }
+        return state
     }
 
     /// Saves a moment after a change, when something really changed. Not while windows are
@@ -93,22 +87,18 @@ extension WindowManager {
             guard let self else { return }
             saveScheduled = false
             guard running, restorer == nil else { return }
-            var (state, elements) = currentState()
-            guard state != lastSavedShape else { return }
-            lastSavedShape = state
-            saveQueue.async {
-                WindowManager.fillTitles(&state, elements)
-                state.savedAt = Date()
-                state.save()
-            }
+            var state = currentState()
+            guard state != lastSaved else { return }
+            lastSaved = state
+            state.savedAt = Date()
+            saveQueue.async { state.save() }
         }
     }
 
     /// Saves at once (on quit), keeping the saved windows not found again yet.
     func saveState() {
         guard running else { return }
-        var (state, elements) = currentState()
-        WindowManager.fillTitles(&state, elements)
+        var state = currentState()
         if let restorer { state.windows += restorer.unclaimed }
         state.savedAt = Date()
         saveQueue.sync {}

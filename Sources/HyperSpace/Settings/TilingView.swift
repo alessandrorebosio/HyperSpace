@@ -7,9 +7,7 @@ struct TilingView: View {
     var body: some View {
         Form {
             PageHero(page: .tiling) {
-                Toggle("Tile windows", isOn: Binding(get: { model.enabled }, set: { model.setEnabled($0) }))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+                SettingSwitch(title: "Tile windows", isOn: model.enabled, set: model.setEnabled)
                     .help(model.enabled ? "Tiling is on" : "Tiling is off: windows stay where you put them")
                     .accessibilityLabel("Tile windows")
             }
@@ -56,11 +54,8 @@ struct TilingView: View {
             .disabled(!model.enabled)
 
             Section {
-                SettingRow(title: "Pointer follows focus", detail: "The pointer goes to the display that gets the focus, and to its middle when you switch workspace.") {
-                    Toggle("Pointer follows focus", isOn: Binding(get: { model.mouseFollowsFocus }, set: { model.setMouseFollowsFocus($0) }))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
+                SwitchRow(title: "Pointer follows focus", detail: "The pointer goes to the display that gets the focus, and to its middle when you switch workspace.",
+                          isOn: model.mouseFollowsFocus, set: model.setMouseFollowsFocus)
             } header: {
                 Text("Focus")
             }

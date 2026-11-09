@@ -13,7 +13,8 @@ extension WindowManager {
         if issues.count > 30 { issues.removeFirst(issues.count - 30) }
     }
 
-    /// What the window manager knows, to paste when something goes wrong. Reads titles.
+    /// What the window manager knows, to paste when something goes wrong. Titles are the
+    /// cached ones: no AX round trip on the main thread.
     func debugReport() -> String {
         enterScope()
         defer { leaveScope() }
@@ -42,7 +43,7 @@ extension WindowManager {
             guard !members.isEmpty else { continue }
             lines.append("Workspace \(name(of: workspace)) (#\(workspace + 1)):")
             for window in members {
-                let title = (AX.string(window.element, kAXTitleAttribute) ?? "").prefix(40)
+                let title = (window.title ?? "").prefix(40)
                 var flags: [String] = []
                 if window.isFloating { flags.append(window.isDialog ? "floating (dialog)" : "floating") }
                 if window.scratchpad { flags.append(window.scratchpadShown ? "scratchpad shown" : "scratchpad") }

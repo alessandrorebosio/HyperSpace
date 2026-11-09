@@ -61,8 +61,6 @@ final class GeneralModel: ObservableObject {
         if problem != nil { return ("Needs attention", .red) }
         return ("Running", .green)
     }
-
-    var version: String { AppInfo.version }
 }
 
 /// The General page: the app and its state, startup, the config file, the permission.
@@ -79,11 +77,8 @@ struct GeneralView: View {
                 .environment(\.permissionMissing, !model.accessibilityGranted)
 
             Section {
-                SettingRow(title: "Launch at login", detail: "Start HyperSpace when you log in.") {
-                    Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
+                SwitchRow(title: "Launch at login", detail: "Start HyperSpace when you log in.",
+                          isOn: model.launchAtLogin, set: model.setLaunchAtLogin)
             } header: {
                 Text("Startup")
             }
@@ -153,7 +148,7 @@ private struct AppCard: View {
                 .frame(width: 56, height: 56)
             VStack(alignment: .leading, spacing: 3) {
                 Text("HyperSpace").font(.title3.weight(.semibold))
-                Text("Version \(model.version)").font(.callout).foregroundStyle(.secondary)
+                Text("Version \(AppInfo.version)").font(.callout).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
             StatusPill(text: model.health.text, color: model.health.color)

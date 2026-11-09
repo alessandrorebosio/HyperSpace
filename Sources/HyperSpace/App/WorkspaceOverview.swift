@@ -24,7 +24,7 @@ final class WorkspaceOverview {
         self.host = host
     }
 
-    var isVisible: Bool { panel?.isVisible == true }
+    private var isVisible: Bool { panel?.isVisible == true }
 
     /// Shown until hidden: by the key up of the held key, a click, or (from a mouse button) a toggle.
     func show() {
@@ -142,15 +142,14 @@ struct OverviewView: View {
             name = summary.name
             self.keys = keys
             display = summary.display
-            var apps: [App] = []
+            // One entry per app, in the order of its first window, with its window count.
+            var counts: [String: Int] = [:]
+            var first: [WorkspaceSummary.Window] = []
             for window in summary.windows {
-                if let i = apps.firstIndex(where: { $0.name == window.app }) {
-                    apps[i] = App(name: apps[i].name, icon: apps[i].icon, windows: apps[i].windows + 1)
-                } else {
-                    apps.append(App(name: window.app, icon: window.icon, windows: 1))
-                }
+                if counts[window.app] == nil { first.append(window) }
+                counts[window.app, default: 0] += 1
             }
-            self.apps = apps
+            apps = first.map { App(name: $0.app, icon: $0.icon, windows: counts[$0.app] ?? 1) }
         }
     }
 
@@ -163,7 +162,8 @@ struct OverviewView: View {
     var maxWidth: CGFloat = 1200
 
     private var columns: Int {
-        let fit = Int((maxWidth - 2 * Self.spacing + Self.spacing) / (Self.cardWidth + Self.spacing))
+        // n cards take n × width + (n - 1) × spacing, plus the panel's padding on both sides.
+        let fit = Int((maxWidth - Self.spacing) / (Self.cardWidth + Self.spacing))
         return max(1, min(4, fit, cards.count))
     }
 

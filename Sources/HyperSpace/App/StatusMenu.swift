@@ -62,13 +62,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     /// i3-style: the workspace shown on each display, left to right, instead of the icon.
-    var workspaces: (names: [String], focused: Int)? {
-        didSet {
-            // Tuples are not Equatable: compare by hand, and only redraw on a real change.
-            let unchanged = (oldValue == nil) == (workspaces == nil)
-                && oldValue?.names == workspaces?.names && oldValue?.focused == workspaces?.focused
-            if !unchanged { updateIcon() }
-        }
+    var workspaces: WorkspaceBar? {
+        didSet { if workspaces != oldValue { updateIcon() } }
     }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

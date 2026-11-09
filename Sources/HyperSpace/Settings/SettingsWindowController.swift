@@ -69,6 +69,30 @@ final class SettingsNavigation: ObservableObject {
     var onSwitch: (() -> Void)?
 }
 
+/// The models behind the settings pages, built together for a window (or for the snapshots).
+struct SettingsModels {
+    let keyboard: RemapModel
+    let mouse: MouseModel
+    let trackpad: TrackpadModel
+    let tiling: TilingModel
+    let general: GeneralModel
+
+    init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
+        keyboard = RemapModel(remapper: remapper, eventTap: eventTap)
+        mouse = MouseModel(eventTap: eventTap)
+        trackpad = TrackpadModel()
+        tiling = TilingModel(eventTap: eventTap)
+        general = GeneralModel(actions: actions)
+    }
+
+    /// A key press or click being recorded on one page must not stay armed on another.
+    func stopCaptures() {
+        keyboard.stopCapture()
+        mouse.stopCapture()
+        tiling.stopCapture()
+    }
+}
+
 struct SettingsRoot: View {
     @ObservedObject var navigation: SettingsNavigation
     let keyboard: RemapModel
@@ -78,6 +102,15 @@ struct SettingsRoot: View {
     @ObservedObject var general: GeneralModel
 
     private typealias Page = SettingsNavigation.Page
+
+    init(navigation: SettingsNavigation, models: SettingsModels) {
+        self.navigation = navigation
+        keyboard = models.keyboard
+        mouse = models.mouse
+        trackpad = models.trackpad
+        tiling = models.tiling
+        general = models.general
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -150,7 +183,7 @@ private struct SidebarStatus: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .help("HyperSpace \(general.version)")
+        .help("HyperSpace \(AppInfo.version)")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("HyperSpace: \(state.text)")
     }
@@ -190,9 +223,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let eventTap: EventTap
     private let actions: GeneralModel.Actions
     private var window: NSWindow?
-    private var keyboard: RemapModel?
-    private var mouse: MouseModel?
-    private var tiling: TilingModel?
+    private var models: SettingsModels?
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
         self.remapper = remapper
@@ -202,21 +233,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         if window == nil {
-            let keyboard = RemapModel(remapper: remapper, eventTap: eventTap)
-            let mouse = MouseModel(eventTap: eventTap)
-            let tiling = TilingModel(eventTap: eventTap)
+            let models = SettingsModels(remapper: remapper, eventTap: eventTap, actions: actions)
             let navigation = SettingsNavigation()
-            navigation.onSwitch = { [weak self] in self?.stopAllCaptures() }
-            let root = SettingsRoot(navigation: navigation, keyboard: keyboard, mouse: mouse, trackpad: TrackpadModel(), tiling: tiling,
-                                    general: GeneralModel(actions: actions))
+            navigation.onSwitch = { [weak self] in self?.models?.stopCaptures() }
+            let root = SettingsRoot(navigation: navigation, models: models)
             let window = Self.makeWindow(root, size: NSSize(width: 900, height: 640))
             window.delegate = self
             window.setFrameAutosaveName("HyperSpaceSettings")
             window.center()
             self.window = window
-            self.keyboard = keyboard
-            self.mouse = mouse
-            self.tiling = tiling
+            self.models = models
         }
         // In the Dock and ⌘Tab while the window is open, like a regular app.
         NSApp.setActivationPolicy(.regular)
@@ -251,20 +277,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         return window
     }
 
-    /// A key press or click being recorded on one page must not stay armed on another.
-    private func stopAllCaptures() {
-        keyboard?.stopCapture()
-        mouse?.stopCapture()
-        tiling?.stopCapture()
-    }
-
     func windowWillClose(_ notification: Notification) {
-        stopAllCaptures()
+        models?.stopCaptures()
         remapper.onKeyboardsChanged = nil
         window = nil
-        keyboard = nil
-        mouse = nil
-        tiling = nil
+        models = nil
         NSApp.setActivationPolicy(.accessory)
     }
 }

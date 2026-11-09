@@ -145,11 +145,11 @@ private func action(_ config: Config, _ keys: String) throws -> String? {
     @Test func frames() {
         var layout = ColumnLayout()
         layout.sync(with: [1, 2])
-        let side = layout.frames(in: CGRect(x: 0, y: 0, width: 1010, height: 610), gap: 10) { _ in 1 }
+        let side = layout.frames(in: CGRect(x: 0, y: 0, width: 1010, height: 610), gap: 10, peek: 30) { _ in 1 }
         #expect(side[1] == CGRect(x: 0, y: 0, width: 500, height: 610))
         #expect(side[2] == CGRect(x: 510, y: 0, width: 500, height: 610))
         layout.move(2, .down)
-        let stacked = layout.frames(in: CGRect(x: 0, y: 0, width: 1010, height: 610), gap: 10) { _ in 1 }
+        let stacked = layout.frames(in: CGRect(x: 0, y: 0, width: 1010, height: 610), gap: 10, peek: 30) { _ in 1 }
         #expect(stacked[2] == CGRect(x: 0, y: 310, width: 1010, height: 300))
     }
 }
@@ -662,5 +662,12 @@ struct EdgeSliderTests {
         #expect(!off.tap.holdsPointer && off.tap.eventMask & moved == 0)
         let bad = #"{ "trackpad": { "leftEdge": "mute" } }"#
         #expect(throws: ConfigError.self) { try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(bad.utf8))) }
+    }
+}
+
+extension EdgeSliderTracker {
+    /// A frame given as all its fingers, as the tests write it.
+    mutating func update(_ touches: [EdgeTouch]) -> [EdgeStep] {
+        update(first: touches.first, count: touches.count)
     }
 }

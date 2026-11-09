@@ -134,7 +134,7 @@ extension WindowManager {
         // Where it is going, not the corner it was parked in (another display maybe).
         if takesFocus { focus(window, at: frame) }
         // Its dialogs come back with it (see `retile`).
-        if windows.values.contains(where: { $0.parent == window.id }) { scheduleRetile() }
+        if !dialogWindows(of: window).isEmpty { scheduleRetile() }
         notifyWorkspace()
     }
 
@@ -165,9 +165,9 @@ extension WindowManager {
             log.debug("hide scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public))")
         }
         // Its dialogs go with it.
-        for window in windows.values where window.hiddenFrame == nil {
-            guard let owner = window.parent, pad.contains(where: { $0.id == owner }), let shown = bounds[window.id] else { continue }
-            hide(window, from: shown, screens: screens)
+        for dialog in pad.flatMap(dialogWindows) where dialog.hiddenFrame == nil {
+            guard let shown = bounds[dialog.id] else { continue }
+            hide(dialog, from: shown, screens: screens)
         }
         return frame
     }

@@ -192,7 +192,7 @@ final class MouseModel: ObservableObject {
         switch field {
         case .button(let ruleID), .action(let ruleID): id = ruleID
         }
-        if let index = rules.firstIndex(where: { $0.id == id }) { change(&rules[index]) }
+        rules.update(id: id, change)
         stopCapture()
         save()
         // A new mapping goes straight on to its action.
@@ -202,19 +202,17 @@ final class MouseModel: ObservableObject {
     }
 
     func setAction(_ action: String, for id: UUID) {
-        guard let index = rules.firstIndex(where: { $0.id == id }) else { return }
         if capturing == .action(id) { stopCapture() }
-        rules[index].action = action
-        save()
+        if rules.update(id: id, { $0.action = action }) { save() }
     }
 
     // MARK: - Persistence
 
     private func load() {
-        let mouse = ConfigWriter.read()["mouse"] as? [String: Any]
-        reverseScroll = mouse?["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
+        let mouse = ConfigWriter.read(section: "mouse")
+        reverseScroll = mouse["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
         // In the order of the file: when two rules share a button, the last one wins.
-        rules = (mouse?["buttons"] as? [[String: Any]] ?? []).map {
+        rules = (mouse["buttons"] as? [[String: Any]] ?? []).map {
             Rule(button: $0["button"] as? Int,
                  modifiers: (try? Modifiers.parse($0["modifiers"] as? String ?? "")) ?? [],
                  action: $0["action"] as? String ?? "")
@@ -223,15 +221,13 @@ final class MouseModel: ObservableObject {
 
     private func save() {
         let complete = rules.filter(\.isComplete)
-        saveError = ConfigWriter.save { root in
-            var mouse = root["mouse"] as? [String: Any] ?? [:]
+        saveError = ConfigWriter.save(section: "mouse") { mouse in
             mouse["reverseScroll"] = reverseScroll
             mouse["buttons"] = complete.map { rule -> [String: Any] in
                 var entry: [String: Any] = ["button": rule.button!, "action": rule.action]
                 if !rule.modifiers.isEmpty { entry["modifiers"] = rule.modifiers.configText }
                 return entry
             }
-            root["mouse"] = mouse
         }
     }
 }

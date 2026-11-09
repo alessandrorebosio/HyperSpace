@@ -126,7 +126,7 @@ private struct RuleRow: View {
     private var keyboardPicker: some View {
         Picker("Keyboards", selection: Binding(get: { rule.keyboard }, set: { model.setKeyboard($0, for: rule.id) })) {
             ForEach(model.keyboardOptions(for: rule), id: \.self) { option in
-                Text(model.keyboardLabel(option)).tag(option)
+                Text(RemapModel.keyboardLabel(option)).tag(option)
             }
         }
         .labelsHidden()

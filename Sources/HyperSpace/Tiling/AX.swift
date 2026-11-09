@@ -156,6 +156,6 @@ enum AX {
     static func focus(_ window: AXUIElement, pid: pid_t) {
         setBool(window, kAXMainAttribute, true)
         setBool(AXUIElementCreateApplication(pid), kAXFrontmostAttribute, true)
-        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        raise(window)
     }
 }

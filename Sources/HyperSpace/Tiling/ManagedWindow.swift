@@ -38,6 +38,13 @@ final class ManagedWindow {
     }
 }
 
+/// What the menu bar shows instead of its icon: the workspace on each display, left to
+/// right, and the index of the focused display.
+struct WorkspaceBar: Equatable {
+    let names: [String]
+    let focused: Int
+}
+
 /// What the menu bar shows for a workspace.
 struct WorkspaceSummary {
     struct Window {

@@ -128,7 +128,7 @@ extension WindowManager {
         let source = window.workspace
         ignoreFocusChanges()
         // Its dialogs go along.
-        let moving = [window] + windows.values.filter { $0.parent == window.id }
+        let moving = [window] + dialogWindows(of: window)
         moving.forEach { $0.workspace = index }
         log.debug("move window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
         // A floating window going to a workspace shown on another display keeps its place there.
@@ -288,14 +288,14 @@ extension WindowManager {
     func notifyWorkspace(focused window: ManagedWindow?? = nil) {
         enterScope()
         defer { leaveScope() }
-        var notice: (names: [String], focused: Int)?
+        var notice: WorkspaceBar?
         if running, config.enabled, config.workspaces.count > 1 {
             let screens = currentScreens()
             let names = screens.map { displayed[$0.id].map(name(of:)) ?? "–" }
             let focusedID = screens.count > 1 ? focusedScreen(window ?? focused())?.id : nil
-            notice = (names, screens.firstIndex { $0.id == focusedID } ?? 0)
+            notice = WorkspaceBar(names: names, focused: screens.firstIndex { $0.id == focusedID } ?? 0)
         }
-        if let last = lastNotice, last?.names == notice?.names, last?.focused == notice?.focused { return }
+        if let last = lastNotice, last == notice { return }
         lastNotice = .some(notice)
         onWorkspaceChange?(notice)
     }

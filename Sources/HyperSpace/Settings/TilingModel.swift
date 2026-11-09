@@ -85,17 +85,17 @@ final class TilingModel: ObservableObject {
     }()
 
     /// Where every option starts: the defaults of the config itself.
-    private static let defaults = TilingConfig()
+    private typealias Defaults = TilingConfig
     /// The slider ranges (the config accepts the same ones).
     static let spacingRange = Int(TilingConfig.spacingRange.lowerBound)...Int(TilingConfig.spacingRange.upperBound)
     static let accordionRange = Int(TilingConfig.accordionPaddingRange.lowerBound)...Int(TilingConfig.accordionPaddingRange.upperBound)
 
-    @Published private(set) var enabled = TilingModel.defaults.enabled
-    @Published private(set) var layout = TilingModel.defaults.layout
-    @Published private(set) var gap = Int(TilingModel.defaults.gap)
-    @Published private(set) var padding = Int(TilingModel.defaults.padding)
-    @Published private(set) var mouseFollowsFocus = TilingModel.defaults.mouseFollowsFocus
-    @Published private(set) var accordionPadding = Int(TilingModel.defaults.accordionPadding)
+    @Published private(set) var enabled = Defaults.defaultEnabled
+    @Published private(set) var layout = Defaults.defaultLayout
+    @Published private(set) var gap = Int(Defaults.defaultGap)
+    @Published private(set) var padding = Int(Defaults.defaultPadding)
+    @Published private(set) var mouseFollowsFocus = Defaults.defaultMouseFollowsFocus
+    @Published private(set) var accordionPadding = Int(Defaults.defaultAccordionPadding)
     @Published var workspaces: [Workspace] = [] { didSet { duplicateCache = nil } }
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
@@ -169,9 +169,7 @@ final class TilingModel: ObservableObject {
     }
 
     func setDisplay(_ display: String, for id: UUID) {
-        guard let index = workspaces.firstIndex(where: { $0.id == id }) else { return }
-        workspaces[index].display = display
-        save()
+        if workspaces.update(id: id, { $0.display = display }) { save() }
     }
 
     /// The display choices for a workspace: automatic, the main display, every connected
@@ -198,7 +196,7 @@ final class TilingModel: ObservableObject {
         save()
     }
 
-    func addFloating(_ bundleID: String) {
+    private func addFloating(_ bundleID: String) {
         guard !floating.contains(bundleID) else { return }
         floating.append(bundleID)
         save()
@@ -209,7 +207,7 @@ final class TilingModel: ObservableObject {
         save()
     }
 
-    func addFloatingWindow() {
+    private func addFloatingWindow() {
         guard let rule = TilingConfig.floatingRule(app: newFloatingApp, title: newFloatingTitle.trimmingCharacters(in: .whitespaces)),
               !floatingWindows.contains(rule) else { return }
         floatingWindows.append(rule)
@@ -285,9 +283,7 @@ final class TilingModel: ObservableObject {
     }
 
     func setAssignment(_ id: UUID, workspace: String) {
-        guard let index = assignments.firstIndex(where: { $0.id == id }) else { return }
-        assignments[index].workspace = workspace
-        save()
+        if assignments.update(id: id, { $0.workspace = workspace }) { save() }
     }
 
     func removeAssignment(_ id: UUID) {
@@ -297,11 +293,10 @@ final class TilingModel: ObservableObject {
 
     /// Typing a name saves shortly after the last keystroke.
     func rename(_ id: UUID, to name: String) {
-        guard let index = workspaces.firstIndex(where: { $0.id == id }) else { return }
+        var old: String?
+        guard workspaces.update(id: id, { old = $0.name; $0.name = name }) else { return }
         // App rules follow their workspace's new name.
-        let old = workspaces[index].name
         for i in assignments.indices where assignments[i].workspace == old { assignments[i].workspace = name }
-        workspaces[index].name = name
         pendingSave?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.save() }
         pendingSave = work
@@ -352,9 +347,9 @@ final class TilingModel: ObservableObject {
     private func finishCapture(_ keys: String) {
         switch capturing {
         case .switchKeys(let id):
-            if let index = workspaces.firstIndex(where: { $0.id == id }) { workspaces[index].switchKeys = keys }
+            workspaces.update(id: id) { $0.switchKeys = keys }
         case .moveKeys(let id):
-            if let index = workspaces.firstIndex(where: { $0.id == id }) { workspaces[index].moveKeys = keys }
+            workspaces.update(id: id) { $0.moveKeys = keys }
         case .shortcut(let action):
             if let index = shortcuts.firstIndex(where: { $0.action == action }) { shortcuts[index].keys = keys }
             if let index = scratchpadApps.firstIndex(where: { $0.toggleAction == action }) { scratchpadApps[index].toggleKeys = keys }
@@ -371,14 +366,13 @@ final class TilingModel: ObservableObject {
     private func load() {
         let root = ConfigWriter.read()
         let tiling = root["tiling"] as? [String: Any] ?? [:]
-        let defaults = Self.defaults
-        enabled = tiling["enabled"] as? Bool ?? defaults.enabled
-        layout = (tiling["layout"] as? String).flatMap { LayoutKind(configText: $0) } ?? defaults.layout
+        enabled = tiling["enabled"] as? Bool ?? Defaults.defaultEnabled
+        layout = (tiling["layout"] as? String).flatMap { LayoutKind(configText: $0) } ?? Defaults.defaultLayout
         // The config clamps these too: what a hand-edited file holds shows as it will apply.
-        gap = ((tiling["gap"] as? NSNumber)?.intValue ?? Int(defaults.gap)).clamped(to: Self.spacingRange)
-        padding = ((tiling["padding"] as? NSNumber)?.intValue ?? Int(defaults.padding)).clamped(to: Self.spacingRange)
-        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? defaults.mouseFollowsFocus
-        accordionPadding = ((tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(defaults.accordionPadding)).clamped(to: Self.accordionRange)
+        gap = ((tiling["gap"] as? NSNumber)?.intValue ?? Int(Defaults.defaultGap)).clamped(to: Self.spacingRange)
+        padding = ((tiling["padding"] as? NSNumber)?.intValue ?? Int(Defaults.defaultPadding)).clamped(to: Self.spacingRange)
+        mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? Defaults.defaultMouseFollowsFocus
+        accordionPadding = ((tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(Defaults.defaultAccordionPadding)).clamped(to: Self.accordionRange)
         floating = tiling["floating"] as? [String] ?? []
         // The rules as the config reads them; one listed twice shows once (the list is keyed by rule).
         var rules: [FloatingWindowRule] = []
@@ -411,8 +405,10 @@ final class TilingModel: ObservableObject {
             let toggle = action.hasPrefix(Self.togglePrefix)
             guard toggle || action.hasPrefix(Self.tilePrefix) else { continue }
             let bundleID = String(action.dropFirst((toggle ? Self.togglePrefix : Self.tilePrefix).count))
-            if !pads.contains(where: { $0.bundleID == bundleID }) { pads.append(ScratchpadApp(bundleID: bundleID)) }
-            let index = pads.firstIndex { $0.bundleID == bundleID }!
+            let index = pads.firstIndex { $0.bundleID == bundleID } ?? {
+                pads.append(ScratchpadApp(bundleID: bundleID))
+                return pads.count - 1
+            }()
             if toggle { pads[index].toggleKeys = keys } else { pads[index].tileKeys = keys }
         }
         scratchpadApps = pads
@@ -422,64 +418,69 @@ final class TilingModel: ObservableObject {
         pendingSave?.cancel()
         pendingSave = nil
         saveError = ConfigWriter.save { root in
-            var tiling = root["tiling"] as? [String: Any] ?? [:]
-            tiling["enabled"] = enabled
-            tiling["layout"] = layout.rawValue
-            tiling["gap"] = gap
-            tiling["padding"] = padding
-            tiling["mouseFollowsFocus"] = mouseFollowsFocus
-            tiling["accordionPadding"] = accordionPadding == Int(Self.defaults.accordionPadding) ? nil : accordionPadding
-            tiling["floating"] = floating
-            tiling["floatingWindows"] = floatingWindows.isEmpty ? nil : floatingWindows.map { rule -> [String: Any] in
-                var entry: [String: Any] = ["title": rule.title]
-                if let app = rule.app { entry["app"] = app }
-                return entry
-            }
-            // Rules pointing at a workspace that no longer exists are dropped.
-            let names = Set(workspaces.map(\.name))
-            let rules = assignments.filter { names.contains($0.workspace) }
-            tiling["assign"] = rules.isEmpty ? nil : rules.map { ["app": $0.app, "workspace": $0.workspace] }
-            tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
-                var entry: [String: Any] = ["name": workspace.name]
-                if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }
-                if !workspace.moveKeys.isEmpty { entry["move"] = workspace.moveKeys }
-                if !workspace.display.isEmpty { entry["display"] = workspace.display }
-                return entry
-            }
-            root["tiling"] = tiling
-
-            // Each window shortcut edits the last binding of its action (the one the page shows)
-            // in place; other bindings, even more for the same action, stay where they are.
-            var keyboard = root["keyboard"] as? [String: Any] ?? [:]
-            var bindings = keyboard["bindings"] as? [[String: Any]] ?? []
-            func actionText(_ binding: [String: Any]) -> String { binding["action"] as? String ?? "" }
-            // An app taken off the scratchpad list loses all its bindings.
-            let padActions = Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] })
-            bindings.removeAll {
-                let action = actionText($0)
-                return (action.hasPrefix(Self.togglePrefix) || action.hasPrefix(Self.tilePrefix)) && !padActions.contains(action)
-            }
-            var desired: [(action: String, keys: String)] = shortcuts.map { (action: $0.action, keys: $0.keys) }
-            for pad in scratchpadApps {
-                desired.append((action: pad.toggleAction, keys: pad.toggleKeys))
-                desired.append((action: pad.tileAction, keys: pad.tileKeys))
-            }
-            var cleared = Set<Int>()
-            var added: [[String: Any]] = []
-            for entry in desired {
-                if let index = bindings.lastIndex(where: { actionText($0) == entry.action }) {
-                    if entry.keys.isEmpty {
-                        cleared.insert(index)
-                    } else if bindings[index]["keys"] as? String != entry.keys {
-                        bindings[index]["keys"] = entry.keys
-                    }
-                } else if !entry.keys.isEmpty {
-                    added.append(["keys": entry.keys, "action": entry.action])
-                }
-            }
-            bindings = bindings.enumerated().filter { !cleared.contains($0.offset) }.map(\.element) + added
-            keyboard["bindings"] = bindings
-            root["keyboard"] = keyboard
+            ConfigWriter.edit(&root, section: "tiling", saveTiling)
+            ConfigWriter.edit(&root, section: "keyboard", saveBindings)
         }
+    }
+
+    /// The options, workspaces, floating and app rules.
+    private func saveTiling(_ tiling: inout [String: Any]) {
+        tiling["enabled"] = enabled
+        tiling["layout"] = layout.rawValue
+        tiling["gap"] = gap
+        tiling["padding"] = padding
+        tiling["mouseFollowsFocus"] = mouseFollowsFocus
+        tiling["accordionPadding"] = accordionPadding == Int(Defaults.defaultAccordionPadding) ? nil : accordionPadding
+        tiling["floating"] = floating
+        tiling["floatingWindows"] = floatingWindows.isEmpty ? nil : floatingWindows.map { rule -> [String: Any] in
+            var entry: [String: Any] = ["title": rule.title]
+            if let app = rule.app { entry["app"] = app }
+            return entry
+        }
+        // Rules pointing at a workspace that no longer exists are dropped.
+        let names = Set(workspaces.map(\.name))
+        let rules = assignments.filter { names.contains($0.workspace) }
+        tiling["assign"] = rules.isEmpty ? nil : rules.map { ["app": $0.app, "workspace": $0.workspace] }
+        tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
+            var entry: [String: Any] = ["name": workspace.name]
+            if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }
+            if !workspace.moveKeys.isEmpty { entry["move"] = workspace.moveKeys }
+            if !workspace.display.isEmpty { entry["display"] = workspace.display }
+            return entry
+        }
+    }
+
+    /// The window shortcuts and the scratchpad apps' shortcuts, in `keyboard.bindings`.
+    private func saveBindings(_ keyboard: inout [String: Any]) {
+        // Each window shortcut edits the last binding of its action (the one the page shows)
+        // in place; other bindings, even more for the same action, stay where they are.
+        var bindings = keyboard["bindings"] as? [[String: Any]] ?? []
+        func actionText(_ binding: [String: Any]) -> String { binding["action"] as? String ?? "" }
+        // An app taken off the scratchpad list loses all its bindings.
+        let padActions = Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] })
+        bindings.removeAll {
+            let action = actionText($0)
+            return (action.hasPrefix(Self.togglePrefix) || action.hasPrefix(Self.tilePrefix)) && !padActions.contains(action)
+        }
+        var desired: [(action: String, keys: String)] = shortcuts.map { (action: $0.action, keys: $0.keys) }
+        for pad in scratchpadApps {
+            desired.append((action: pad.toggleAction, keys: pad.toggleKeys))
+            desired.append((action: pad.tileAction, keys: pad.tileKeys))
+        }
+        var cleared = Set<Int>()
+        var added: [[String: Any]] = []
+        for entry in desired {
+            if let index = bindings.lastIndex(where: { actionText($0) == entry.action }) {
+                if entry.keys.isEmpty {
+                    cleared.insert(index)
+                } else if bindings[index]["keys"] as? String != entry.keys {
+                    bindings[index]["keys"] = entry.keys
+                }
+            } else if !entry.keys.isEmpty {
+                added.append(["keys": entry.keys, "action": entry.action])
+            }
+        }
+        bindings = bindings.enumerated().filter { !cleared.contains($0.offset) }.map(\.element) + added
+        keyboard["bindings"] = bindings
     }
 }

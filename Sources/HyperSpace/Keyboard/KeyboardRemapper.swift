@@ -150,11 +150,9 @@ final class KeyboardRemapper {
 
     /// The HID service client shows up shortly after the IOKit registry entry.
     private func keyboardsChanged() {
-        for delay in [0.3, 1.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.sync()
-                self?.onKeyboardsChanged?()
-            }
+        DispatchQueue.main.asyncAfter(delays: [0.3, 1.5]) { [weak self] in
+            self?.sync()
+            self?.onKeyboardsChanged?()
         }
     }
 }

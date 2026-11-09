@@ -264,6 +264,13 @@ extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
+extension DispatchQueue {
+    /// Runs `work` once after each of `delays` (seconds), for things that settle a moment later.
+    func asyncAfter(delays: [TimeInterval], execute work: @escaping () -> Void) {
+        for delay in delays { asyncAfter(deadline: .now() + delay, execute: work) }
+    }
+}
+
 extension Comparable {
     /// `self` limited to `range`.
     func clamped(to range: ClosedRange<Self>) -> Self {
@@ -408,22 +415,24 @@ struct Config {
     /// Fills `tiling` and returns the workspace shortcuts to bind.
     private mutating func parseTiling(_ raw: RawConfig.Tiling) throws -> [(String, Action)] {
         var shortcuts: [(String, Action)] = []
-        let defaults = TilingConfig()
-        tiling.enabled = raw.enabled ?? defaults.enabled
+        typealias Defaults = TilingConfig
+        func clamped(_ value: Double?, to range: ClosedRange<CGFloat>, _ fallback: CGFloat) -> CGFloat {
+            value.map { CGFloat($0).clamped(to: range) } ?? fallback
+        }
+        tiling.enabled = raw.enabled ?? Defaults.defaultEnabled
         if let layout = raw.layout {
             guard let kind = LayoutKind(configText: layout) else { throw ConfigError("unknown layout '\(layout)'") }
             tiling.layout = kind
         }
-        tiling.gap = raw.gap.map { CGFloat($0).clamped(to: TilingConfig.spacingRange) } ?? defaults.gap
-        tiling.padding = raw.padding.map { CGFloat($0).clamped(to: TilingConfig.spacingRange) } ?? defaults.padding
-        tiling.masterRatio = raw.masterRatio.map { CGFloat($0).clamped(to: TilingConfig.ratioRange) } ?? defaults.masterRatio
+        tiling.gap = clamped(raw.gap, to: Defaults.spacingRange, Defaults.defaultGap)
+        tiling.padding = clamped(raw.padding, to: Defaults.spacingRange, Defaults.defaultPadding)
+        tiling.masterRatio = clamped(raw.masterRatio, to: Defaults.ratioRange, Defaults.defaultMasterRatio)
         tiling.floating = Set(raw.floating ?? [])
         tiling.floatingWindows = (raw.floatingWindows ?? []).compactMap { TilingConfig.floatingRule(app: $0.app, title: $0.title) }
-        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? defaults.mouseFollowsFocus
-        tiling.accordionPadding = raw.accordionPadding.map { CGFloat($0).clamped(to: TilingConfig.accordionPaddingRange) } ?? defaults.accordionPadding
-        func fraction(_ value: Double?, _ fallback: CGFloat) -> CGFloat { value.map { CGFloat($0).clamped(to: 0.2...1) } ?? fallback }
-        tiling.scratchpadSize = CGSize(width: fraction(raw.scratchpad?.width, defaults.scratchpadSize.width),
-                                       height: fraction(raw.scratchpad?.height, defaults.scratchpadSize.height))
+        tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? Defaults.defaultMouseFollowsFocus
+        tiling.accordionPadding = clamped(raw.accordionPadding, to: Defaults.accordionPaddingRange, Defaults.defaultAccordionPadding)
+        tiling.scratchpadSize = CGSize(width: clamped(raw.scratchpad?.width, to: 0.2...1, Defaults.defaultScratchpadSize.width),
+                                       height: clamped(raw.scratchpad?.height, to: 0.2...1, Defaults.defaultScratchpadSize.height))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(TilingConfig.workspaceName(workspace.name, at: index))
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }

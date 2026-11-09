@@ -25,9 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var eventTap = EventTap(
         drag: DragController(windowManager: windowManager),
         onAction: { [weak self] action in self?.runner.run(action) },
-        onOverview: { [weak self] key in
+        onOverview: { [weak self] shown in
             guard let self else { return }
-            if key != nil { overview.show() } else { overview.hide() }
+            if shown { overview.show() } else { overview.hide() }
         }
     )
     private lazy var settingsWindow = SettingsWindowController(
@@ -93,11 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// From the menu bar: saved in the config, so it lasts and Settings shows the same. The
     /// reload that follows the write applies it; the window manager is told at once anyway.
     private func setTilingEnabled(_ on: Bool) {
-        if let error = ConfigWriter.save({ root in
-            var tiling = root["tiling"] as? [String: Any] ?? [:]
-            tiling["enabled"] = on
-            root["tiling"] = tiling
-        }) {
+        if let error = ConfigWriter.save(section: "tiling", { $0["enabled"] = on }) {
             statusMenu.problem = .config(error)
             return
         }

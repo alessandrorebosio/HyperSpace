@@ -8,6 +8,23 @@ enum ConfigWriter {
         parse(try? Data(contentsOf: ConfigStore.url))
     }
 
+    /// One top-level object of the file ("keyboard", "mouse"…), empty when missing.
+    static func read(section key: String) -> [String: Any] {
+        read()[key] as? [String: Any] ?? [:]
+    }
+
+    /// Edits one top-level object of `root` in place, creating it when missing.
+    static func edit(_ root: inout [String: Any], section key: String, _ change: (inout [String: Any]) -> Void) {
+        var section = root[key] as? [String: Any] ?? [:]
+        change(&section)
+        root[key] = section
+    }
+
+    /// `save` for a change to a single top-level object.
+    static func save(section key: String, _ change: (inout [String: Any]) -> Void) -> String? {
+        save { edit(&$0, section: key, change) }
+    }
+
     private static func parse(_ data: Data?) -> [String: Any] {
         guard let data, let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         return root
