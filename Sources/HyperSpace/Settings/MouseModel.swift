@@ -28,9 +28,10 @@ final class MouseModel: ObservableObject {
     private let eventTap: EventTap
     private let monitor = LocalEventMonitor()
 
-    init(eventTap: EventTap) {
+    /// `config`: the file as `ConfigWriter.read()` returns it.
+    init(eventTap: EventTap, config: [String: Any]) {
         self.eventTap = eventTap
-        load()
+        load(config)
     }
 
     deinit {
@@ -209,8 +210,8 @@ final class MouseModel: ObservableObject {
 
     // MARK: - Persistence
 
-    private func load() {
-        let mouse = ConfigWriter.read(section: "mouse")
+    private func load(_ config: [String: Any]) {
+        let mouse = ConfigWriter.section("mouse", of: config)
         reverseScroll = mouse["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
         // In the order of the file: when two rules share a button, the last one wins.
         rules = (mouse["buttons"] as? [[String: Any]] ?? []).map {

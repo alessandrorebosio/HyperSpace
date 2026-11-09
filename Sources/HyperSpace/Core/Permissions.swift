@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// Accessibility is the only permission HyperSpace needs: it covers active
 /// event taps (read + modify input), posting synthetic events and AX window control.

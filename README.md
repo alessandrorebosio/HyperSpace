@@ -284,13 +284,14 @@ Floating (an app with no title = all its windows). It also applies to windows th
 Sources/HyperSpace/
 ├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
 ├── Settings/   window with a Keyboard/Mouse/Trackpad, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
-├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions,
-│               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions
+├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions, Pointer,
+│               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions,
+│               Log, Extensions, Scheduling (Debouncer, Coalescer)
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),
 │               KeyboardLayout, CapsLock, KeyboardLock
 ├── Mouse/      DragController (tap → window manager bridge), EdgeSliders (trackpad edge sliders)
 └── Tiling/     WindowManager (+ Scratchpad, SavedState, Workspaces, Commands, Debug extensions), ManagedWindow,
-                ColumnLayout, AppWatcher (AXObserver), AXWriter (per-app writes), WorkspaceState (saved workspaces),
+                WorkspaceSummary, ColumnLayout, AppWatcher (AXObserver), AXQueues (per-app AX calls), WorkspaceState (saved workspaces),
                 LaunchTracker, Layout, ScreenInfo, DisplayMonitor, FocusAnchor, AX helpers
 ```
 
@@ -311,7 +312,7 @@ Choices made for performance and minimal permissions:
 - **1000 Hz drag without backlog**: the tap keeps only the latest position and at most one update is
   queued on the main thread.
 - **AX writes off the main thread**: moving, resizing, parking and focusing a window, modifier-drag included,
-  happens on a serial queue per app (`AXWriter`). A slow or hung app only makes itself wait, never the
+  happens on a serial queue per app (`AXQueues`). A slow or hung app only makes itself wait, never the
   shortcuts or the other apps. Reads and state stay on the main thread.
 - **0.5 s AX timeout** for every element (macOS's default is 6 s).
 - **Saved workspaces** in `~/Library/Application Support/HyperSpace/workspaces.json` (a moment after every

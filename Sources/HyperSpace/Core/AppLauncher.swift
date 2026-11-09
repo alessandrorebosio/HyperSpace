@@ -94,6 +94,11 @@ enum AppLauncher {
         return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 
+    /// Forgets the names and icons (when the settings window closes): rebuilt on demand.
+    static func forgetAppInfo() {
+        appInfo.removeAll()
+    }
+
     /// An installed app's name, or its bundle id when it is not installed.
     static func name(_ bundleID: String) -> String { info(bundleID).name }
 

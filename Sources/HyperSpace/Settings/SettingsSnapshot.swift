@@ -133,17 +133,8 @@ extension SettingsSnapshot {
 }
 
 extension SettingsNavigation.Page {
-    /// Used in the names of the screenshots.
+    /// Used in the names of the screenshots: the title in lowercase, "window-rules".
     fileprivate var fileName: String {
-        switch self {
-        case .keyboard: return "keyboard"
-        case .mouse: return "mouse"
-        case .trackpad: return "trackpad"
-        case .tiling: return "tiling"
-        case .workspaces: return "workspaces"
-        case .windowRules: return "window-rules"
-        case .shortcuts: return "shortcuts"
-        case .settings: return "general"
-        }
+        title.lowercased().replacing(" ", with: "-")
     }
 }

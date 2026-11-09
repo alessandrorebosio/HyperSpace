@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// The workspaces saved across restarts, and how windows found again are matched to them.
 extension WindowManager {
@@ -81,12 +80,9 @@ extension WindowManager {
     /// Saves a moment after a change, when something really changed. Not while windows are
     /// still being matched to the saved state, which would lose the apps not reopened yet.
     func scheduleSave() {
-        guard running, restorer == nil, !saveScheduled else { return }
-        saveScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self else { return }
-            saveScheduled = false
-            guard running, restorer == nil else { return }
+        guard running, restorer == nil else { return }
+        saveCoalescer.schedule { [weak self] in
+            guard let self, running, restorer == nil else { return }
             var state = currentState()
             guard state != lastSaved else { return }
             lastSaved = state

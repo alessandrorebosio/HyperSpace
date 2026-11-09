@@ -70,7 +70,7 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 - **Buttons** (*+ Add Button*): mouse button (with modifiers, recorded by clicking it over the window) → action (keys to send, a ready-made action from ▾, or *Disable Button*). A new mapping goes straight from the button to its action. ([details](04-mouse.md))
 
 ### Trackpad
-- **Edge sliders**: the switch and, for the *Left edge* and *Right edge*, Volume, Display brightness or Nothing (dimmed while the switch is off). No Accessibility notice: the sliders start without waiting for the permission. ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
+- **Edge sliders**: the switch and, for the *Left edge* and *Right edge*, Volume, Display brightness or Nothing (dimmed while the switch is off). The sliders start without waiting for the permission, but holding the pointer still needs the event tap: an Accessibility notice says so while it is missing. ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
 
 ### Tiling
 - **Hero switch**: tiling on or off (`tiling.enabled`). Off: the other sections are dimmed and kept.
@@ -111,11 +111,11 @@ While recording, key bindings are suspended (so an existing shortcut reaches the
 |---|---|
 | `SettingsWindowController.swift` | `SettingsNavigation` (pages: names, icons, colors, summaries), `SettingsRoot` (sidebar and status bar), the window controller |
 | `Components.swift` | The shared components above, and `CaptureModel` (the key-cap click shared by the three models: `toggleCapture`) |
-| `RemapView.swift`, `MouseView.swift`, `TrackpadView.swift` | Keyboard, Mouse and Trackpad pages (`TrackpadModel` is in its view's file) |
+| `KeyboardView.swift`, `MouseView.swift`, `TrackpadView.swift` | Keyboard, Mouse and Trackpad pages |
 | `TilingView.swift` | Tiling page, layout thumbnails, accordion preview, `TilingOffNotice` |
 | `WorkspacesView.swift`, `WindowRulesView.swift`, `ShortcutsView.swift` | The other window pages |
-| `GeneralView.swift` | `GeneralModel` and the General page |
-| `RemapModel.swift`, `MouseModel.swift`, `TilingModel.swift` | State, key/button recording and saving; the views only call them |
+| `GeneralView.swift` | The General page |
+| `KeyboardModel.swift`, `MouseModel.swift`, `TrackpadModel.swift`, `TilingModel.swift`, `GeneralModel.swift` | State, key/button recording and saving; the views only call them (`UnlockCountdown` and `FloatingRuleDraft` are in their model's file) |
 | `SettingsSnapshot.swift` | `--render-settings` |
 
 ## Names and icons caching

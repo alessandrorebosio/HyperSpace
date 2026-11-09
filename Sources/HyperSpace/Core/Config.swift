@@ -203,6 +203,8 @@ struct TilingConfig {
     static let defaultScratchpadSize = CGSize(width: 0.6, height: 0.7)
     static let defaultAccordionPadding: CGFloat = 30
     static let accordionPaddingRange: ClosedRange<CGFloat> = 0...200
+    /// Scratchpad windows' width and height, as fractions of the display.
+    static let scratchpadRange: ClosedRange<CGFloat> = 0.2...1
 
     var enabled = TilingConfig.defaultEnabled
     var layout = TilingConfig.defaultLayout
@@ -240,6 +242,12 @@ struct FloatingWindowRule: Hashable {
 }
 
 extension TilingConfig {
+    /// A number option as written in the file (or read by Settings): limited to `range`, the
+    /// default when missing.
+    static func value(_ value: Double?, _ range: ClosedRange<CGFloat>, _ fallback: CGFloat) -> CGFloat {
+        value.map { CGFloat($0).clamped(to: range) } ?? fallback
+    }
+
     /// A title rule as written in the file or typed in Settings: dropped when its title is
     /// empty; an empty app means any app.
     static func floatingRule(app: String?, title: String) -> FloatingWindowRule? {
@@ -256,25 +264,6 @@ extension TilingConfig {
     func floats(app bundleID: String?, title: String?) -> Bool {
         if let bundleID, floating.contains(bundleID) { return true }
         return floatingWindows.contains { $0.matches(app: bundleID, title: title) }
-    }
-}
-
-extension String {
-    /// nil for the empty string.
-    var nilIfEmpty: String? { isEmpty ? nil : self }
-}
-
-extension DispatchQueue {
-    /// Runs `work` once after each of `delays` (seconds), for things that settle a moment later.
-    func asyncAfter(delays: [TimeInterval], execute work: @escaping () -> Void) {
-        for delay in delays { asyncAfter(deadline: .now() + delay, execute: work) }
-    }
-}
-
-extension Comparable {
-    /// `self` limited to `range`.
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        min(range.upperBound, max(range.lowerBound, self))
     }
 }
 
@@ -300,6 +289,21 @@ struct TrackpadConfig: Equatable {
 
     /// Whether any edge does something: with nothing to do the trackpads are not watched.
     var isActive: Bool { edgeSliders && (leftEdge != .none || rightEdge != .none) }
+
+    /// An edge as written in the file: `fallback` when missing or empty, nil when unknown.
+    static func edge(_ text: String?, default fallback: EdgeAction) -> EdgeAction? {
+        guard let text, !text.isEmpty else { return fallback }
+        return EdgeAction(configText: text)
+    }
+}
+
+extension RawConfig.Remap {
+    /// The remap rules with `hyperKey` first, as the remap to "hyper" on every keyboard it is
+    /// shorthand for (the config and the Keyboard page read it the same way).
+    static func withHyperKey(_ remaps: [RawConfig.Remap], hyperKey: String?) -> [RawConfig.Remap] {
+        guard let hyperKey, !hyperKey.isEmpty else { return remaps }
+        return [RawConfig.Remap(from: hyperKey, to: "hyper", keyboard: nil)] + remaps
+    }
 }
 
 /// Validated, compiled configuration.
@@ -347,11 +351,7 @@ struct Config {
         }
         tap.holdsPointer = self.trackpad.isActive
 
-        // `hyperKey` is shorthand for a remap to "hyper" on every keyboard.
-        var rawRemaps = keyboard?.remap ?? []
-        if let name = keyboard?.hyperKey, !name.isEmpty {
-            rawRemaps.insert(RawConfig.Remap(from: name, to: "hyper", keyboard: nil), at: 0)
-        }
+        let rawRemaps = RawConfig.Remap.withHyperKey(keyboard?.remap ?? [], hyperKey: keyboard?.hyperKey)
         let parsed = try rawRemaps.map { remap -> (from: KeyInfo, to: RemapTarget, target: KeyboardTarget) in
             guard let from = KeyCodes.lookup(remap.from) else { throw ConfigError("unknown key '\(remap.from)' in remap") }
             return (from, try RemapTarget.parse(remap.to), KeyboardTarget(remap.keyboard))
@@ -387,9 +387,8 @@ struct Config {
 
     private mutating func parseTrackpad(_ raw: RawConfig.Trackpad) throws {
         func edge(_ text: String?, _ fallback: EdgeAction, _ key: String) throws -> EdgeAction {
-            guard let text, !text.isEmpty else { return fallback }
-            guard let action = EdgeAction(configText: text) else {
-                throw ConfigError("\(key) must be volume, brightness or none (got '\(text)')")
+            guard let action = TrackpadConfig.edge(text, default: fallback) else {
+                throw ConfigError("\(key) must be volume, brightness or none (got '\(text ?? "")')")
             }
             return action
         }
@@ -416,23 +415,21 @@ struct Config {
     private mutating func parseTiling(_ raw: RawConfig.Tiling) throws -> [(String, Action)] {
         var shortcuts: [(String, Action)] = []
         typealias Defaults = TilingConfig
-        func clamped(_ value: Double?, to range: ClosedRange<CGFloat>, _ fallback: CGFloat) -> CGFloat {
-            value.map { CGFloat($0).clamped(to: range) } ?? fallback
-        }
+        let clamped = TilingConfig.value
         tiling.enabled = raw.enabled ?? Defaults.defaultEnabled
         if let layout = raw.layout {
             guard let kind = LayoutKind(configText: layout) else { throw ConfigError("unknown layout '\(layout)'") }
             tiling.layout = kind
         }
-        tiling.gap = clamped(raw.gap, to: Defaults.spacingRange, Defaults.defaultGap)
-        tiling.padding = clamped(raw.padding, to: Defaults.spacingRange, Defaults.defaultPadding)
-        tiling.masterRatio = clamped(raw.masterRatio, to: Defaults.ratioRange, Defaults.defaultMasterRatio)
+        tiling.gap = clamped(raw.gap, Defaults.spacingRange, Defaults.defaultGap)
+        tiling.padding = clamped(raw.padding, Defaults.spacingRange, Defaults.defaultPadding)
+        tiling.masterRatio = clamped(raw.masterRatio, Defaults.ratioRange, Defaults.defaultMasterRatio)
         tiling.floating = Set(raw.floating ?? [])
         tiling.floatingWindows = (raw.floatingWindows ?? []).compactMap { TilingConfig.floatingRule(app: $0.app, title: $0.title) }
         tiling.mouseFollowsFocus = raw.mouseFollowsFocus ?? Defaults.defaultMouseFollowsFocus
-        tiling.accordionPadding = clamped(raw.accordionPadding, to: Defaults.accordionPaddingRange, Defaults.defaultAccordionPadding)
-        tiling.scratchpadSize = CGSize(width: clamped(raw.scratchpad?.width, to: 0.2...1, Defaults.defaultScratchpadSize.width),
-                                       height: clamped(raw.scratchpad?.height, to: 0.2...1, Defaults.defaultScratchpadSize.height))
+        tiling.accordionPadding = clamped(raw.accordionPadding, Defaults.accordionPaddingRange, Defaults.defaultAccordionPadding)
+        tiling.scratchpadSize = CGSize(width: clamped(raw.scratchpad?.width, Defaults.scratchpadRange, Defaults.defaultScratchpadSize.width),
+                                       height: clamped(raw.scratchpad?.height, Defaults.scratchpadRange, Defaults.defaultScratchpadSize.height))
         for (index, workspace) in (raw.workspaces ?? []).enumerated() {
             tiling.workspaces.append(TilingConfig.workspaceName(workspace.name, at: index))
             if let keys = workspace.switchKeys, !keys.isEmpty { shortcuts.append((keys, .workspace(index))) }

@@ -83,7 +83,7 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 - A window whose workspace is not displayed is moved to the **bottom-right corner of its display** (position `maxX−1, maxY−1`: practically all of it off-screen). Its previous frame is remembered (`hiddenFrame`).
 - Parked windows come back: when their workspace is shown (tiled ones are placed by the retile; floating ones return to their frame, centred on the new display if needed), on **quit**, when tiling is **turned off**, and after a **crash** (at startup,
   windows with less than 10% visible on any display are centred on the main display).
-- Writes use the per-app `AXWriter` queues; on quit, pending writes are flushed (up to 1.5 s) so windows really come back.
+- Writes use the per-app `AXQueues` queues; on quit, pending writes are flushed (up to 1.5 s) so windows really come back.
 - ⌘Tab or a click on a window of a hidden workspace **shows that workspace** (focus follows), except for focus changes caused by HyperSpace itself (ignored for 0.6 s after it moves things) and for a window just moved away.
 
 ## App assignments

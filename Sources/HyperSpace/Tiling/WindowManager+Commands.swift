@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// The commands behind shortcuts: focus, swap, resize, float, accordion, layout, and moving the focus between displays.
 extension WindowManager {
@@ -42,7 +41,7 @@ extension WindowManager {
     func refreshFocused(_ pid: pid_t) {
         guard let app = apps[pid]?.element else { return }
         let epoch = focusEpoch[pid, default: 0]
-        writer.read(pid, { () -> CGWindowID? in AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID) }, then: { [weak self] (id: CGWindowID?) in
+        axQueues.read(pid, { () -> CGWindowID? in AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID) }, then: { [weak self] (id: CGWindowID?) in
             guard let self, apps[pid] != nil, focusEpoch[pid, default: 0] == epoch, focusedIn[pid] != id ?? 0 else { return }
             noteFocused(id, of: pid)
             scheduleFocusUpdate()
@@ -210,7 +209,7 @@ extension WindowManager {
     }
 
     func adjustRatio(_ delta: CGFloat) {
-        updateActiveScreen { $0.ratio = ($0.ratio + delta).clamped(to: TilingConfig.ratioRange) }
+        updateActiveScreen { $0.adjustRatio(by: delta) }
     }
 
     /// Grows or shrinks the focused window by `delta` points. Floating windows are
@@ -243,7 +242,7 @@ extension WindowManager {
             if isWidth == splitIsHorizontal {
                 // Across the master/stack split: the master grows, a stack window grows by shrinking it.
                 let change = delta / (splitIsHorizontal ? area.width : area.height)
-                state.ratio = (state.ratio + (position == 0 ? change : -change)).clamped(to: TilingConfig.ratioRange)
+                state.adjustRatio(by: position == 0 ? change : -change)
                 setState(state, for: screen.id)
             } else {
                 // Along the stack; the master always spans the whole length.
@@ -277,7 +276,7 @@ extension WindowManager {
         let total = weights.reduce(0, +)
         guard total > 0 else { return weights[index] }
         let others = total - weights[index]
-        let minimum: CGFloat = 80
+        let minimum = minimumTileLength
         let current = usable * weights[index] / total
         let target = min(usable - minimum * CGFloat(weights.count - 1), max(minimum, current + delta))
         return max(0.05, target * others / (usable - target))

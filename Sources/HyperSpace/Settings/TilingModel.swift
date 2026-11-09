@@ -101,9 +101,8 @@ final class TilingModel: ObservableObject {
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
     @Published private(set) var floatingWindows: [FloatingWindowRule] = []
-    /// The rule being written: app (nil for any) and title text.
-    @Published var newFloatingApp: String?
-    @Published var newFloatingTitle = ""
+    /// The rule being written: its own object, so typing its title redraws that row only.
+    let floatingDraft = FloatingRuleDraft()
     /// Apps whose windows open in a given workspace (by name).
     @Published private(set) var assignments: [Assignment] = []
 
@@ -131,15 +130,17 @@ final class TilingModel: ObservableObject {
 
     private let eventTap: EventTap
     private let monitor = LocalEventMonitor()
-    private var pendingSave: DispatchWorkItem?
+    /// A workspace name is saved shortly after the last keystroke.
+    private let renameSave = Debouncer(delay: 0.5)
 
     /// Posted (with the new value) when tiling is turned on or off from the menu bar.
     static let enabledDidChange = Notification.Name("HyperSpace.tilingEnabledDidChange")
     private var enabledObserver: NSObjectProtocol?
 
-    init(eventTap: EventTap) {
+    /// `config`: the file as `ConfigWriter.read()` returns it.
+    init(eventTap: EventTap, config: [String: Any]) {
         self.eventTap = eventTap
-        load()
+        load(config)
         enabledObserver = NotificationCenter.default.addObserver(forName: Self.enabledDidChange, object: nil, queue: .main) { [weak self] note in
             if let on = note.object as? Bool { self?.enabled = on }
         }
@@ -149,7 +150,7 @@ final class TilingModel: ObservableObject {
         if let enabledObserver { NotificationCenter.default.removeObserver(enabledObserver) }
         stopCapture()
         // A rename typed just before closing the window is still saved.
-        if pendingSave != nil { save() }
+        if renameSave.isPending { save() }
     }
 
     // MARK: - Editing
@@ -157,9 +158,15 @@ final class TilingModel: ObservableObject {
     func setEnabled(_ on: Bool) { enabled = on; save() }
     func setLayout(_ kind: LayoutKind) { layout = kind; save() }
     /// The slider setters only update the shown value; `commitSpacing` writes them.
-    func setGap(_ value: Int) { gap = value.clamped(to: Self.spacingRange) }
-    func setPadding(_ value: Int) { padding = value.clamped(to: Self.spacingRange) }
-    func setAccordionPadding(_ value: Int) { accordionPadding = value.clamped(to: Self.accordionRange) }
+    /// A drag sends the same rounded value many times: only a change is published (each
+    /// `@Published` assignment redraws the page, equal or not).
+    func setGap(_ value: Int) { Self.assign(value.clamped(to: Self.spacingRange), to: &gap) }
+    func setPadding(_ value: Int) { Self.assign(value.clamped(to: Self.spacingRange), to: &padding) }
+    func setAccordionPadding(_ value: Int) { Self.assign(value.clamped(to: Self.accordionRange), to: &accordionPadding) }
+
+    private static func assign(_ value: Int, to property: inout Int) {
+        if property != value { property = value }
+    }
     /// Writes the current slider values (the config reload retiles once, on release).
     func commitSpacing() { save() }
     func setMouseFollowsFocus(_ on: Bool) { mouseFollowsFocus = on; save() }
@@ -209,10 +216,10 @@ final class TilingModel: ObservableObject {
     }
 
     private func addFloatingWindow() {
-        guard let rule = TilingConfig.floatingRule(app: newFloatingApp, title: newFloatingTitle.trimmingCharacters(in: .whitespaces)),
+        guard let rule = TilingConfig.floatingRule(app: floatingDraft.app, title: floatingDraft.trimmedTitle),
               !floatingWindows.contains(rule) else { return }
         floatingWindows.append(rule)
-        newFloatingTitle = ""
+        floatingDraft.title = ""
         save()
     }
 
@@ -221,17 +228,12 @@ final class TilingModel: ObservableObject {
         save()
     }
 
-    /// The rule being written needs an app, a title, or both.
-    var canAddFloatingRule: Bool {
-        newFloatingApp != nil || !newFloatingTitle.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
     /// Adds the rule being written: an app without a title floats all its windows.
     func addFloatingRule() {
-        guard newFloatingTitle.trimmingCharacters(in: .whitespaces).isEmpty else { return addFloatingWindow() }
-        guard let app = newFloatingApp else { return }
+        guard floatingDraft.trimmedTitle.isEmpty else { return addFloatingWindow() }
+        guard let app = floatingDraft.app else { return }
         addFloating(app)
-        newFloatingApp = nil
+        floatingDraft.app = nil
     }
 
     var assignmentCandidates: [(name: String, bundleID: String)] {
@@ -298,10 +300,7 @@ final class TilingModel: ObservableObject {
         guard workspaces.update(id: id, { old = $0.name; $0.name = name }) else { return }
         // App rules follow their workspace's new name.
         for i in assignments.indices where assignments[i].workspace == old { assignments[i].workspace = name }
-        pendingSave?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.save() }
-        pendingSave = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        renameSave.schedule { [weak self] in self?.save() }
     }
 
     /// Shortcuts used more than once, which only the last one would get.
@@ -364,16 +363,18 @@ final class TilingModel: ObservableObject {
 
     // MARK: - Persistence
 
-    private func load() {
-        let root = ConfigWriter.read()
-        let tiling = root["tiling"] as? [String: Any] ?? [:]
+    private func load(_ root: [String: Any]) {
+        let tiling = ConfigWriter.section("tiling", of: root)
+        func number(_ key: String, _ range: ClosedRange<CGFloat>, _ fallback: CGFloat) -> Int {
+            Int(TilingConfig.value((tiling[key] as? NSNumber)?.doubleValue, range, fallback))
+        }
         enabled = tiling["enabled"] as? Bool ?? Defaults.defaultEnabled
         layout = (tiling["layout"] as? String).flatMap { LayoutKind(configText: $0) } ?? Defaults.defaultLayout
         // The config clamps these too: what a hand-edited file holds shows as it will apply.
-        gap = ((tiling["gap"] as? NSNumber)?.intValue ?? Int(Defaults.defaultGap)).clamped(to: Self.spacingRange)
-        padding = ((tiling["padding"] as? NSNumber)?.intValue ?? Int(Defaults.defaultPadding)).clamped(to: Self.spacingRange)
+        gap = number("gap", Defaults.spacingRange, Defaults.defaultGap)
+        padding = number("padding", Defaults.spacingRange, Defaults.defaultPadding)
         mouseFollowsFocus = tiling["mouseFollowsFocus"] as? Bool ?? Defaults.defaultMouseFollowsFocus
-        accordionPadding = ((tiling["accordionPadding"] as? NSNumber)?.intValue ?? Int(Defaults.defaultAccordionPadding)).clamped(to: Self.accordionRange)
+        accordionPadding = number("accordionPadding", Defaults.accordionPaddingRange, Defaults.defaultAccordionPadding)
         floating = tiling["floating"] as? [String] ?? []
         // The rules as the config reads them; one listed twice shows once (the list is keyed by rule).
         var rules: [FloatingWindowRule] = []
@@ -395,7 +396,7 @@ final class TilingModel: ObservableObject {
                       display: entry["display"] as? String ?? "")
         }
 
-        let bindings = (root["keyboard"] as? [String: Any])?["bindings"] as? [[String: Any]] ?? []
+        let bindings = ConfigWriter.section("keyboard", of: root)["bindings"] as? [[String: Any]] ?? []
         shortcuts = Self.shortcutActions.map { item in
             let keys = bindings.last { ($0["action"] as? String) == item.action }?["keys"] as? String
             return Shortcut(title: item.title, action: item.action, keys: keys ?? "")
@@ -422,8 +423,7 @@ final class TilingModel: ObservableObject {
     }
 
     private func save() {
-        pendingSave?.cancel()
-        pendingSave = nil
+        renameSave.cancel()
         saveError = ConfigWriter.save { root in
             ConfigWriter.edit(&root, section: "tiling", saveTiling)
             ConfigWriter.edit(&root, section: "keyboard", saveBindings)
@@ -495,4 +495,15 @@ final class TilingModel: ObservableObject {
         }
         return bindings.enumerated().filter { !cleared.contains($0.offset) }.map(\.element) + added
     }
+}
+
+/// The floating rule being written on the Window Rules page: app (nil for any) and title text.
+final class FloatingRuleDraft: ObservableObject {
+    @Published var app: String?
+    @Published var title = ""
+
+    var trimmedTitle: String { title.trimmingCharacters(in: .whitespaces) }
+
+    /// A rule needs an app, a title, or both.
+    var canAdd: Bool { app != nil || !trimmedTitle.isEmpty }
 }

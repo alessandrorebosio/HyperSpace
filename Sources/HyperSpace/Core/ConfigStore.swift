@@ -9,7 +9,10 @@ final class ConfigStore {
     var onChange: ((Result<Config, Error>) -> Void)?
 
     private var source: DispatchSourceFileSystemObject?
-    private var pendingReload: DispatchWorkItem?
+    /// Editors often emit several events per save: one reload for them all.
+    private let reloadDebouncer = Debouncer(delay: 0.15)
+    /// One of the events coalesced replaced the file: watch the new one.
+    private var rewatchPending = false
 
     func start() {
         writeDefaultIfMissing()
@@ -37,14 +40,18 @@ final class ConfigStore {
         }
     }
 
-    private func watch() {
+    /// `retryDelay`: how long to wait before looking again when the file is not there.
+    private func watch(retryDelay: TimeInterval = 1) {
         source?.cancel()
         source = nil
 
         let fd = open(Self.url.path, O_EVTONLY)
         guard fd >= 0 else {
-            // The editor may be mid-save (atomic rename): try again shortly.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.watch() }
+            // The editor may be mid-save (atomic rename): try again shortly. A file deleted for
+            // good is looked for less and less often, up to every 30 s.
+            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
+                self?.watch(retryDelay: min(retryDelay * 2, 30))
+            }
             return
         }
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -59,14 +66,15 @@ final class ConfigStore {
         self.source = source
     }
 
-    /// Editors often emit several events per save; coalesce them.
     private func scheduleReload(rewatch: Bool) {
-        pendingReload?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            if rewatch { self?.watch() }
-            self?.reload()
+        rewatchPending = rewatchPending || rewatch
+        reloadDebouncer.schedule { [weak self] in
+            guard let self else { return }
+            if rewatchPending {
+                rewatchPending = false
+                watch()
+            }
+            reload()
         }
-        pendingReload = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 }

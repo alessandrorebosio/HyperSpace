@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// Workspaces and displays: which workspace each display shows, switching, moving, focus following, and the menu's summaries.
 extension WindowManager {
@@ -171,7 +170,7 @@ extension WindowManager {
     private func park(_ window: ManagedWindow, in screen: CGRect) {
         window.movedByUs = Date()
         let element = window.element
-        writer.perform(window.pid) { AX.setPosition(element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)) }
+        axQueues.perform(window.pid) { AX.setPosition(element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)) }
     }
 
     /// Whether a window shows at most a sliver on every screen (or none): parked, not in view.
@@ -238,7 +237,7 @@ extension WindowManager {
             heldDisplay = id
             focusAnchor.show(on: screen)
             let me = getpid()
-            writer.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
+            axQueues.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.focusAnchor.takeKey() }
         }
         return nil
@@ -311,8 +310,10 @@ extension WindowManager {
         syncDisplays()
         let screens = currentScreens()
         var apps: [pid_t: NSRunningApplication] = [:]
+        // In tiling order within each workspace.
+        let byWorkspace = Dictionary(grouping: orderedWindows.filter { !$0.scratchpad }, by: \.workspace)
         return (0..<workspaceCount).map { index in
-            let members = orderedWindows.filter { $0.workspace == index && !$0.scratchpad }
+            let members = byWorkspace[index] ?? []
             let entries = members.map { window -> WorkspaceSummary.Window in
                 let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
                 apps[window.pid] = app

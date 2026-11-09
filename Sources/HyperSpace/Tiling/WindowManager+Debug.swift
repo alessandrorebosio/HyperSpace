@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// The report to paste when something goes wrong, and the notes it carries.
 extension WindowManager {
@@ -38,8 +37,9 @@ extension WindowManager {
             lines.append("Displays left out (asleep or on another input): " + DisplayMonitor.absent.sorted().map(String.init).joined(separator: ", "))
         }
         let bounds = currentBounds()
+        let byWorkspace = Dictionary(grouping: orderedWindows, by: \.workspace)
         for workspace in 0..<workspaceCount {
-            let members = orderedWindows.filter { $0.workspace == workspace }
+            let members = byWorkspace[workspace] ?? []
             guard !members.isEmpty else { continue }
             lines.append("Workspace \(name(of: workspace)) (#\(workspace + 1)):")
             for window in members {

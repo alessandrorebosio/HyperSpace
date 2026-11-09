@@ -1,5 +1,4 @@
 import AppKit
-import CoreGraphics
 
 /// One active CGEventTap shared by the keyboard and mouse mappers.
 ///

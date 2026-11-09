@@ -3,7 +3,7 @@ import Combine
 
 /// State of the remap editor. Every change is written to config.json at once;
 /// the config watcher then applies it to the keyboards.
-final class RemapModel: ObservableObject {
+final class KeyboardModel: ObservableObject {
     struct Rule: Identifiable, Equatable {
         let id = UUID()
         var from: String
@@ -26,12 +26,12 @@ final class RemapModel: ObservableObject {
     /// Modifiers held so far while capturing a target, shown live ("⌃⌥⇧…").
     @Published private(set) var capturePreview = ""
     @Published private(set) var isKeyboardLocked = false
-    /// "2:41" until the lock lifts by itself, refreshed every second while locked.
-    @Published private(set) var unlocksIn: String?
+    /// "2:41" until the lock lifts by itself: its own object, so the tick every second redraws
+    /// the lock row only, not every remap.
+    let unlockCountdown = UnlockCountdown()
     @Published var lockMinutes = KeyboardLock.minutes {
         didSet { KeyboardLock.minutes = lockMinutes }
     }
-    private var countdown: Timer?
 
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
@@ -42,7 +42,8 @@ final class RemapModel: ObservableObject {
     private var modifierPresses = 0
     private var soleModifierKey: UInt16?
 
-    init(remapper: KeyboardRemapper, eventTap: EventTap) {
+    /// `config`: the file as `ConfigWriter.read()` returns it.
+    init(remapper: KeyboardRemapper, eventTap: EventTap, config: [String: Any]) {
         self.remapper = remapper
         self.eventTap = eventTap
         // Also locked and unlocked from the menu bar, and unlocked by the timer.
@@ -50,7 +51,7 @@ final class RemapModel: ObservableObject {
             forName: EventTap.keyboardLockDidChange, object: eventTap, queue: .main
         ) { [weak self] _ in self?.syncLock() }
         syncLock()
-        load()
+        load(config)
         refreshKeyboards()
         remapper.onKeyboardsChanged = { [weak self] in self?.refreshKeyboards() }
     }
@@ -58,21 +59,12 @@ final class RemapModel: ObservableObject {
     deinit {
         stopCapture()
         if let lockObserver { NotificationCenter.default.removeObserver(lockObserver) }
-        countdown?.invalidate()
     }
 
     private func syncLock() {
-        isKeyboardLocked = eventTap.isKeyboardLocked
-        countdown?.invalidate()
-        countdown = nil
-        guard let until = eventTap.keyboardUnlocksAt else {
-            unlocksIn = nil
-            return
-        }
-        unlocksIn = KeyboardLock.remaining(until: until)
-        countdown = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.unlocksIn = KeyboardLock.remaining(until: until)
-        }
+        // A `@Published` assignment redraws the page even when the value is the same.
+        if isKeyboardLocked != eventTap.isKeyboardLocked { isKeyboardLocked = eventTap.isKeyboardLocked }
+        unlockCountdown.run(until: eventTap.keyboardUnlocksAt)
     }
 
     /// Ignores every key until unlocked with the mouse (to clean the keyboard).
@@ -219,14 +211,14 @@ final class RemapModel: ObservableObject {
 
     // MARK: - Persistence
 
-    private func load() {
-        let keyboard = ConfigWriter.read(section: "keyboard")
-        rules = (keyboard["remap"] as? [[String: Any]] ?? []).map {
-            Rule(from: $0["from"] as? String ?? "", to: $0["to"] as? String ?? "", keyboard: $0["keyboard"] as? String ?? KeyboardTarget.allText)
+    private func load(_ config: [String: Any]) {
+        let keyboard = ConfigWriter.section("keyboard", of: config)
+        let remaps = (keyboard["remap"] as? [[String: Any]] ?? []).map {
+            RawConfig.Remap(from: $0["from"] as? String ?? "", to: $0["to"] as? String ?? "", keyboard: $0["keyboard"] as? String)
         }
         // The editor shows the hyper key as an ordinary remap to "hyper"; it is saved that way too.
-        if let hyper = keyboard["hyperKey"] as? String, !hyper.isEmpty {
-            rules.insert(Rule(from: hyper, to: "hyper", keyboard: KeyboardTarget.allText), at: 0)
+        rules = RawConfig.Remap.withHyperKey(remaps, hyperKey: keyboard["hyperKey"] as? String).map {
+            Rule(from: $0.from, to: $0.to, keyboard: $0.keyboard ?? KeyboardTarget.allText)
         }
     }
 
@@ -244,5 +236,29 @@ final class RemapModel: ObservableObject {
                 return entry
             }
         }
+    }
+}
+
+/// The time left until a locked keyboard unlocks by itself ("2:41"), refreshed every second.
+final class UnlockCountdown: ObservableObject {
+    @Published private(set) var text: String?
+    private var timer: Timer?
+
+    /// Counts down to `date`; nil stops.
+    func run(until date: Date?) {
+        timer?.invalidate()
+        timer = nil
+        guard let date else {
+            if text != nil { text = nil }
+            return
+        }
+        text = KeyboardLock.remaining(until: date)
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.text = KeyboardLock.remaining(until: date)
+        }
+    }
+
+    deinit {
+        timer?.invalidate()
     }
 }

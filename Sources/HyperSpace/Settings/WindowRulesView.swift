@@ -34,7 +34,7 @@ struct WindowRulesView: View {
                         RemoveButton { model.removeFloatingWindow(rule) }
                     }
                 }
-                NewFloatingRule(model: model)
+                NewFloatingRule(model: model, draft: model.floatingDraft)
             } header: {
                 Text("Floating")
             } footer: {
@@ -52,7 +52,9 @@ struct WindowRulesView: View {
                                 AppLabel(bundleID: pad.bundleID)
                                     .frame(minWidth: 100, alignment: .leading)
                                 ShortcutCap(model: model, keys: pad.toggleKeys, field: .shortcut(pad.toggleAction))
+                                    .equatable()
                                 ShortcutCap(model: model, keys: pad.tileKeys, field: .shortcut(pad.tileAction))
+                                    .equatable()
                                 Spacer(minLength: 0)
                                 RemoveButton { model.removeScratchpadApp(pad.bundleID) }
                             }
@@ -72,28 +74,46 @@ struct WindowRulesView: View {
     }
 }
 
-/// The last row of the floating rules: the rule being written.
+/// The last row of the floating rules: the rule being written. It observes the draft alone, so
+/// a keystroke in the title redraws this row, not the page.
 private struct NewFloatingRule: View {
-    @ObservedObject var model: TilingModel
+    let model: TilingModel
+    @ObservedObject var draft: FloatingRuleDraft
 
     var body: some View {
         HStack(spacing: 8) {
-            Picker("App", selection: $model.newFloatingApp) {
-                Text("Any app").tag(String?.none)
-                Divider()
-                ForEach(AppLauncher.runningApps, id: \.bundleID) { app in
-                    Text(app.name).tag(Optional(app.bundleID))
-                }
-            }
-            .labelsHidden()
-            .fixedSize()
-            TextField("Title", text: $model.newFloatingTitle,
-                      prompt: Text("Title contains… (optional)"))
+            FloatingAppPicker(app: draft.app, apps: AppLauncher.runningApps) { draft.app = $0 }
+                .equatable()
+            TextField("Title", text: $draft.title, prompt: Text("Title contains… (optional)"))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { model.addFloatingRule() }
             AddButton(title: "Add") { model.addFloatingRule() }
-                .disabled(!model.canAddFloatingRule)
+                .disabled(!draft.canAdd)
         }
+    }
+}
+
+/// The app of the rule being written, among the running apps. Built again only when the
+/// choice or the apps change (`==`), not on every keystroke in the title.
+private struct FloatingAppPicker: View, Equatable {
+    let app: String?
+    let apps: [(name: String, bundleID: String)]
+    let choose: (String?) -> Void
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.app == b.app && a.apps.map(\.bundleID) == b.apps.map(\.bundleID)
+    }
+
+    var body: some View {
+        Picker("App", selection: Binding(get: { app }, set: choose)) {
+            Text("Any app").tag(String?.none)
+            Divider()
+            ForEach(apps, id: \.bundleID) { app in
+                Text(app.name).tag(Optional(app.bundleID))
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
     }
 }

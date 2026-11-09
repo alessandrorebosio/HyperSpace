@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// Maps an AX window element to its CGWindowID. Private but stable for a decade
 /// (used by yabai, Amethyst, AeroSpace, Rectangle); avoids Screen Recording.
@@ -30,8 +29,7 @@ enum AX {
     }
 
     static func element(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
-        guard let value = value(element, attribute), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return (value as! AXUIElement)
+        asElement(value(element, attribute))
     }
 
     static func elements(_ element: AXUIElement, _ attribute: String) -> [AXUIElement] {
@@ -39,15 +37,50 @@ enum AX {
     }
 
     static func position(_ element: AXUIElement) -> CGPoint? {
-        guard let value = value(element, kAXPositionAttribute), CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        point(value(element, kAXPositionAttribute))
+    }
+
+    static func size(_ element: AXUIElement) -> CGSize? {
+        size(value(element, kAXSizeAttribute))
+    }
+
+    /// Position and size in one round trip.
+    static func frame(_ element: AXUIElement) -> CGRect? {
+        let list = values(element, [kAXPositionAttribute, kAXSizeAttribute])
+        guard let list, let origin = point(list[0]), let size = size(list[1]) else {
+            // Not answered as a batch: one at a time.
+            return position(element).flatMap { origin in size(element).map { CGRect(origin: origin, size: $0) } }
+        }
+        return CGRect(origin: origin, size: size)
+    }
+
+    /// Several attributes in one round trip, in order, a missing one as nil; nil when the app
+    /// does not answer the batch at all.
+    static func values(_ element: AXUIElement, _ attributes: [String]) -> [CFTypeRef?]? {
+        var values: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(element, attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
+              let list = values as [AnyObject]?, list.count == attributes.count else { return nil }
+        // A missing attribute comes back as an AXValue holding its error.
+        return list.map { value in
+            CFGetTypeID(value) == AXValueGetTypeID() && AXValueGetType(value as! AXValue) == .axError ? nil : value
+        }
+    }
+
+    private static func point(_ value: CFTypeRef?) -> CGPoint? {
+        guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var point = CGPoint.zero
         return AXValueGetValue(value as! AXValue, .cgPoint, &point) ? point : nil
     }
 
-    static func size(_ element: AXUIElement) -> CGSize? {
-        guard let value = value(element, kAXSizeAttribute), CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+    private static func size(_ value: CFTypeRef?) -> CGSize? {
+        guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var size = CGSize.zero
         return AXValueGetValue(value as! AXValue, .cgSize, &size) ? size : nil
+    }
+
+    private static func asElement(_ value: CFTypeRef?) -> AXUIElement? {
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
     }
 
     @discardableResult
@@ -108,8 +141,13 @@ enum AX {
     /// `main` is the app's main window ID when the caller already resolved it (once per app
     /// for a batch); left `nil` it is read here.
     static func probe(_ element: AXUIElement, pid: pid_t, main resolved: CGWindowID?? = nil) -> WindowProbe {
-        let role = string(element, kAXRoleAttribute)
-        let subrole = string(element, kAXSubroleAttribute)
+        // Everything readable in one round trip (each would be one, and an app slow to answer
+        // makes each slow); one at a time for an app that does not answer the batch.
+        let attributes = [kAXRoleAttribute, kAXSubroleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute,
+                          kAXCloseButtonAttribute, kAXFullScreenButtonAttribute, kAXZoomButtonAttribute]
+        let list = values(element, attributes) ?? attributes.map { value(element, $0) }
+        let role = list[0] as? String
+        let subrole = list[1] as? String
         var settable: DarwinBoolean = false
         let movable = AXUIElementIsAttributeSettable(element, kAXPositionAttribute as CFString, &settable) == .success && settable.boolValue
         let kind: WindowProbe.Kind
@@ -119,12 +157,13 @@ enum AX {
         case (nil, _), (kAXWindowRole, nil), (kAXWindowRole, kAXUnknownSubrole): kind = .pending
         default: kind = .other
         }
-        let frame = position(element).flatMap { origin in size(element).map { CGRect(origin: origin, size: $0) } }
+        let frame = point(list[2]).flatMap { origin in size(list[3]).map { CGRect(origin: origin, size: $0) } }
         let main = kind == .other ? nil
             : resolved ?? self.element(AXUIElementCreateApplication(pid), kAXMainWindowAttribute).flatMap(windowID)
         return WindowProbe(element: element, id: windowID(element), role: role, subrole: subrole, kind: kind,
-                           dialogLike: kind == .standard && isDialogLike(element),
-                           title: kind == .other ? nil : string(element, kAXTitleAttribute), frame: frame, mainWindow: main)
+                           dialogLike: kind == .standard && isDialogLike(close: asElement(list[5]), fullScreen: asElement(list[6]),
+                                                                         zoom: asElement(list[7])),
+                           title: kind == .other ? nil : list[4] as? String, frame: frame, mainWindow: main)
     }
 
     /// Raises a window above its app's others, without focusing it.
@@ -134,11 +173,10 @@ enum AX {
 
     /// A standard window that is really a dialog, like the Finder's Empty Trash or Copy
     /// progress: it can be closed but neither zoomed nor made full screen. Windows with no
-    /// title bar buttons at all (borderless terminals) are not dialogs.
-    static func isDialogLike(_ element: AXUIElement) -> Bool {
-        guard self.element(element, kAXCloseButtonAttribute) != nil,
-              self.element(element, kAXFullScreenButtonAttribute) == nil else { return false }
-        guard let zoom = self.element(element, kAXZoomButtonAttribute) else { return true }
+    /// title bar buttons at all (borderless terminals) are not dialogs. Takes the window's buttons.
+    static func isDialogLike(close: AXUIElement?, fullScreen: AXUIElement?, zoom: AXUIElement?) -> Bool {
+        guard close != nil, fullScreen == nil else { return false }
+        guard let zoom else { return true }
         return bool(zoom, kAXEnabledAttribute) == false
     }
 

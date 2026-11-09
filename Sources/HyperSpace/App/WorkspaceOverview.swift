@@ -129,18 +129,11 @@ final class WorkspaceOverview {
 
 struct OverviewView: View {
     struct Card: Identifiable {
-        struct App: Identifiable {
-            let name: String
-            let icon: NSImage?
-            let windows: Int
-            var id: String { name }
-        }
-
         let index: Int
         let name: String
         let keys: String?
         let display: Int?
-        let apps: [App]
+        let apps: [WorkspaceSummary.App]
         var id: Int { index }
 
         init(_ summary: WorkspaceSummary, keys: String?) {
@@ -148,14 +141,7 @@ struct OverviewView: View {
             name = summary.name
             self.keys = keys
             display = summary.display
-            // One entry per app, in the order of its first window, with its window count.
-            var counts: [String: Int] = [:]
-            var first: [WorkspaceSummary.Window] = []
-            for window in summary.windows {
-                if counts[window.app] == nil { first.append(window) }
-                counts[window.app, default: 0] += 1
-            }
-            apps = first.map { App(name: $0.app, icon: $0.icon, windows: counts[$0.app] ?? 1) }
+            apps = summary.apps
         }
     }
 

@@ -259,7 +259,7 @@ extension CaptureModel {
     }
 }
 
-extension RemapModel: CaptureModel {}
+extension KeyboardModel: CaptureModel {}
 extension MouseModel: CaptureModel {}
 extension TilingModel: CaptureModel {}
 

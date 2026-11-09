@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// AX observer for one running application. Notifications are delivered on the
 /// main run loop; nothing is polled.

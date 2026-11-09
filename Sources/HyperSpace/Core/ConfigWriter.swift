@@ -8,9 +8,9 @@ enum ConfigWriter {
         parse(try? Data(contentsOf: ConfigStore.url))
     }
 
-    /// One top-level object of the file ("keyboard", "mouse"…), empty when missing.
-    static func read(section key: String) -> [String: Any] {
-        read()[key] as? [String: Any] ?? [:]
+    /// One top-level object of `root` ("keyboard", "mouse"…), empty when missing.
+    static func section(_ key: String, of root: [String: Any]) -> [String: Any] {
+        root[key] as? [String: Any] ?? [:]
     }
 
     /// Edits one top-level object of `root` in place, creating it when missing.

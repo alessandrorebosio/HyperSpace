@@ -19,7 +19,9 @@ struct ShortcutsView: View {
                                 Text(row.title)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 ShortcutCap(model: model, action: row.actions.0)
+                                    .equatable()
                                 ShortcutCap(model: model, action: row.actions.1)
+                                    .equatable()
                             }
                         }
                     }
@@ -33,6 +35,7 @@ struct ShortcutsView: View {
                     ForEach(group.items, id: \.action) { item in
                         LabeledContent(item.title) {
                             ShortcutCap(model: model, action: item.action)
+                                .equatable()
                         }
                     }
                 } header: {
@@ -86,21 +89,29 @@ struct ShortcutGrid<Rows: View>: View {
 
 /// A key cap showing a shortcut; clicking it records a new one. A slot on its right holds the
 /// warning when the same keys are used twice, and stays when there is none, so caps line up.
-struct ShortcutCap: View {
+///
+/// It takes values, not the model: a page has up to about 30 caps, and each one observing the
+/// whole `TilingModel` would redraw all of them on any change (a keystroke in a workspace name).
+/// The page observes the model and hands each cap what it shows; a cap whose values did not
+/// change is skipped (`Equatable`), label parsing included.
+struct ShortcutCap: View, Equatable {
     static let capWidth: CGFloat = 112
     static let badgeWidth: CGFloat = 16
     static let spacing: CGFloat = 6
     /// The whole width, cap and warning slot.
     static let width = capWidth + spacing + badgeWidth
 
-    @ObservedObject var model: TilingModel
     let keys: String
-    let field: TilingModel.Field
+    let recording: Bool
+    let duplicate: Bool
+    /// Starts or stops recording this cap's field; the same for a given field.
+    let toggle: () -> Void
 
     init(model: TilingModel, keys: String, field: TilingModel.Field) {
-        self.model = model
         self.keys = keys
-        self.field = field
+        recording = model.capturing == field
+        duplicate = model.isDuplicate(keys)
+        toggle = { [weak model] in model?.toggleCapture(field) }
     }
 
     /// The cap of a window shortcut, by action.
@@ -108,16 +119,17 @@ struct ShortcutCap: View {
         self.init(model: model, keys: model.shortcuts.first { $0.action == action }?.keys ?? "", field: .shortcut(action))
     }
 
+    static func == (a: Self, b: Self) -> Bool {
+        a.keys == b.keys && a.recording == b.recording && a.duplicate == b.duplicate
+    }
+
     var body: some View {
-        let recording = model.capturing == field
         HStack(spacing: Self.spacing) {
             KeyCap(text: recording ? "Press keys…" : (keys.isEmpty ? "None" : RemapTarget.label(keys)),
-                   width: Self.capWidth, placeholder: keys.isEmpty, active: recording) {
-                model.toggleCapture(field)
-            }
+                   width: Self.capWidth, placeholder: keys.isEmpty, active: recording, action: toggle)
             ZStack {
                 Color.clear.frame(width: Self.badgeWidth, height: 1)
-                WarningBadge(text: model.isDuplicate(keys) ? "This shortcut is used more than once: only the last one works" : nil)
+                WarningBadge(text: duplicate ? "This shortcut is used more than once: only the last one works" : nil)
             }
         }
     }

@@ -33,7 +33,7 @@ final class EdgeSliders {
     private var config = TrackpadConfig()
     /// Set while a slider is on: trackpads connected later, and wakes, restart the listening.
     private var deviceWatcher: DeviceWatcher?
-    private var pendingRestart: DispatchWorkItem?
+    private let restartDebouncer = Debouncer(delay: 1)
 
     /// Called when a slider starts or ends, to hold the pointer still meanwhile; on the
     /// multitouch thread (or the main thread when the sliders stop), so it must be thread-safe.
@@ -71,7 +71,7 @@ final class EdgeSliders {
 
     /// Stops listening and lets the pointer go (on quit too).
     func stop() {
-        pendingRestart?.cancel()
+        restartDebouncer.cancel()
         if let api {
             for device in devices {
                 api.unregister(device, contactCallback)
@@ -106,14 +106,11 @@ final class EdgeSliders {
 
     /// A trackpad connected (Bluetooth, USB) or the Mac woke: listen again, all of them.
     private func scheduleRestart() {
-        pendingRestart?.cancel()
-        let work = DispatchWorkItem { [weak self] in
+        restartDebouncer.schedule { [weak self] in
             guard let self, config.isActive else { return }
             stop()
             start()
         }
-        pendingRestart = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
     /// Multitouch thread: one frame of one trackpad. The main thread is only bothered when a

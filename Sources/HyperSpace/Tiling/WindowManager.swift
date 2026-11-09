@@ -1,9 +1,13 @@
 import AppKit
-import ApplicationServices
 
 struct ScreenState {
     var layout: LayoutKind
     var ratio: CGFloat
+
+    /// The master area grows by `delta` (a share of the screen), within `TilingConfig.ratioRange`.
+    mutating func adjustRatio(by delta: CGFloat) {
+        ratio = (ratio + delta).clamped(to: TilingConfig.ratioRange)
+    }
 }
 
 struct DragSession {
@@ -53,7 +57,11 @@ final class WindowManager {
     var screenStates: [String: ScreenState] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
-    private var retileScheduled = false
+    /// Bursts of events become one retile, one focus lookup, one snap-back check, one save.
+    private let retileCoalescer = Coalescer(delay: 0.03)
+    private let focusCoalescer = Coalescer()
+    private let snapBackCoalescer = Coalescer(delay: 0.15)
+    let saveCoalescer = Coalescer(delay: 2)
     var drag: DragSession?
     /// Dragging writes to the app on its AX queue, one write at a time with only the latest
     /// point waiting; `dragGeneration` tells the writes of an old drag from the current one.
@@ -112,16 +120,13 @@ final class WindowManager {
     var lastNotice: WorkspaceBar??
     /// Workspaces apps were opened from, for the windows they show while loading.
     var launches = LaunchTracker()
-    private var focusUpdateScheduled = false
-    private var snapBackScheduled = false
     /// Running apps are being picked up at start: retile once they all are.
     private var adopting = false
-    let writer = AXWriter()
+    let axQueues = AXQueues()
     /// The workspaces saved last time, while the windows found at start are matched to them.
     var restorer: WorkspaceRestorer?
     var restoredState: WorkspaceState?
     var restoredIndex: [CGWindowID: Int] = [:]
-    var saveScheduled = false
     /// The last state written (its date left out), so an unchanged state is not written again.
     var lastSaved: WorkspaceState?
     let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
@@ -140,12 +145,14 @@ final class WindowManager {
 
     /// The smallest size resizing by hand (a shortcut, a drag) takes a window to.
     static let minimumWindowSize = CGSize(width: 160, height: 100)
+    /// The least length resizing by a shortcut leaves each of the other tiles of a split.
+    static let minimumTileLength: CGFloat = 80
 
     /// At least one workspace per display, even when fewer are configured.
     var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
 
     func name(of workspace: Int) -> String {
-        workspace < config.workspaces.count ? config.workspaces[workspace] : "\(workspace + 1)"
+        workspace < config.workspaces.count ? config.workspaces[workspace] : TilingConfig.workspaceName(nil, at: workspace)
     }
 
     /// Whether the rules make a window float: a dialog, or an app or title rule. The title (an
@@ -250,7 +257,7 @@ final class WindowManager {
             setFrame(window, frame)
             window.hiddenFrame = nil
         }
-        writer.flush(timeout: 1.5)
+        axQueues.flush(timeout: 1.5)
     }
 
     private func start() {
@@ -415,28 +422,22 @@ final class WindowManager {
 
     /// Coalesces bursts of events (an app opening five windows) into one retile.
     func scheduleRetile() {
-        guard running, !adopting, !retileScheduled else { return }
-        retileScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-            self?.retileScheduled = false
-            self?.retile()
-        }
+        guard running, !adopting else { return }
+        retileCoalescer.schedule { [weak self] in self?.retile() }
     }
 
     /// An app activation and its focused-window change arrive together: one lookup for both.
     func scheduleFocusUpdate() {
-        guard running, !focusUpdateScheduled else { return }
-        focusUpdateScheduled = true
-        DispatchQueue.main.async { [weak self] in
+        guard running else { return }
+        focusCoalescer.schedule { [weak self] in
             guard let self else { return }
-            focusUpdateScheduled = false
             enterScope()
             defer { leaveScope() }
             let window = focused()
             if let window, window.pid != lastFrontPID {
                 // Its app came to the front (⌘Tab, a click, the Dock): its dialogs come along.
                 let dialogs = dialogs(of: window)
-                if !dialogs.isEmpty { writer.perform(window.pid) { dialogs.forEach(AX.raise) } }
+                if !dialogs.isEmpty { axQueues.perform(window.pid) { dialogs.forEach(AX.raise) } }
             }
             lastFrontPID = window?.pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
             followFocus(window)
@@ -446,17 +447,13 @@ final class WindowManager {
 
     /// Retiles once no mouse button is held (the user may still be dragging the window).
     func scheduleSnapBack() {
-        guard running, !snapBackScheduled else { return }
-        snapBackScheduled = true
-        func check() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                guard let self else { return }
-                if NSEvent.pressedMouseButtons != 0 { return check() }
-                snapBackScheduled = false
-                scheduleRetile()
-            }
+        guard running else { return }
+        snapBackCoalescer.schedule { [weak self] in
+            guard let self else { return }
+            // Still held: look again a moment later.
+            if NSEvent.pressedMouseButtons != 0 { return scheduleSnapBack() }
+            scheduleRetile()
         }
-        check()
     }
 
     func retile() {
@@ -560,7 +557,7 @@ final class WindowManager {
         let request = focusRequest
         releaseHeldFocus()
         let dialogs = dialogs(of: window)
-        writer.perform(window.pid) {
+        axQueues.perform(window.pid) {
             AX.focus(window.element, pid: window.pid)
             dialogs.forEach(AX.raise)
         }
@@ -577,7 +574,7 @@ final class WindowManager {
             note("focus did not take for \(window.bundleID ?? "?") window \(window.id), retrying")
             ignoreFocusChanges()
             NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
-            writer.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
+            axQueues.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
         }
     }
 
@@ -606,7 +603,7 @@ final class WindowManager {
         let app = apps[window.pid]?.element
         let element = window.element
         let name = window.bundleID ?? "?"
-        writer.perform(window.pid) { [weak self] in
+        axQueues.perform(window.pid) { [weak self] in
             // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
             // animate every AX resize; switch it off while we move the window.
             let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
@@ -622,8 +619,7 @@ final class WindowManager {
             }
             // Across displays some apps answer the move with a size of their own (kept from
             // the old display, or clamped to it): once more, now that it is on the new one.
-            if !sameDisplay, failure == .success, let size = AX.size(element), let origin = AX.position(element),
-               !CGRect(origin: origin, size: size).isClose(to: frame, tolerance: 1) {
+            if !sameDisplay, failure == .success, let actual = AX.frame(element), !actual.isClose(to: frame, tolerance: 1) {
                 AX.setPosition(element, frame.origin)
                 AX.setSize(element, frame.size)
             }

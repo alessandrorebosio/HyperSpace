@@ -4,4 +4,3 @@ build/
 .swiftpm/
 *.xcodeproj/
 xcuserdata/
-*.whl

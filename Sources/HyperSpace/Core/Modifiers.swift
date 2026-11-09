@@ -1,6 +1,4 @@
 import AppKit
-import CoreGraphics
-import Foundation
 
 struct Modifiers: OptionSet, Hashable {
     let rawValue: UInt8

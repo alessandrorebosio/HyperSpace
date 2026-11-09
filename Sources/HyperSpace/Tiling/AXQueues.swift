@@ -6,7 +6,7 @@ import Foundation
 /// A call waits for the app to answer, up to the AX timeout: an app that is busy or hung
 /// would otherwise hold up every shortcut. Per app the calls stay in order; different apps
 /// no longer wait for each other. State stays on the main thread: reads hand their result back there.
-final class AXWriter {
+final class AXQueues {
     private var queues: [pid_t: DispatchQueue] = [:]
 
     /// Main thread only.

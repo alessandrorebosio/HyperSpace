@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 final class ManagedWindow {
     let id: CGWindowID
@@ -36,26 +35,4 @@ final class ManagedWindow {
         self.pid = pid
         self.bundleID = bundleID
     }
-}
-
-/// What the menu bar shows instead of its icon: the workspace on each display, left to
-/// right, and the index of the focused display.
-struct WorkspaceBar: Equatable {
-    let names: [String]
-    let focused: Int
-}
-
-/// What the menu bar shows for a workspace.
-struct WorkspaceSummary {
-    struct Window {
-        let app: String
-        let title: String?
-        let icon: NSImage?
-    }
-
-    let index: Int
-    let name: String
-    /// 1-based display (left to right) showing it, if any.
-    let display: Int?
-    let windows: [Window]
 }

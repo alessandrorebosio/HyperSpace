@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// Scratchpad: windows kept out of the tiling and shown centered above the others on demand.
 extension WindowManager {
@@ -111,7 +110,7 @@ extension WindowManager {
         // centered on what they took, and the other scratchpad windows take it too.
         let element = window.element
         let misses = { (size: CGSize) in !size.isClose(to: frame.size, tolerance: 1) }
-        writer.perform(window.pid, retryAfter: 0.1) { [weak self] isRetry in
+        axQueues.perform(window.pid, retryAfter: 0.1) { [weak self] isRetry in
             guard var size = AX.size(element) else { return false }
             // Coming from another display, some apps resize themselves a moment after the
             // move (a different scale): look again 0.1 s later (the app's queue is free

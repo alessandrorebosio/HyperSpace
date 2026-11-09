@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// Moving and resizing windows with the mouse: modifier + left drag moves, modifier + right drag resizes.
 extension WindowManager {
@@ -17,9 +16,9 @@ extension WindowManager {
         dragStarting = true
         dragLookup.async { [weak self] in
             let session = AX.window(at: point).flatMap { element -> DragSession? in
-                guard let origin = AX.position(element), let size = AX.size(element) else { return nil }
+                guard let frame = AX.frame(element) else { return nil }
                 return DragSession(mode: mode, element: element, pid: AX.pid(element), id: AX.windowID(element),
-                                   start: point, frame: CGRect(origin: origin, size: size))
+                                   start: point, frame: frame)
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self, generation == dragGeneration, dragStarting else { return }
@@ -31,7 +30,7 @@ extension WindowManager {
                     return
                 }
                 // Focus and moves go through the app's AX queue, in order, off the main thread.
-                writer.perform(session.pid) { AX.focus(session.element, pid: session.pid) }
+                axQueues.perform(session.pid) { AX.focus(session.element, pid: session.pid) }
                 drag = session
                 if let pending = dragPendingPoint {
                     dragPendingPoint = nil
@@ -66,7 +65,7 @@ extension WindowManager {
         let element = session.element
         let frame = session.frame
         let mode = session.mode
-        writer.perform(session.pid) { [weak self] in
+        axQueues.perform(session.pid) { [weak self] in
             switch mode {
             case .move:
                 AX.setPosition(element, CGPoint(x: frame.minX + dx, y: frame.minY + dy))
@@ -121,7 +120,7 @@ extension WindowManager {
             let delta = state.layout == .tall
                 ? (point.x - session.start.x) / screen.visible.width
                 : (point.y - session.start.y) / screen.visible.height
-            state.ratio = (state.ratio + (isMaster ? delta : -delta)).clamped(to: TilingConfig.ratioRange)
+            state.adjustRatio(by: isMaster ? delta : -delta)
             setState(state, for: screen.id)
         }
         scheduleRetile()

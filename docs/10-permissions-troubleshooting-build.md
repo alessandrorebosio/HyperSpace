@@ -87,7 +87,7 @@ make clean      # remove .build and build/
 make test
 ```
 
-Tests use **Swift Testing** (`Tests/HyperSpaceTests/HyperSpaceTests.swift`). **Use `make test`, not plain `swift test`**: with only the Command Line Tools, SwiftPM does not always hand the Swift Testing macro plugin
+Tests use **Swift Testing** (`Tests/HyperSpaceTests/`, one file per area, shared helpers in `TestHelpers.swift`). **Use `make test`, not plain `swift test`**: with only the Command Line Tools, SwiftPM does not always hand the Swift Testing macro plugin
 to the compiler and fails with `plugin for module 'TestingMacros' not found`. The Makefile passes it explicitly (`-Xswiftc -load-plugin-library … libTestingMacros.dylib`, found next to the active `swift`) when it exists.
 
 What is covered: config parsing (default config, workspace shortcuts and rules, rule for an unknown workspace, title rules), carriers and combinations (avoiding bound keys, sharing, invalid combinations), key labels/text, mouse presets parsing, column

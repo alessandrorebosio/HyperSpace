@@ -62,7 +62,7 @@ A left click at the pointer position with those modifiers held (e.g. `click cmd`
 
 - Sets the modifiers (e.g. `ctrl+alt`). With **exactly** those modifiers held: **left drag = move the window**, **right drag = resize**. The click never reaches the window (it and its drag and release are swallowed).
 - On press, HyperSpace finds the window under the pointer (`AXUIElementCopyElementAtPosition`), focuses it and remembers its position and size. During the drag it moves/resizes through AX
-  on the app's `AXWriter` queue (focus first, then the moves, in order), one write at a time with only the newest point waiting; only the latest position travels from the tap to the main thread. Resize has a 160×100 minimum.
+  on the app's `AXQueues` queue (focus first, then the moves, in order), one write at a time with only the newest point waiting; only the latest position travels from the tap to the main thread. Resize has a 160×100 minimum.
 - No retile happens while dragging (`drag != nil`).
 - It works on windows of any app, even with tiling off (then it just moves/resizes).
 

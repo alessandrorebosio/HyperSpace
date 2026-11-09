@@ -1,15 +1,15 @@
 import SwiftUI
 
 /// The Keyboard page: the keyboard lock and the key remaps.
-struct RemapView: View {
-    @ObservedObject var model: RemapModel
+struct KeyboardView: View {
+    @ObservedObject var model: KeyboardModel
 
     var body: some View {
         Form {
             PageHero(page: .keyboard)
 
             Section {
-                KeyboardLockRow(model: model)
+                KeyboardLockRow(model: model, countdown: model.unlockCountdown)
                 SettingRow(title: "Unlock automatically", detail: "When nobody unlocks it with the mouse first.") {
                     Picker("Unlock automatically", selection: $model.lockMinutes) {
                         ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
@@ -48,7 +48,8 @@ struct RemapView: View {
 
 /// The lock's state, with the one button that changes it.
 private struct KeyboardLockRow: View {
-    @ObservedObject var model: RemapModel
+    @ObservedObject var model: KeyboardModel
+    @ObservedObject var countdown: UnlockCountdown
 
     var body: some View {
         HStack(spacing: 12) {
@@ -69,7 +70,7 @@ private struct KeyboardLockRow: View {
 
     private var detail: String {
         guard model.isKeyboardLocked else { return "Lock it to clean it without typing anything." }
-        if let left = model.unlocksIn { return "Unlocks by itself in \(left)." }
+        if let left = countdown.text { return "Unlocks by itself in \(left)." }
         return "Click Unlock to type again."
     }
 }
@@ -77,8 +78,8 @@ private struct KeyboardLockRow: View {
 /// One remap: physical key → what it becomes, on which keyboards. On one line when it fits,
 /// otherwise the keys on the first line and the keyboard under them.
 private struct RuleRow: View {
-    @ObservedObject var model: RemapModel
-    let rule: RemapModel.Rule
+    @ObservedObject var model: KeyboardModel
+    let rule: KeyboardModel.Rule
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -119,7 +120,7 @@ private struct RuleRow: View {
     private var keyboardPicker: some View {
         Picker("Keyboards", selection: Binding(get: { rule.keyboard }, set: { model.setKeyboard($0, for: rule.id) })) {
             ForEach(model.keyboardOptions(for: rule), id: \.self) { option in
-                Text(RemapModel.keyboardLabel(option)).tag(option)
+                Text(KeyboardModel.keyboardLabel(option)).tag(option)
             }
         }
         .labelsHidden()

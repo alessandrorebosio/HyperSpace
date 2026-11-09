@@ -377,9 +377,8 @@ extension StatusMenu {
             let title = Self.title(workspace.name + "\t", symbol: "macwindow",
                                    attributes: [.font: font.bold, .paragraphStyle: tabs])
             // One icon per app, in tiling order.
-            var seen = Set<String>()
-            for window in workspace.windows where seen.insert(window.app).inserted {
-                guard let icon = window.icon?.copy() as? NSImage else { continue }
+            for app in workspace.apps {
+                guard let icon = app.icon?.copy() as? NSImage else { continue }
                 icon.size = NSSize(width: 18, height: 18)
                 let attachment = NSTextAttachment()
                 attachment.image = icon

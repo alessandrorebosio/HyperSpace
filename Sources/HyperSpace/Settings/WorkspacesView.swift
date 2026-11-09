@@ -25,7 +25,9 @@ struct WorkspacesView: View {
                                     .labelsHidden()
                                     .frame(width: 120)
                                 ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
+                                    .equatable()
                                 ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
+                                    .equatable()
                                 Picker("Display", selection: Binding(get: { workspace.display },
                                                                      set: { model.setDisplay($0, for: workspace.id) })) {
                                     ForEach(model.displayOptions(for: workspace, screens: screens), id: \.self) { option in

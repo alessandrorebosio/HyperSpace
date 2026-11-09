@@ -11,7 +11,7 @@ Sources/HyperSpace/
 ├── Mouse/              DragController (bridge between tap and window manager), EdgeSliders + EdgeSliderTracker (trackpad edges)
 ├── Settings/           SwiftUI settings window (models + views)
 └── Tiling/             WindowManager, layouts, workspaces, AX, scratchpad
-Tests/HyperSpaceTests/  Swift Testing tests (one file)
+Tests/HyperSpaceTests/  Swift Testing tests, one file per area
 Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 .github/                CI: build, test and settings screenshots on macOS
 ```
@@ -27,7 +27,8 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 ### `Core/`
 - **`Config.swift`**: `RawConfig` (the JSON as written) → `Config` (validated and compiled: `remaps`, `TapConfig`, `TilingConfig`). `TapConfig` holds the lookup tables used by the event tap.
 - **`DefaultConfig.swift`**, **`ConfigStore.swift`** (load, watch, reload), **`ConfigWriter.swift`** (rewrites the file for the settings UI).
-- **`Action.swift`** (text → `Action`), **`ActionRunner.swift`** (runs on the main thread), **`SystemActions.swift`** (`Navigation`, `SystemAction`, `MediaKey`, `Pointer`), **`AppLauncher.swift`**, **`Peripherals.swift`** (battery of wireless keyboards, mice, trackpads).
+- **`Action.swift`** (text → `Action`), **`ActionRunner.swift`** (runs on the main thread), **`SystemActions.swift`** (`Navigation`, `SystemAction`, `MediaKey`), **`Pointer.swift`** (pointer location, warp, synthetic clicks), **`AppLauncher.swift`**, **`Peripherals.swift`** (battery of wireless keyboards, mice, trackpads).
+- **`Log.swift`** (`log`, `AppInfo`), **`Extensions.swift`** (`nilIfEmpty`, `clamped`), **`Scheduling.swift`** (`asyncAfter(delays:)`, `Debouncer` for "last one wins after a pause", `Coalescer` for "one run per burst").
 - **`EventTap.swift`**: the single active `CGEventTap`, shared by keyboard and mouse.
 - **`KeyCodes.swift`**: key table (name ↔ virtual keycode ↔ HID usage; the modifier key codes come from it). **`Modifiers.swift`**: `Modifiers` and `KeyCombo` with the one parser for modifier lists (also used by `RemapTarget`), and the conversions from `CGEventFlags` and `NSEvent.ModifierFlags`.
 - **`RemapTarget.swift`**: remap destination (single key or combination) and `CarrierPool`.
@@ -42,14 +43,14 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 `EdgeSliders`: the trackpad edge sliders, from MultitouchSupport's frames (on its own thread) through `EdgeSliderTracker` to volume and brightness keys posted on the main thread ([details](04-mouse.md#trackpad-edge-sliders-trackpad)).
 
 ### `Tiling/`
-- **`WindowManager`** (class, stored state, command scope, lifecycle, tracking, layout, mouse drag) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow` and `WorkspaceSummary`.
+- **`WindowManager`** (class, stored state, command scope, lifecycle, tracking, layout, mouse drag) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow`; **`WorkspaceSummary`** holds `WorkspaceSummary` (with its per-app list) and `WorkspaceBar`.
 - **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `CGRect.centered`), **`ScreenInfo`** (a display's frames, UUID, relocating and centering), **`ColumnLayout`** (i3-style columns).
-- **`AppWatcher`** (one `AXObserver` per app), **`AXWriter`** (per-app serial queues), **`AX`** (Accessibility API helpers, `AX.probe`).
+- **`AppWatcher`** (one `AXObserver` per app), **`AXQueues`** (per-app serial queues), **`AX`** (Accessibility API helpers; `AX.probe` and `AX.frame` read their attributes in one round trip).
 - **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible window HyperSpace clicks on an empty workspace's display, so HyperSpace becomes the active app there and that display the active one).
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
-SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`RemapModel`, `MouseModel`, `TilingModel`, `GeneralModel`), one view file per page (`RemapView`, `MouseView`, `TilingView`, `WorkspacesView`, `WindowRulesView`, `ShortcutsView`, `GeneralView`), and the shared components in `Components.swift`. The models hold the state, record keys and buttons and save; the views only call them. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
+SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`KeyboardModel`, `MouseModel`, `TrackpadModel`, `TilingModel`, `GeneralModel`, each in its own file), one view file per page (`KeyboardView`, `MouseView`, `TilingView`, `WorkspacesView`, `WindowRulesView`, `ShortcutsView`, `GeneralView`), and the shared components in `Components.swift`. The models hold the state, record keys and buttons and save; the views only call them. The config file is read once for all of them when the window opens. A `@Published` assignment redraws every view observing the model, equal value or not, so setters assign only changes, and state that changes often (the unlock countdown, the floating rule being typed) lives in its own small `ObservableObject`; shortcut caps take values and are `Equatable`. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
 
 ## Threads and queues
 
@@ -58,7 +59,7 @@ SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`
 | **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. The hot path reads plain arrays and takes no locks of its own; the only allocation is the `CGEvent` a carrier posts (`DragController` does take a short lock to hand over the drag point). |
 | **MultitouchSupport thread** (only with the edge sliders on) | Trackpad frames: `EdgeSliderTracker` runs there behind a lock; only notches and the start or end of a hold go to the main thread. |
 | **Main thread** | Everything else: window state, actions, AX reads, `NSWorkspace`/AX notifications, UI. |
-| **`AXWriter` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
+| **`AXQueues` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
 | **`HyperSpace.state` queue** (QoS `utility`) | Reads titles and writes `workspaces.json` off the main thread. |
 
 Communication rules:
@@ -66,7 +67,7 @@ Communication rules:
 - **Config → tap**: `EventTap.apply(_:)` hands the new `TapConfig` to the tap thread with `CFRunLoopPerformBlock`, unless it equals the one the tap already has. On the way, on the main thread, the keys of combinations are translated to the active keyboard layout (`TapConfig.translated`, see [Keyboard](03-keyboard.md#keyboard-layouts-and-symbols)); the tap thread never asks the input sources.
 - **Tap → actions**: an action triggered by the tap runs with `DispatchQueue.main.async`.
 - **Tap → drag**: `DragController` keeps only the latest point behind an `OSAllocatedUnfairLock` and schedules at most one pending main-thread update: no backlog even with a 1000 Hz mouse.
-- **Main → apps**: AX writes go through `AXWriter.perform(pid)`; window discovery reads through `AXWriter.read(pid, …)`, whose result comes back to the main thread. State stays on the main thread, as do the few reads a command needs at once. Modifier + drag writes (focus, move, resize) go through the same queues, one write in flight with only the newest point waiting.
+- **Main → apps**: AX writes go through `AXQueues.perform(pid)`; window discovery reads through `AXQueues.read(pid, …)`, whose result comes back to the main thread. State stays on the main thread, as do the few reads a command needs at once. Modifier + drag writes (focus, move, resize) go through the same queues, one write in flight with only the newest point waiting.
 - AX timeout is 0.5 s (on the system-wide element and on every `AppWatcher`) instead of the 6 s default.
 
 ## Data flow: from config to features

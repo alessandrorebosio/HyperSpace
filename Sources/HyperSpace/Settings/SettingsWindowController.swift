@@ -5,10 +5,11 @@ import SwiftUI
 /// Which page of the settings window is shown.
 final class SettingsNavigation: ObservableObject {
     enum Page: Hashable, CaseIterable {
-        case keyboard, mouse, trackpad, tiling, workspaces, windowRules, shortcuts, settings
+        case keyboard, mouse, trackpad, tiling, workspaces, windowRules, shortcuts, general
 
-        /// Pages whose features stay off without the Accessibility permission.
-        var needsPermission: Bool { self != .keyboard && self != .trackpad && self != .settings }
+        /// Pages whose features stay off, fully or in part, without the Accessibility permission
+        /// (the trackpad's sliders hold the pointer still through the event tap).
+        var needsPermission: Bool { self != .keyboard && self != .general }
 
         var title: String {
             switch self {
@@ -19,7 +20,7 @@ final class SettingsNavigation: ObservableObject {
             case .workspaces: return "Workspaces"
             case .windowRules: return "Window Rules"
             case .shortcuts: return "Shortcuts"
-            case .settings: return "General"
+            case .general: return "General"
             }
         }
 
@@ -32,13 +33,13 @@ final class SettingsNavigation: ObservableObject {
             case .workspaces: return "square.stack.3d.up.fill"
             case .windowRules: return "macwindow.on.rectangle"
             case .shortcuts: return "command"
-            case .settings: return "gearshape.fill"
+            case .general: return "gearshape.fill"
             }
         }
 
         var color: Color {
             switch self {
-            case .keyboard, .settings: return Color(red: 0.49, green: 0.50, blue: 0.54)
+            case .keyboard, .general: return Color(red: 0.49, green: 0.50, blue: 0.54)
             case .mouse: return Color(red: 0.10, green: 0.48, blue: 0.96)
             case .trackpad: return Color(red: 0.05, green: 0.66, blue: 0.72)
             case .tiling: return Color(red: 0.31, green: 0.33, blue: 0.90)
@@ -58,7 +59,7 @@ final class SettingsNavigation: ObservableObject {
             case .workspaces: return "Virtual workspaces, their shortcuts and the apps that open in each."
             case .windowRules: return "Windows that float and apps kept in the scratchpad."
             case .shortcuts: return "Keys to move the focus and windows, resize and change display."
-            case .settings: return "Startup, the configuration file and permissions."
+            case .general: return "Startup, the configuration file and permissions."
             }
         }
     }
@@ -72,17 +73,19 @@ final class SettingsNavigation: ObservableObject {
 
 /// The models behind the settings pages, built together for a window (or for the snapshots).
 struct SettingsModels {
-    let keyboard: RemapModel
+    let keyboard: KeyboardModel
     let mouse: MouseModel
     let trackpad: TrackpadModel
     let tiling: TilingModel
     let general: GeneralModel
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
-        keyboard = RemapModel(remapper: remapper, eventTap: eventTap)
-        mouse = MouseModel(eventTap: eventTap)
-        trackpad = TrackpadModel()
-        tiling = TilingModel(eventTap: eventTap)
+        // The file is read once for every page.
+        let config = ConfigWriter.read()
+        keyboard = KeyboardModel(remapper: remapper, eventTap: eventTap, config: config)
+        mouse = MouseModel(eventTap: eventTap, config: config)
+        trackpad = TrackpadModel(config: config)
+        tiling = TilingModel(eventTap: eventTap, config: config)
         general = GeneralModel(actions: actions)
     }
 
@@ -96,7 +99,7 @@ struct SettingsModels {
 
 struct SettingsRoot: View {
     @ObservedObject var navigation: SettingsNavigation
-    let keyboard: RemapModel
+    let keyboard: KeyboardModel
     let mouse: MouseModel
     let trackpad: TrackpadModel
     let tiling: TilingModel
@@ -118,7 +121,7 @@ struct SettingsRoot: View {
             List(selection: $navigation.page) {
                 sidebarSection("Input", [.keyboard, .mouse, .trackpad])
                 sidebarSection("Windows", [.tiling, .workspaces, .windowRules, .shortcuts])
-                sidebarSection("HyperSpace", [.settings])
+                sidebarSection("HyperSpace", [.general])
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 SidebarStatus(general: general)
@@ -130,14 +133,14 @@ struct SettingsRoot: View {
             let page = navigation.page ?? .keyboard
             Group {
                 switch page {
-                case .keyboard: RemapView(model: keyboard)
+                case .keyboard: KeyboardView(model: keyboard)
                 case .mouse: MouseView(model: mouse)
                 case .trackpad: TrackpadView(model: trackpad)
                 case .tiling: TilingView(model: tiling)
                 case .workspaces: WorkspacesView(model: tiling)
                 case .windowRules: WindowRulesView(model: tiling)
                 case .shortcuts: ShortcutsView(model: tiling)
-                case .settings: GeneralView(model: general)
+                case .general: GeneralView(model: general)
                 }
             }
             .navigationTitle(page.title)
@@ -283,6 +286,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         remapper.onKeyboardsChanged = nil
         window = nil
         models = nil
+        AppLauncher.forgetAppInfo()
         NSApp.setActivationPolicy(.accessory)
     }
 }

@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 
 /// Tracking: the apps watched over AX, their windows found and followed (created, closed,
 /// moved, refocused, retitled), and where each new window goes.
@@ -21,7 +20,7 @@ extension WindowManager {
 
     func removeApp(_ pid: pid_t) {
         apps.removeValue(forKey: pid)?.invalidate()
-        writer.forget(pid)
+        axQueues.forget(pid)
         focusedIn[pid] = nil
         focusEpoch[pid] = nil
         for id in windowIDs[pid] ?? [] { untrack(id) }
@@ -35,7 +34,7 @@ extension WindowManager {
         let pid = watcher.pid
         let app = watcher.element
         pendingDiscoveries += 1
-        writer.read(pid, {
+        axQueues.read(pid, {
             let main = AX.element(app, kAXMainWindowAttribute).flatMap(AX.windowID)
             let focused = AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID)
             return (AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
@@ -254,7 +253,7 @@ extension WindowManager {
             // Read on the app's AX queue: a slow app must not hold up the main thread. Many
             // windows set their title a moment after opening: title rules apply then.
             guard let window = managed(element, pid: pid) else { return }
-            writer.read(pid, { AX.string(element, kAXTitleAttribute) }, then: { [weak self] title in
+            axQueues.read(pid, { AX.string(element, kAXTitleAttribute) }, then: { [weak self] title in
                 guard let self, windows[window.id] === window else { return }
                 window.title = title
                 guard !config.floatingWindows.isEmpty, !window.userOverride else { return }
@@ -271,7 +270,7 @@ extension WindowManager {
     /// A new window: described on its app's AX queue, then tracked. A window AX does not
     /// describe yet (no subrole) is looked at again a few times.
     private func windowCreated(_ element: AXUIElement, pid: pid_t, attempt: Int = 0) {
-        writer.read(pid, { AX.probe(element, pid: pid) }, then: { [weak self] probe in
+        axQueues.read(pid, { AX.probe(element, pid: pid) }, then: { [weak self] probe in
             guard let self, running, let watcher = apps[pid] else { return }
             enterScope()
             defer { leaveScope() }
