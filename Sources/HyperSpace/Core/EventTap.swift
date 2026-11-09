@@ -27,6 +27,8 @@ final class EventTap {
     private var layoutObserver: NSObjectProtocol?
 
     private let onAction: (Action) -> Void
+    /// The workspace overview: shown with the key held (its key code), hidden on release (nil).
+    private let onOverview: (UInt16?) -> Void
     private let drag: DragController
     private var runLoop: CFRunLoop!
 
@@ -40,6 +42,8 @@ final class EventTap {
     private var heldModifiers: Modifiers = []
     private var swallowedKeys = [Bool](repeating: false, count: 128)
     private var swallowedButtons = [Bool](repeating: false, count: 32)
+    /// The key code holding the workspace overview open, or -1.
+    private var overviewKey = -1
     /// Set while the settings window captures a mouse button: buttons reach the app unmapped.
     private var buttonsSuspended = false
     /// Set while the settings window captures a shortcut: key bindings are ignored
@@ -50,9 +54,10 @@ final class EventTap {
     /// Where the pointer is held while a trackpad edge slider is in progress.
     private var heldPointer: CGPoint?
 
-    init(drag: DragController, onAction: @escaping (Action) -> Void) {
+    init(drag: DragController, onAction: @escaping (Action) -> Void, onOverview: @escaping (UInt16?) -> Void) {
         self.drag = drag
         self.onAction = onAction
+        self.onOverview = onOverview
 
         let ready = DispatchSemaphore(value: 0)
         let thread = Thread { [unowned self] in
@@ -118,6 +123,15 @@ final class EventTap {
     /// Tap thread: the key-ups still owed to a swallowed key down are not swallowed any more.
     private func clearSwallowedKeys() {
         for i in swallowedKeys.indices { swallowedKeys[i] = false }
+        releaseOverview()
+    }
+
+    /// Tap thread: the key holding the overview went up (or is forgotten): it closes.
+    private func releaseOverview() {
+        guard overviewKey >= 0 else { return }
+        overviewKey = -1
+        let onOverview = onOverview
+        DispatchQueue.main.async { onOverview(nil) }
     }
 
     /// Tap thread: the same for mouse buttons.
@@ -286,11 +300,21 @@ final class EventTap {
             let index = config.keyTable[TapConfig.slot(code, Modifiers(event.flags))]
             guard index >= 0 else { return false }
             swallowedKeys[code] = true
-            dispatch(config.actions[Int(index)])
+            let action = config.actions[Int(index)]
+            if action == .workspaceOverview {
+                // Open while the key is down: autorepeat changes nothing, the key up closes it.
+                guard overviewKey != code else { return true }
+                overviewKey = code
+                let onOverview = onOverview
+                DispatchQueue.main.async { onOverview(UInt16(code)) }
+                return true
+            }
+            dispatch(action)
             return true
         }
         if swallowedKeys[code] {
             swallowedKeys[code] = false
+            if code == overviewKey { releaseOverview() }
             return true
         }
         return false

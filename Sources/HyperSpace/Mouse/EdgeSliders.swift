@@ -118,11 +118,11 @@ final class EdgeSliders {
 
     /// Multitouch thread: one frame of one trackpad. The main thread is only bothered when a
     /// notch is crossed (frames come about 100 times a second).
-    fileprivate func frame(_ device: UnsafeMutableRawPointer, _ touches: [EdgeTouch]) {
+    fileprivate func frame(_ device: UnsafeMutableRawPointer, first: EdgeTouch?, count: Int) {
         let key = Int(bitPattern: device)
         let (steps, holdChange) = state.withLock { state -> ([EdgeStep], Bool?) in
             var tracker = state.trackers[key] ?? EdgeSliderTracker(left: state.left, right: state.right)
-            let steps = tracker.update(touches)
+            let steps = tracker.update(first: first, count: count)
             state.trackers[key] = tracker
             let holding = state.trackers.values.contains { $0.holding }
             defer { state.holding = holding }
@@ -191,17 +191,23 @@ private enum TouchLayout {
 
 private let contactCallback: MultitouchAPI.Callback = { device, touches, count, _, _ in
     guard let device, let sliders = EdgeSliders.shared else { return 0 }
-    var fingers: [EdgeTouch] = []
+    // Only the number of fingers on the surface and the first of them: nothing is allocated
+    // per frame (about 100 a second).
+    var first: EdgeTouch?
+    var fingers = 0
     if let touches, count > 0 {
         for index in 0..<Int(count) {
             let base = touches + index * TouchLayout.stride
             let state = base.load(fromByteOffset: TouchLayout.state, as: Int32.self)
             guard TouchLayout.onSurface.contains(state) else { continue }
-            fingers.append(EdgeTouch(id: base.load(fromByteOffset: TouchLayout.identifier, as: Int32.self),
-                                     x: base.load(fromByteOffset: TouchLayout.normalizedX, as: Float.self),
-                                     y: base.load(fromByteOffset: TouchLayout.normalizedY, as: Float.self)))
+            fingers += 1
+            if first == nil {
+                first = EdgeTouch(id: base.load(fromByteOffset: TouchLayout.identifier, as: Int32.self),
+                                  x: base.load(fromByteOffset: TouchLayout.normalizedX, as: Float.self),
+                                  y: base.load(fromByteOffset: TouchLayout.normalizedY, as: Float.self))
+            }
         }
     }
-    sliders.frame(device, fingers)
+    sliders.frame(device, first: first, count: fingers)
     return 0
 }

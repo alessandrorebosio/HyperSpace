@@ -55,17 +55,22 @@ struct EdgeSliderTracker {
 
     /// Takes the fingers on the trackpad in one frame; returns the notches it crossed.
     mutating func update(_ touches: [EdgeTouch]) -> [EdgeStep] {
-        guard !touches.isEmpty else {
+        update(first: touches.first, count: touches.count)
+    }
+
+    /// The same from the number of fingers and the first of them: only a lone finger matters,
+    /// so a frame needs no array of its fingers.
+    mutating func update(first: EdgeTouch?, count: Int) -> [EdgeStep] {
+        guard count > 0, let touch = first else {
             slider = nil
             ignoring = false
             return []
         }
-        guard touches.count == 1, !ignoring else {
+        guard count == 1, !ignoring else {
             slider = nil
             ignoring = true
             return []
         }
-        let touch = touches[0]
         guard var current = slider, current.id == touch.id else {
             // A new finger: a slider only when it lands in a band that does something.
             let side: Side? = touch.x < Self.edgeWidth ? .left : touch.x > 1 - Self.edgeWidth ? .right : nil

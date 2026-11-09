@@ -265,6 +265,7 @@ Floating (an app with no title = all its windows). It also applies to windows th
 | `focus-display` | Focuses a window on the next display |
 | `move-workspace-to-display` | Moves the active workspace (windows and arrangement) to the next display |
 | `workspace <n>` / `workspace back-and-forth` | Shows workspace n / goes back to the previous one |
+| `workspace-overview` | While the key is held, shows every workspace with its apps and the shortcut that shows it (on a mouse button: until pressed again) |
 | `move-to-workspace <n>` | Moves the focused window to workspace n |
 | `resize width\|height <points>` | Widens/narrows the window (e.g. `resize width +50`): when tiled it moves the master/column split or changes the window's share of the column |
 | `launch <App Name or bundle id>` | Opens/activates an app |

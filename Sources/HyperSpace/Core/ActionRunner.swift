@@ -4,10 +4,12 @@ import AppKit
 final class ActionRunner {
     private let windowManager: WindowManager
     private let reload: () -> Void
+    private let overview: WorkspaceOverview
     private var children: Set<Process> = []
 
-    init(windowManager: WindowManager, reload: @escaping () -> Void) {
+    init(windowManager: WindowManager, overview: WorkspaceOverview, reload: @escaping () -> Void) {
         self.windowManager = windowManager
+        self.overview = overview
         self.reload = reload
     }
 
@@ -39,6 +41,7 @@ final class ActionRunner {
         case .click(let mods): Pointer.click(mods)
         case .scratchpad(let app): windowManager.toggleScratchpad(app: app)
         case .moveToScratchpad(let app): windowManager.moveToScratchpad(app: app)
+        case .workspaceOverview: overview.toggle()
         }
     }
 

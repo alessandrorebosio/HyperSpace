@@ -63,6 +63,7 @@ final class TilingModel: ObservableObject {
         ]),
         ("More", [
             ("Previous workspace", "workspace back-and-forth"),
+            ("Show workspaces while held", "workspace-overview"),
             ("Toggle floating", "float"),
             ("Stack windows as an accordion", "accordion"),
             ("Move window to or from the scratchpad", "move-to-scratchpad"),

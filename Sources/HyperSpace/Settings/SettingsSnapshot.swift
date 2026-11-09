@@ -36,7 +36,7 @@ enum SettingsSnapshot {
 
         // The models, built the way the settings window builds them, with nothing behind them.
         let windowManager = WindowManager()
-        let eventTap = EventTap(drag: DragController(windowManager: windowManager)) { _ in }
+        let eventTap = EventTap(drag: DragController(windowManager: windowManager), onAction: { _ in }, onOverview: { _ in })
         let keyboard = RemapModel(remapper: KeyboardRemapper(), eventTap: eventTap)
         let mouse = MouseModel(eventTap: eventTap)
         let trackpad = TrackpadModel()

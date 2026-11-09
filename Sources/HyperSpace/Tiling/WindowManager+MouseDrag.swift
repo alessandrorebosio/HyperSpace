@@ -5,21 +5,51 @@ import ApplicationServices
 extension WindowManager {
     // MARK: - Mouse drag (modifier + left drag moves, modifier + right drag resizes)
 
+    /// The window under the pointer is looked up off the main thread (an app slow to answer
+    /// must not hold up the shortcuts); the points that arrive meanwhile wait, the latest only.
     func beginDrag(_ mode: DragMode, at point: CGPoint) {
-        guard let element = AX.window(at: point),
-              let origin = AX.position(element), let size = AX.size(element) else { return }
-        // Focus and moves go through the app's AX queue, in order, off the main thread.
-        let pid = AX.pid(element)
-        writer.perform(pid) { AX.focus(element, pid: pid) }
         dragGeneration += 1
+        let generation = dragGeneration
+        drag = nil
         dragWriteInFlight = false
         dragPendingPoint = nil
-        drag = DragSession(mode: mode, element: element, pid: pid, id: AX.windowID(element), start: point,
-                           frame: CGRect(origin: origin, size: size))
+        dragEndedEarly = nil
+        dragStarting = true
+        dragLookup.async { [weak self] in
+            let session = AX.window(at: point).flatMap { element -> DragSession? in
+                guard let origin = AX.position(element), let size = AX.size(element) else { return nil }
+                return DragSession(mode: mode, element: element, pid: AX.pid(element), id: AX.windowID(element),
+                                   start: point, frame: CGRect(origin: origin, size: size))
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, generation == dragGeneration, dragStarting else { return }
+                dragStarting = false
+                guard let session else {
+                    dragPendingPoint = nil
+                    dragEndedEarly = nil
+                    scheduleRetile()
+                    return
+                }
+                // Focus and moves go through the app's AX queue, in order, off the main thread.
+                writer.perform(session.pid) { AX.focus(session.element, pid: session.pid) }
+                drag = session
+                if let pending = dragPendingPoint {
+                    dragPendingPoint = nil
+                    writeDrag(session, to: pending)
+                }
+                if let end = dragEndedEarly {
+                    dragEndedEarly = nil
+                    endDrag(at: end)
+                }
+            }
+        }
     }
 
     func updateDrag(to point: CGPoint) {
-        guard let drag else { return }
+        guard let drag else {
+            if dragStarting { dragPendingPoint = point }
+            return
+        }
         // One write at a time: while the app is busy only the newest point waits.
         if dragWriteInFlight {
             dragPendingPoint = point
@@ -57,6 +87,10 @@ extension WindowManager {
     }
 
     func endDrag(at point: CGPoint) {
+        if drag == nil, dragStarting {
+            dragEndedEarly = point
+            return
+        }
         enterScope()
         defer { leaveScope() }
         guard let session = drag else { return }

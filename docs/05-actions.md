@@ -25,6 +25,7 @@ Window-manager commands only work while tiling is on (`running`), otherwise they
 | Action | Arguments | Effect |
 |---|---|---|
 | `workspace` | `<n>` (from 1) \| `back-and-forth` | Show workspace n on *its* display and focus it; `back-and-forth` returns to the last focused workspace. |
+| `workspace-overview` | (none) | While the shortcut's key is held, a panel shows every workspace with its apps and the shortcut that shows it; releasing the key closes it. Bound to a mouse button, it opens and closes on each press. |
 | `move-to-workspace` | `<n>` (from 1) | Move the focused window (only it) to workspace n. |
 | `focus-display` | — | Focus the window of the workspace shown on the next display (wraps around). Needs more than one display. |
 | `move-workspace-to-display` | — | Move the whole focused workspace (windows and arrangement) to the next display, where it is now "at home". Needs more than one display. |

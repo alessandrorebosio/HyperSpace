@@ -60,6 +60,12 @@ final class WindowManager {
     var dragWriteInFlight = false
     var dragPendingPoint: CGPoint?
     var dragGeneration = 0
+    /// The window under the pointer is being looked up (off the main thread) for a new drag;
+    /// a release meanwhile is kept and played once it is found.
+    var dragStarting = false
+    var dragEndedEarly: CGPoint?
+    /// Finds the window a drag starts on: an AX hit test that a hung app answers slowly.
+    let dragLookup = DispatchQueue(label: "HyperSpace.dragLookup", qos: .userInteractive)
     private lazy var refcon = Unmanaged.passUnretained(self).toOpaque()
 
     /// The workspace each display shows.
@@ -76,6 +82,11 @@ final class WindowManager {
     lazy var focusAnchor = FocusAnchor()
     /// The app focused last, to bring dialogs forward only when their app comes to the front.
     private var lastFrontPID: pid_t?
+    /// Each watched app's focused window (0: none), kept from its focus notifications so that
+    /// commands need no AX round trip (see `readFocused`).
+    var focusedIn: [pid_t: CGWindowID] = [:]
+    /// Counts each app's focus notifications: a lookup started before a newer one is dropped.
+    var focusEpoch: [pid_t: Int] = [:]
     /// The workspace each display showed before the current one.
     var shownBefore: [CGDirectDisplayID: Int] = [:]
     /// Column arrangement of each workspace (columns layout), accordions included.
@@ -270,6 +281,7 @@ final class WindowManager {
             noteLaunch(app)
             if let watcher = apps[app.processIdentifier] {
                 discover(watcher)
+                refreshFocused(app.processIdentifier)
             } else {
                 addApp(app)
             }
@@ -388,6 +400,8 @@ final class WindowManager {
         shownBefore.removeAll()
         activeDisplay = nil
         lastFrontPID = nil
+        focusedIn.removeAll()
+        focusEpoch.removeAll()
         pendingDiscoveries = 0
         afterDiscoveries.removeAll()
     }
@@ -422,6 +436,8 @@ final class WindowManager {
     private func removeApp(_ pid: pid_t) {
         apps.removeValue(forKey: pid)?.invalidate()
         writer.forget(pid)
+        focusedIn[pid] = nil
+        focusEpoch[pid] = nil
         for id in windowIDs[pid] ?? [] { untrack(id) }
         scheduleRetile()
     }
@@ -435,13 +451,16 @@ final class WindowManager {
         pendingDiscoveries += 1
         writer.read(pid, {
             let main = AX.element(app, kAXMainWindowAttribute).flatMap(AX.windowID)
-            return AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid, main: .some(main)) }
-        }, then: { [weak self] probes in
+            let focused = AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID)
+            return (AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
+        }, then: { [weak self] (probes: [AX.WindowProbe], focused: CGWindowID?) in
             guard let self else { return }
             enterScope()
             defer { leaveScope() }
             var found = false
             if running, apps[pid] === watcher {
+                // Known from here on (a notification since then knows better).
+                if focusedIn[pid] == nil { focusedIn[pid] = focused ?? 0 }
                 for probe in probes where track(probe, in: watcher) != nil { found = true }
             }
             if found { scheduleRetile() }
@@ -637,6 +656,13 @@ final class WindowManager {
                   Date().timeIntervalSince(window.movedByUs) > 0.5 else { return }
             scheduleSnapBack()
         case kAXFocusedWindowChangedNotification:
+            if let window = managed(element, pid: pid) {
+                noteFocused(window.id, of: pid)
+            } else {
+                // A window not tracked yet: none until its id comes back from the app's queue.
+                noteFocused(nil, of: pid)
+                refreshFocused(pid)
+            }
             scheduleFocusUpdate()
         case kAXTitleChangedNotification:
             // Read on the app's AX queue: a slow app must not hold up the main thread. Many
@@ -725,7 +751,7 @@ final class WindowManager {
     }
 
     /// An app activation and its focused-window change arrive together: one lookup for both.
-    private func scheduleFocusUpdate() {
+    func scheduleFocusUpdate() {
         guard running, !focusUpdateScheduled else { return }
         focusUpdateScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -761,7 +787,7 @@ final class WindowManager {
     }
 
     func retile() {
-        guard running, config.enabled, drag == nil else { return }
+        guard running, config.enabled, drag == nil, !dragStarting else { return }
         enterScope()
         defer { leaveScope() }
         syncDisplays()

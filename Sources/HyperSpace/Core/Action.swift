@@ -52,6 +52,9 @@ enum Action: Equatable {
     /// The focused window (or the app's window) goes to the scratchpad, or from it back into
     /// the tiling.
     case moveToScratchpad(String?)
+    /// Shows every workspace with its apps and its shortcut while the key is held (a mouse
+    /// button shows it until pressed again).
+    case workspaceOverview
 
     static func parse(_ text: String) throws -> Action {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
@@ -119,6 +122,7 @@ enum Action: Equatable {
         case "click": return .click(try Modifiers.parse(arg))
         case "scratchpad": return .scratchpad(arg.isEmpty ? nil : arg)
         case "move-to-scratchpad": return .moveToScratchpad(arg.isEmpty ? nil : arg)
+        case "workspace-overview": return .workspaceOverview
         default: throw ConfigError("unknown action '\(text)'")
         }
     }

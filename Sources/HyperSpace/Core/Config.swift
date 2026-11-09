@@ -223,6 +223,8 @@ struct TilingConfig {
     var scratchpadSize = TilingConfig.defaultScratchpadSize
     /// Accordion layout: how much of the windows behind the focused one shows on each side.
     var accordionPadding = TilingConfig.defaultAccordionPadding
+    /// Workspace index → the shortcut that shows it, as written in the config (the last one wins).
+    var switchKeys: [Int: String] = [:]
 }
 
 /// Windows that float by title (a dialog, an app's own settings), of one app or any.
@@ -322,6 +324,7 @@ struct Config {
             let combo = try KeyCombo.parse(keys)
             boundKeyCodes.insert(combo.keyCode)
             tap.bindKey(combo, action)
+            if case .workspace(let index) = action { tiling.switchKeys[index] = keys }
         }
         for binding in keyboard?.bindings ?? [] {
             try bind(binding.keys, try Action.parse(binding.action))

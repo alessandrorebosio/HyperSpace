@@ -14,12 +14,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let windowManager = WindowManager()
     /// The tap is captured here, on the main thread: the hold is set from the multitouch thread.
     private lazy var edgeSliders = EdgeSliders { [eventTap] held in eventTap.setPointerHeld(held) }
-    private lazy var runner = ActionRunner(windowManager: windowManager) { [weak self] in
+    private lazy var overview = WorkspaceOverview(host: WorkspaceOverview.Host(
+        workspaces: { [unowned self] in windowManager.summaries() },
+        focused: { [unowned self] in windowManager.focusedWorkspace },
+        switchKeys: { [unowned self] in config?.tiling.switchKeys ?? [:] }
+    ))
+    private lazy var runner = ActionRunner(windowManager: windowManager, overview: overview) { [weak self] in
         self?.store.reload()
     }
-    private lazy var eventTap = EventTap(drag: DragController(windowManager: windowManager)) { [weak self] action in
-        self?.runner.run(action)
-    }
+    private lazy var eventTap = EventTap(
+        drag: DragController(windowManager: windowManager),
+        onAction: { [weak self] action in self?.runner.run(action) },
+        onOverview: { [weak self] key in
+            guard let self else { return }
+            if key != nil { overview.show() } else { overview.hide() }
+        }
+    )
     private lazy var settingsWindow = SettingsWindowController(
         remapper: remapper, eventTap: eventTap,
         actions: GeneralModel.Actions(
@@ -66,7 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusMenu.keyboardLocked = eventTap.isKeyboardLocked
         }
         store.onChange = { [weak self] in self?.apply($0) }
-        windowManager.onWorkspaceChange = { [weak self] in self?.statusMenu.workspaces = $0 }
+        windowManager.onWorkspaceChange = { [weak self] in
+            self?.statusMenu.workspaces = $0
+            self?.overview.refresh()
+        }
         windowManager.onEnabledChange = { [weak self] in self?.statusMenu.tilingEnabled = $0 }
         // At login macOS reopens apps for a while (also after a logout, unlike a boot check).
         if launchedAtLogin { windowManager.revealAfter = Date().addingTimeInterval(90) }

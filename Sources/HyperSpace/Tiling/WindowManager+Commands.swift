@@ -15,12 +15,38 @@ extension WindowManager {
         return window
     }
 
-    /// Asks the frontmost app for its focused window (a synchronous AX round trip).
+    /// The frontmost app's focused window, as its notifications reported it: no AX round trip,
+    /// so a busy or hung app cannot hold up a shortcut. It is checked again right after, off
+    /// the main thread, for apps that do not always announce a focus change. Only an app not
+    /// looked at yet is asked here, once.
     private func readFocused() -> ManagedWindow? {
-        guard let app = NSWorkspace.shared.frontmostApplication,
-              let element = AX.element(AXUIElementCreateApplication(app.processIdentifier), kAXFocusedWindowAttribute),
-              let id = AX.windowID(element) else { return nil }
-        return windows[id]
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let watcher = apps[pid] else { return nil }
+        if let id = focusedIn[pid] {
+            refreshFocused(pid)
+            return windows[id]
+        }
+        let id = AX.element(watcher.element, kAXFocusedWindowAttribute).flatMap(AX.windowID)
+        focusedIn[pid] = id ?? 0
+        return id.flatMap { windows[$0] }
+    }
+
+    /// Records the focused window of an app (nil: none, or one not known yet).
+    func noteFocused(_ id: CGWindowID?, of pid: pid_t) {
+        focusedIn[pid] = id ?? 0
+        focusEpoch[pid, default: 0] += 1
+    }
+
+    /// Asks the app for its focused window on its AX queue; a change (that no newer
+    /// notification already reported) is recorded and followed like a notification.
+    func refreshFocused(_ pid: pid_t) {
+        guard let app = apps[pid]?.element else { return }
+        let epoch = focusEpoch[pid, default: 0]
+        writer.read(pid, { () -> CGWindowID? in AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID) }, then: { [weak self] (id: CGWindowID?) in
+            guard let self, apps[pid] != nil, focusEpoch[pid, default: 0] == epoch, focusedIn[pid] != id ?? 0 else { return }
+            noteFocused(id, of: pid)
+            scheduleFocusUpdate()
+        })
     }
 
     /// The workspace shown on the display the user works on.
