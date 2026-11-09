@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// State of the mouse settings. Every change is written to config.json at once;
 /// the config watcher then applies it to the event tap.

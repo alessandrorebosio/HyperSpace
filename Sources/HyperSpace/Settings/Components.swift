@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+// Containers store the views their builder made (`@ViewBuilder let content: Content`), not the
+// closure: a stored closure can never compare equal, so SwiftUI could not tell that the
+// content is unchanged and would rebuild it on every redraw of the parent.
+//
 // The building blocks every settings page is made of. A page is a grouped Form that starts
 // with a PageHero; lists put their add button in the section header (SectionHeader); keys and
 // shortcuts are KeyCaps; anything that needs attention is a NoticeRow at the top.
@@ -74,6 +78,8 @@ struct AppLabel: View {
             Text(AppLauncher.name(bundleID)).lineLimit(1).truncationMode(.tail)
         }
         .help(bundleID)
+        // One element for VoiceOver: the app's name (the icon alone says nothing).
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -84,7 +90,7 @@ struct AppLabel: View {
 /// Settings).
 struct PageHero<Accessory: View>: View {
     let page: SettingsNavigation.Page
-    @ViewBuilder var accessory: () -> Accessory
+    @ViewBuilder let accessory: Accessory
 
     var body: some View {
         Section {
@@ -98,7 +104,7 @@ struct PageHero<Accessory: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
-                accessory()
+                accessory
             }
             .padding(.vertical, 6)
         }
@@ -114,13 +120,13 @@ extension PageHero where Accessory == EmptyView {
 /// A section title with the section's action on the right, usually its add button.
 struct SectionHeader<Trailing: View>: View {
     let title: String
-    @ViewBuilder var trailing: () -> Trailing
+    @ViewBuilder let trailing: Trailing
 
     var body: some View {
         HStack(alignment: .center) {
             Text(title)
             Spacer(minLength: 12)
-            trailing()
+            trailing
         }
     }
 }
@@ -151,13 +157,13 @@ struct RowLabel: View {
 struct SettingRow<Control: View>: View {
     let title: String
     var detail: String?
-    @ViewBuilder var control: () -> Control
+    @ViewBuilder let control: Control
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             RowLabel(title, detail: detail)
             Spacer(minLength: 12)
-            control()
+            control
         }
     }
 }
@@ -196,9 +202,10 @@ struct EmptyRow: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol).foregroundStyle(.tertiary)
+        Label {
             Text(text).foregroundStyle(.secondary)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -404,10 +411,12 @@ struct AddButton: View {
 /// The same as AddButton, for lists whose new item is picked from a menu (an app).
 struct AddMenu<Content: View>: View {
     let title: String
-    @ViewBuilder let content: () -> Content
+    @ViewBuilder let content: Content
 
     var body: some View {
-        Menu(content: content) {
+        Menu {
+            content
+        } label: {
             AddLabel(title: title)
         }
         .modifier(BorderedMenu())
@@ -448,10 +457,12 @@ private struct AddLabel: View {
 /// A dropdown next to a key cap, for picking from a list instead of pressing the keys.
 struct ChoiceMenu<Content: View>: View {
     let help: String
-    @ViewBuilder let content: () -> Content
+    @ViewBuilder let content: Content
 
     var body: some View {
-        Menu(content: content) {
+        Menu {
+            content
+        } label: {
             Image(systemName: "chevron.down").font(.caption.weight(.semibold))
         }
         .modifier(BorderedMenu())

@@ -111,15 +111,8 @@ private struct RuleRow: View {
             KeyCap(text: targetText, minWidth: 96, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
                 model.toggleCapture(.to(rule.id))
             }
-            ChoiceMenu(help: "Choose from all keys") {
-                ForEach(KeyCodes.groups, id: \.title) { group in
-                    Menu(group.title) {
-                        ForEach(group.keys, id: \.name) { key in
-                            Button(key.label) { model.setTarget(key.name, for: rule.id) }
-                        }
-                    }
-                }
-            }
+            KeyChoiceMenu(ruleID: rule.id) { model.setTarget($0, for: rule.id) }
+                .equatable()
         }
     }
 
@@ -148,5 +141,28 @@ private struct RuleRow: View {
             return model.capturePreview.isEmpty ? "Press keys…" : "\(model.capturePreview) …"
         }
         return rule.to.isEmpty ? "Becomes" : RemapTarget.label(rule.to)
+    }
+}
+
+/// Every named key, grouped, to pick a remap's target from: about 130 items. The list never
+/// changes, so the menu is only built again for another rule (`==` compares the rule): a
+/// key press while recording redraws every row, not this.
+private struct KeyChoiceMenu: View, Equatable {
+    let ruleID: UUID
+    /// Called with the key's name; the same for a given rule.
+    let choose: (String) -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.ruleID == b.ruleID }
+
+    var body: some View {
+        ChoiceMenu(help: "Choose from all keys") {
+            ForEach(KeyCodes.groups, id: \.title) { group in
+                Menu(group.title) {
+                    ForEach(group.keys, id: \.name) { key in
+                        Button(key.label) { choose(key.name) }
+                    }
+                }
+            }
+        }
     }
 }

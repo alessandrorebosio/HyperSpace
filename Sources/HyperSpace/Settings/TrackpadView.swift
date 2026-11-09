@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// State of the Trackpad page: the edge sliders. Every change is written to config.json at

@@ -28,7 +28,7 @@ final class WorkspaceOverview {
 
     /// Shown until hidden: by the key up of the held key, a click, or (from a mouse button) a toggle.
     func show() {
-        guard let view = makeView() else { return }
+        guard let area = Self.screenArea(), let view = makeView(maxWidth: area.width - 80) else { return }
         let panel = self.panel ?? makePanel()
         if let hosting {
             hosting.rootView = view
@@ -37,7 +37,7 @@ final class WorkspaceOverview {
             panel.contentView = hosting
             self.hosting = hosting
         }
-        place(panel)
+        place(panel, in: area)
         if !panel.isVisible {
             panel.alphaValue = 0
             panel.orderFrontRegardless()
@@ -76,18 +76,22 @@ final class WorkspaceOverview {
 
     /// The workspaces changed (a switch while the overview is open): drawn again.
     func refresh() {
-        guard isVisible, let view = makeView() else { return }
+        guard isVisible, let panel, let area = Self.screenArea(),
+              let view = makeView(maxWidth: area.width - 80) else { return }
         hosting?.rootView = view
-        if let panel { place(panel) }
+        place(panel, in: area)
     }
 
-    private func makeView() -> OverviewView? {
+    /// The view with everything it shows, sized for `maxWidth`: the root view is set once per
+    /// show or refresh (each assignment makes the hosting view update the whole tree).
+    private func makeView(maxWidth: CGFloat) -> OverviewView? {
         let workspaces = host.workspaces()
         guard !workspaces.isEmpty else { return nil }
         let keys = host.switchKeys()
         return OverviewView(
             cards: workspaces.map { OverviewView.Card($0, keys: keys[$0.index].map(RemapTarget.label)) },
-            focused: host.focused()
+            focused: host.focused(),
+            maxWidth: maxWidth
         )
     }
 
@@ -106,13 +110,15 @@ final class WorkspaceOverview {
         return panel
     }
 
-    /// Centered on the display under the pointer, never larger than it.
-    private func place(_ panel: NSPanel) {
+    /// The visible area of the display under the pointer (AppKit coordinates).
+    private static func screenArea() -> NSRect? {
         let mouse = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main,
-              let hosting else { return }
-        let area = screen.visibleFrame
-        hosting.rootView.maxWidth = area.width - 80
+        return (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame
+    }
+
+    /// Centered in `area`, never larger than it.
+    private func place(_ panel: NSPanel, in area: NSRect) {
+        guard let hosting else { return }
         let size = hosting.fittingSize
         let width = min(size.width, area.width - 40)
         let height = min(size.height, area.height - 40)
@@ -159,7 +165,7 @@ struct OverviewView: View {
 
     let cards: [Card]
     let focused: Int?
-    var maxWidth: CGFloat = 1200
+    let maxWidth: CGFloat
 
     private var columns: Int {
         // n cards take n × width + (n - 1) × spacing, plus the panel's padding on both sides.

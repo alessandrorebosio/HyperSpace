@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// State of the Tiling page: layout options, workspaces and window shortcuts.
 /// Every change is written to config.json; the config watcher applies it.

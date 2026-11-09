@@ -79,17 +79,8 @@ private struct MouseRuleRow: View {
             KeyCap(text: actionText, minWidth: 110, placeholder: rule.action.isEmpty, active: model.capturing == .action(rule.id)) {
                 model.toggleCapture(.action(rule.id))
             }
-            ChoiceMenu(help: "Choose an action") {
-                ForEach(MouseModel.presets, id: \.group) { group in
-                    Menu(group.group) {
-                        ForEach(group.items, id: \.action) { item in
-                            Button(item.name) { model.setAction(item.action, for: rule.id) }
-                        }
-                    }
-                }
-                Divider()
-                Button("Disable Button") { model.setAction("none", for: rule.id) }
-            }
+            ActionChoiceMenu(ruleID: rule.id) { model.setAction($0, for: rule.id) }
+                .equatable()
         }
     }
 
@@ -105,5 +96,29 @@ private struct MouseRuleRow: View {
     private var actionText: String {
         if model.capturing == .action(rule.id) { return "Press keys…" }
         return rule.action.isEmpty ? "Action" : MouseModel.actionLabel(rule.action)
+    }
+}
+
+/// The ready-made actions for a mouse button, grouped. The list never changes, so the menu
+/// is only built again for another rule (`==` compares the rule), not on every redraw.
+private struct ActionChoiceMenu: View, Equatable {
+    let ruleID: UUID
+    /// Called with the action's config text; the same for a given rule.
+    let choose: (String) -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.ruleID == b.ruleID }
+
+    var body: some View {
+        ChoiceMenu(help: "Choose an action") {
+            ForEach(MouseModel.presets, id: \.group) { group in
+                Menu(group.group) {
+                    ForEach(group.items, id: \.action) { item in
+                        Button(item.name) { choose(item.action) }
+                    }
+                }
+            }
+            Divider()
+            Button("Disable Button") { choose("none") }
+        }
     }
 }

@@ -58,7 +58,7 @@ struct ShortcutGrid<Rows: View>: View {
     /// Caption of a column after the shortcuts (rows then add that cell), if any.
     var after: String?
     var trailing: CGFloat = 0
-    @ViewBuilder let rows: () -> Rows
+    @ViewBuilder let rows: Rows
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
@@ -74,7 +74,7 @@ struct ShortcutGrid<Rows: View>: View {
                     Color.clear.frame(width: trailing, height: 1)
                 }
             }
-            rows()
+            rows
         }
         .padding(.vertical, 2)
     }
