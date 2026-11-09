@@ -241,8 +241,8 @@ final class TilingModel: ObservableObject {
         AppLauncher.runningApps.filter { app in !scratchpadApps.contains { $0.bundleID == app.bundleID } }
     }
 
-    fileprivate static let togglePrefix = "scratchpad "
-    fileprivate static let tilePrefix = "move-to-scratchpad "
+    static let togglePrefix = "scratchpad "
+    static let tilePrefix = "move-to-scratchpad "
 
     /// Adds an app and records its show/hide shortcut right away.
     func addScratchpadApp(_ bundleID: String) {
@@ -399,19 +399,25 @@ final class TilingModel: ObservableObject {
             let keys = bindings.last { ($0["action"] as? String) == item.action }?["keys"] as? String
             return Shortcut(title: item.title, action: item.action, keys: keys ?? "")
         }
+        scratchpadApps = Self.scratchpadApps(from: bindings)
+    }
+
+    /// The apps with scratchpad shortcuts among `bindings`, in order of first appearance; the
+    /// last binding of each of their two actions gives its keys.
+    static func scratchpadApps(from bindings: [[String: Any]]) -> [ScratchpadApp] {
         var pads: [ScratchpadApp] = []
         for binding in bindings {
             guard let action = binding["action"] as? String, let keys = binding["keys"] as? String else { continue }
-            let toggle = action.hasPrefix(Self.togglePrefix)
-            guard toggle || action.hasPrefix(Self.tilePrefix) else { continue }
-            let bundleID = String(action.dropFirst((toggle ? Self.togglePrefix : Self.tilePrefix).count))
+            let toggle = action.hasPrefix(togglePrefix)
+            guard toggle || action.hasPrefix(tilePrefix) else { continue }
+            let bundleID = String(action.dropFirst((toggle ? togglePrefix : tilePrefix).count))
             let index = pads.firstIndex { $0.bundleID == bundleID } ?? {
                 pads.append(ScratchpadApp(bundleID: bundleID))
                 return pads.count - 1
             }()
             if toggle { pads[index].toggleKeys = keys } else { pads[index].tileKeys = keys }
         }
-        scratchpadApps = pads
+        return pads
     }
 
     private func save() {
@@ -452,20 +458,26 @@ final class TilingModel: ObservableObject {
 
     /// The window shortcuts and the scratchpad apps' shortcuts, in `keyboard.bindings`.
     private func saveBindings(_ keyboard: inout [String: Any]) {
-        // Each window shortcut edits the last binding of its action (the one the page shows)
-        // in place; other bindings, even more for the same action, stay where they are.
-        var bindings = keyboard["bindings"] as? [[String: Any]] ?? []
-        func actionText(_ binding: [String: Any]) -> String { binding["action"] as? String ?? "" }
-        // An app taken off the scratchpad list loses all its bindings.
-        let padActions = Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] })
-        bindings.removeAll {
-            let action = actionText($0)
-            return (action.hasPrefix(Self.togglePrefix) || action.hasPrefix(Self.tilePrefix)) && !padActions.contains(action)
-        }
         var desired: [(action: String, keys: String)] = shortcuts.map { (action: $0.action, keys: $0.keys) }
         for pad in scratchpadApps {
             desired.append((action: pad.toggleAction, keys: pad.toggleKeys))
             desired.append((action: pad.tileAction, keys: pad.tileKeys))
+        }
+        keyboard["bindings"] = Self.mergedBindings(keyboard["bindings"] as? [[String: Any]] ?? [], desired: desired,
+                                                   scratchpadActions: Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] }))
+    }
+
+    /// `bindings` with the `desired` keys of each action. Each action's last binding (the one
+    /// the page shows) is edited in place, or removed when its keys are empty; an action with
+    /// no binding gets one at the end; other bindings, even more for the same action, stay where
+    /// they are. Scratchpad bindings not in `scratchpadActions` (an app taken off the list) go.
+    static func mergedBindings(_ bindings: [[String: Any]], desired: [(action: String, keys: String)],
+                               scratchpadActions: Set<String>) -> [[String: Any]] {
+        func actionText(_ binding: [String: Any]) -> String { binding["action"] as? String ?? "" }
+        var bindings = bindings
+        bindings.removeAll {
+            let action = actionText($0)
+            return (action.hasPrefix(togglePrefix) || action.hasPrefix(tilePrefix)) && !scratchpadActions.contains(action)
         }
         var cleared = Set<Int>()
         var added: [[String: Any]] = []
@@ -480,7 +492,6 @@ final class TilingModel: ObservableObject {
                 added.append(["keys": entry.keys, "action": entry.action])
             }
         }
-        bindings = bindings.enumerated().filter { !cleared.contains($0.offset) }.map(\.element) + added
-        keyboard["bindings"] = bindings
+        return bindings.enumerated().filter { !cleared.contains($0.offset) }.map(\.element) + added
     }
 }
