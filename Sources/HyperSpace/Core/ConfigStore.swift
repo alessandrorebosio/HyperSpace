@@ -41,7 +41,8 @@ final class ConfigStore {
     }
 
     /// `retryDelay`: how long to wait before looking again when the file is not there.
-    private func watch(retryDelay: TimeInterval = 1) {
+    /// `isRetry`: the file was missing at the last look, so what is found now is loaded too.
+    private func watch(retryDelay: TimeInterval = 1, isRetry: Bool = false) {
         source?.cancel()
         source = nil
 
@@ -50,7 +51,7 @@ final class ConfigStore {
             // The editor may be mid-save (atomic rename): try again shortly. A file deleted for
             // good is looked for less and less often, up to every 30 s.
             DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
-                self?.watch(retryDelay: min(retryDelay * 2, 30))
+                self?.watch(retryDelay: min(retryDelay * 2, 30), isRetry: true)
             }
             return
         }
@@ -64,6 +65,8 @@ final class ConfigStore {
         source.setCancelHandler { close(fd) }
         source.resume()
         self.source = source
+        // A file that came back (deleted, then written again later) has not been read yet.
+        if isRetry { reload() }
     }
 
     private func scheduleReload(rewatch: Bool) {

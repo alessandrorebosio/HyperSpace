@@ -5,7 +5,7 @@
 - **Path**: `~/.hyperspace/config.json` (`ConfigStore.url`).
 - **Creation**: on first launch (or from *Edit Config…*) if the file is missing, the default config (`DefaultConfig.json`) is written.
 - **Automatic reload**: the file is watched with a kqueue `DispatchSource` (`write`, `extend`, `delete`, `rename`), at zero cost while untouched. Several events per save
-  are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is briefly missing it retries after 1 s.
+  are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is missing it looks again after 1 s, then less and less often (up to every 30 s), and loads the file as soon as it is back.
 - **Manual reload**: the [`reload`](05-actions.md) action (`hyper+escape` in the default config).
 - What a reload applies: HID remaps always; tap and tiling only with the Accessibility permission (see [Architecture](01-architecture.md)).
 - **Edits from the UI**: the Settings window rewrites the file with `ConfigWriter` (only touched keys change, stable key order, one line per binding/remap);
