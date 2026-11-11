@@ -30,15 +30,32 @@ enum ConfigWriter {
         return root
     }
 
-    private static func update(_ change: (inout [String: Any]) -> Void) throws {
+    /// Refusal to edit a file that exists but is not a JSON object: starting from an empty
+    /// one would replace everything the user wrote with the one change.
+    struct SyntaxError: LocalizedError {
+        var errorDescription: String? { "config.json has a syntax error: fix it before changing settings" }
+    }
+
+    /// Reads `url`, applies `change` and writes the result, unless nothing changed.
+    /// Throws `SyntaxError`, without writing, when the file is there but does not parse.
+    static func update(_ url: URL = ConfigStore.url, _ change: (inout [String: Any]) -> Void) throws {
+        // A linked config (dotfiles) is edited where it lives: an atomic write to the link
+        // itself would replace it with a regular file.
+        let url = url.resolvingSymlinksInPath()
         // Read once: parsed to edit, and compared with what would be written.
-        let current = try? Data(contentsOf: ConfigStore.url)
-        var root = parse(current)
+        let current = try? Data(contentsOf: url)
+        var root: [String: Any] = [:]
+        if let current, !String(decoding: current, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let parsed = try? JSONSerialization.jsonObject(with: current) as? [String: Any] else {
+                throw SyntaxError()
+            }
+            root = parsed
+        }
         change(&root)
         let text = text(for: root)
         // Nothing changed: no write, so no reload of the whole config.
         if let current, String(data: current, encoding: .utf8) == text { return }
-        try text.write(to: ConfigStore.url, atomically: true, encoding: .utf8)
+        try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// The file's text for `root` (apart from the write, what `update` saves).
@@ -49,7 +66,7 @@ enum ConfigWriter {
     /// `update` for the settings pages: the error message, or nil when saved.
     static func save(_ change: (inout [String: Any]) -> Void) -> String? {
         do {
-            try update(change)
+            try update(ConfigStore.url, change)
             return nil
         } catch {
             return error.localizedDescription

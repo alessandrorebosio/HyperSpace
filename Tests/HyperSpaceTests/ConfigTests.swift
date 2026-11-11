@@ -134,9 +134,9 @@ import Testing
         "tiling": ["enabled": true, "gap": 8, "layout": "tall"] as [String: Any],
         "mouse": ["reverseScroll": false, "dragModifier": "cmd"] as [String: Any],
         "keyboard": [
-            "remap": [["from": "capslock", "to": "hyper", "keyboard": "builtin"] as [String: Any]],
+            "remap": [["from": "caps_lock", "to": "hyper", "keyboard": "builtin"] as [String: Any]],
+            "bindings": [["keys": "cmd+a", "action": "shell say \"hi\" \\ a/b"] as [String: Any]],
         ] as [String: Any],
-        "bindings": [["keys": "cmd+a", "action": "say \"hi\" \\ a/b"] as [String: Any]],
     ]
 
     private func index(_ needle: String, in text: String) -> Int {
@@ -158,8 +158,8 @@ import Testing
     }
 
     @Test func keyboardComesLastInsideARemapRule() {
-        let text = ConfigWriter.text(for: ["keyboard": ["remap": [["keyboard": "builtin", "to": "hyper", "from": "capslock"]]]])
-        #expect(text.contains("{ \"from\": \"capslock\", \"to\": \"hyper\", \"keyboard\": \"builtin\" }"))
+        let text = ConfigWriter.text(for: ["keyboard": ["remap": [["keyboard": "builtin", "to": "hyper", "from": "caps_lock"]]]])
+        #expect(text.contains("{ \"from\": \"caps_lock\", \"to\": \"hyper\", \"keyboard\": \"builtin\" }"))
     }
 
     @Test func flatObjectsInArraysStayOnOneLine() {
