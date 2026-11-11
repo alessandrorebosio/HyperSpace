@@ -35,19 +35,9 @@ final class EventTap {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var mask: CGEventMask = 0
-    private var config = TapConfig()
-    private var carrierDown: [Bool] = []
-    /// Modifiers of the modifier-only combinations currently held (e.g. caps lock → ⌃⌥⇧).
-    private var heldModifiers: Modifiers = []
-    private var swallowedKeys = [Bool](repeating: false, count: 128)
-    private var swallowedButtons = [Bool](repeating: false, count: 32)
-    /// The key code holding the workspace overview open, or -1.
-    private var overviewKey = -1
-    /// Set while the settings window captures a mouse button: buttons reach the app unmapped.
-    private var buttonsSuspended = false
-    /// Set while the settings window captures a shortcut: key bindings are ignored
-    /// (combination keys still work, so caps lock → ⌃⌥⇧ can be part of the shortcut).
-    private var keyBindingsSuspended = false
+    /// Keys, buttons, held combinations and the overview key: the decisions, kept pure.
+    private var state = TapState()
+    private var config: TapConfig { state.config }
     private var dragMode: DragMode?
     private var keyboardLocked = false
     /// Where the pointer is held while a trackpad edge slider is in progress.
@@ -100,35 +90,15 @@ final class EventTap {
         guard translated != pushedConfig else { return }
         pushedConfig = translated
         onTapThread { [self] in
-            config = translated
-            resetHeldState(includingMouse: true)
+            if state.setConfig(translated) { closeOverview() }
+            cancelDrag()
+            heldPointer = nil
             updateMask()
         }
     }
 
-    /// Tap thread: forgets the keys, carriers and modifiers held or swallowed, so nothing
-    /// stays stuck after the config or the lock changes. The mouse state goes too on a new config.
-    private func resetHeldState(includingMouse: Bool) {
-        carrierDown = [Bool](repeating: false, count: config.carriers.count)
-        heldModifiers = []
-        clearSwallowedKeys()
-        if includingMouse {
-            cancelDrag()
-            heldPointer = nil
-            clearSwallowedButtons()
-        }
-    }
-
-    /// Tap thread: the key-ups still owed to a swallowed key down are not swallowed any more.
-    private func clearSwallowedKeys() {
-        for i in swallowedKeys.indices { swallowedKeys[i] = false }
-        releaseOverview()
-    }
-
     /// Tap thread: the key holding the overview went up (or is forgotten): it closes.
-    private func releaseOverview() {
-        guard overviewKey >= 0 else { return }
-        overviewKey = -1
+    private func closeOverview() {
         let onOverview = onOverview
         DispatchQueue.main.async { onOverview(false) }
     }
@@ -139,11 +109,6 @@ final class EventTap {
         guard dragMode != nil else { return }
         dragMode = nil
         drag.cancel()
-    }
-
-    /// Tap thread: the same for mouse buttons.
-    private func clearSwallowedButtons() {
-        for i in swallowedButtons.indices { swallowedButtons[i] = false }
     }
 
     /// Locks for `KeyboardLock.minutes` (or until unlocked when 0), or unlocks.
@@ -169,7 +134,7 @@ final class EventTap {
         log.info("keyboard \(locked ? "locked" : "unlocked", privacy: .public)")
         onTapThread { [self] in
             keyboardLocked = locked
-            resetHeldState(includingMouse: false)
+            if state.resetKeys() { closeOverview() }
             updateMask()
         }
         NotificationCenter.default.post(name: Self.keyboardLockDidChange, object: self)
@@ -197,16 +162,12 @@ final class EventTap {
     }
 
     func setButtonsSuspended(_ suspended: Bool) {
-        onTapThread { [self] in
-            buttonsSuspended = suspended
-            clearSwallowedButtons()
-        }
+        onTapThread { [self] in state.setButtonsSuspended(suspended) }
     }
 
     func setKeyBindingsSuspended(_ suspended: Bool) {
         onTapThread { [self] in
-            keyBindingsSuspended = suspended
-            clearSwallowedKeys()
+            if state.setKeyBindingsSuspended(suspended) { closeOverview() }
         }
     }
 
@@ -266,16 +227,21 @@ final class EventTap {
             event.flags.remove(.maskAlphaShift)
             if type == .flagsChanged { DispatchQueue.main.async { CapsLock.turnOff() } }
         }
-        if !heldModifiers.isEmpty {
+        if !state.heldModifiers.isEmpty {
             // Unbound chords still reach apps with the combination's modifiers.
-            event.flags.formUnion(heldModifiers.cgFlags)
+            event.flags.formUnion(state.heldModifiers.cgFlags)
         }
 
         switch type {
         case .keyDown, .keyUp:
-            return handleKey(event, down: type == .keyDown) ? nil : pass
+            let decision = state.key(code: Int(event.getIntegerValueField(.keyboardEventKeycode)),
+                                     modifiers: Modifiers(event.flags), down: type == .keyDown,
+                                     isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+            return perform(decision) ? nil : pass
         case .otherMouseDown, .otherMouseUp:
-            return handleButton(event, down: type == .otherMouseDown) ? nil : pass
+            let decision = state.button(Int(event.getIntegerValueField(.mouseEventButtonNumber)),
+                                        modifiers: Modifiers(event.flags), down: type == .otherMouseDown)
+            return perform(decision) ? nil : pass
         case .scrollWheel:
             reverseScrollIfNeeded(event)
             return pass
@@ -300,74 +266,24 @@ final class EventTap {
         }
     }
 
-    /// Returns true when the event must be swallowed.
-    private func handleKey(_ event: CGEvent, down: Bool) -> Bool {
-        let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
-        guard (0..<128).contains(code) else { return false }
-
-        let carrierIndex = Int(config.carrierTable[code])
-        if carrierIndex >= 0 {
-            handleCarrier(carrierIndex, event, down: down)
+    /// Tap thread: carries out a decision; true when the event is swallowed.
+    private func perform(_ decision: TapState.Decision) -> Bool {
+        switch decision {
+        case .pass:
+            return false
+        case .swallow:
+            return true
+        case .run(let action):
+            dispatch(action)
+            return true
+        case .overview(let shown):
+            let onOverview = onOverview
+            DispatchQueue.main.async { onOverview(shown) }
+            return true
+        case .postKey(let keyCode, let modifiers, let down):
+            KeyEmitter.post(keyCode: keyCode, flags: modifiers.cgFlags, down: down)
             return true
         }
-        if keyBindingsSuspended { return false }
-        if down {
-            let index = config.keyTable[TapConfig.slot(code, Modifiers(event.flags))]
-            guard index >= 0 else { return false }
-            swallowedKeys[code] = true
-            let action = config.actions[Int(index)]
-            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            if action == .workspaceOverview {
-                // Open while the key is down: autorepeat changes nothing, the key up closes it.
-                guard overviewKey != code else { return true }
-                overviewKey = code
-                let onOverview = onOverview
-                DispatchQueue.main.async { onOverview(true) }
-                return true
-            }
-            // Held: one action, unless it is one that moves in steps.
-            if !isRepeat || action.repeats { dispatch(action) }
-            return true
-        }
-        if swallowedKeys[code] {
-            swallowedKeys[code] = false
-            if code == overviewKey { releaseOverview() }
-            return true
-        }
-        return false
-    }
-
-    /// A carrier key stands for a combination: modifier-only combinations are held
-    /// while it is down; combinations with a key press that key with the modifiers.
-    private func handleCarrier(_ index: Int, _ event: CGEvent, down: Bool) {
-        let carrier = config.carriers[index]
-        if let keyCode = carrier.keyCode {
-            let flags = Modifiers(event.flags).union(carrier.modifiers).cgFlags
-            KeyEmitter.post(keyCode: keyCode, flags: flags, down: down)
-            return
-        }
-        guard carrierDown[index] != down else { return } // autorepeat
-        carrierDown[index] = down
-        var held: Modifiers = []
-        for (i, isDown) in carrierDown.enumerated() where isDown { held.formUnion(config.carriers[i].modifiers) }
-        heldModifiers = held
-    }
-
-    private func handleButton(_ event: CGEvent, down: Bool) -> Bool {
-        let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
-        guard (0..<32).contains(button), !buttonsSuspended else { return false }
-        if down {
-            let index = config.buttonTable[TapConfig.slot(button, Modifiers(event.flags))]
-            guard index >= 0 else { return false }
-            swallowedButtons[button] = true
-            dispatch(config.actions[Int(index)])
-            return true
-        }
-        if swallowedButtons[button] {
-            swallowedButtons[button] = false
-            return true
-        }
-        return false
     }
 
     /// Reverses only discrete wheels: trackpads and Magic Mouse report continuous
