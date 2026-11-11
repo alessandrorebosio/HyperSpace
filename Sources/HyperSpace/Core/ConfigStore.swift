@@ -12,6 +12,16 @@ final class ConfigStore {
 
     var onChange: ((Result<Config, Error>) -> Void)?
 
+    /// The file watched: the real config, or a temporary one in the tests.
+    let fileURL: URL
+    /// How long to wait before the first look for a missing file (doubling up to 30 s).
+    private let firstRetryDelay: TimeInterval
+
+    init(url: URL = ConfigStore.url, firstRetryDelay: TimeInterval = 1) {
+        fileURL = url
+        self.firstRetryDelay = firstRetryDelay
+    }
+
     private var source: DispatchSourceFileSystemObject?
     /// Editors often emit several events per save: one reload for them all.
     private let reloadDebouncer = Debouncer(delay: 0.15)
@@ -25,21 +35,21 @@ final class ConfigStore {
     }
 
     func reload() {
-        onChange?(Result { try Config.load(from: Self.url) })
+        onChange?(Result { try Config.load(from: fileURL) })
         NotificationCenter.default.post(name: Self.didLoad, object: self)
     }
 
     func openInEditor() {
         writeDefaultIfMissing()
-        NSWorkspace.shared.open(Self.url)
+        NSWorkspace.shared.open(fileURL)
     }
 
     private func writeDefaultIfMissing() {
         let fm = FileManager.default
-        guard !fm.fileExists(atPath: Self.url.path) else { return }
+        guard !fm.fileExists(atPath: fileURL.path) else { return }
         do {
-            try fm.createDirectory(at: Self.url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try DefaultConfig.json.write(to: Self.url, atomically: true, encoding: .utf8)
+            try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try DefaultConfig.json.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
             log.error("cannot write default config: \(error.localizedDescription, privacy: .public)")
         }
@@ -47,11 +57,12 @@ final class ConfigStore {
 
     /// `retryDelay`: how long to wait before looking again when the file is not there.
     /// `isRetry`: the file was missing at the last look, so what is found now is loaded too.
-    private func watch(retryDelay: TimeInterval = 1, isRetry: Bool = false) {
+    private func watch(retryDelay: TimeInterval? = nil, isRetry: Bool = false) {
+        let retryDelay = retryDelay ?? firstRetryDelay
         source?.cancel()
         source = nil
 
-        let fd = open(Self.url.path, O_EVTONLY)
+        let fd = open(fileURL.path, O_EVTONLY)
         guard fd >= 0 else {
             // The editor may be mid-save (atomic rename): try again shortly. A file deleted for
             // good is looked for less and less often, up to every 30 s.
