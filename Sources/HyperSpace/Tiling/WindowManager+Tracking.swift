@@ -39,9 +39,13 @@ extension WindowManager {
             let focused = AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID)
             return (AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
         }, then: { [weak self] (probes: [AX.WindowProbe], focused: CGWindowID?) in
-            guard let self else { return }
-            enterScope()
-            defer { leaveScope() }
+            self?.discovered(probes, focused: focused, watcher: watcher, then: done)
+        })
+    }
+
+    private func discovered(_ probes: [AX.WindowProbe], focused: CGWindowID?, watcher: AppWatcher, then done: (() -> Void)?) {
+        let pid = watcher.pid
+        scoped {
             var found = false
             if running, apps[pid] === watcher {
                 // Known from here on (a notification since then knows better).
@@ -51,7 +55,7 @@ extension WindowManager {
             if found { scheduleRetile() }
             done?()
             discoveryFinished()
-        })
+        }
     }
 
     private func discoveryFinished() {
@@ -271,9 +275,13 @@ extension WindowManager {
     /// describe yet (no subrole) is looked at again a few times.
     private func windowCreated(_ element: AXUIElement, pid: pid_t, attempt: Int = 0) {
         axQueues.read(pid, { AX.probe(element, pid: pid) }, then: { [weak self] probe in
-            guard let self, running, let watcher = apps[pid] else { return }
-            enterScope()
-            defer { leaveScope() }
+            self?.described(element, probe, pid: pid, attempt: attempt)
+        })
+    }
+
+    private func described(_ element: AXUIElement, _ probe: AX.WindowProbe, pid: pid_t, attempt: Int) {
+        guard running, let watcher = apps[pid] else { return }
+        scoped {
             if probe.kind == .pending, attempt < 5 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 * Double(1 << attempt)) { [weak self] in
                     self?.windowCreated(element, pid: pid, attempt: attempt + 1)
@@ -282,36 +290,36 @@ extension WindowManager {
             }
             guard let window = track(probe, in: watcher) else { return }
             windowTracked(window, watcher: watcher)
-        })
+        }
     }
 
     private func windowTracked(_ window: ManagedWindow, watcher: AppWatcher) {
-        enterScope()
-        defer { leaveScope() }
-        let pid = watcher.pid
-        // A scratchpad window is shown where you are, whatever its workspace.
-        if window.scratchpad { return }
-        if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
-            lastFocused[window.workspace] = window.id
-            if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
-                // An app you just opened shows its assigned workspace, so its window is visible.
-                switchWorkspace(window.workspace)
-            } else {
-                // It finished loading after you left its workspace: it stays there, and
-                // the focus stays where you are.
-                log.debug("window \(window.id) (\(watcher.bundleID ?? "?", privacy: .public)) opened in hidden workspace \(window.workspace)")
-                let here = activeDisplay.flatMap { displayed[$0] }
-                ignoreFocusChanges()
-                movedAway = window.id
-                retile()
-                if let here { focusWindow(in: here) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+        scoped {
+            let pid = watcher.pid
+            // A scratchpad window is shown where you are, whatever its workspace.
+            if window.scratchpad { return }
+            if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+                lastFocused[window.workspace] = window.id
+                if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
+                    // An app you just opened shows its assigned workspace, so its window is visible.
+                    switchWorkspace(window.workspace)
+                } else {
+                    // It finished loading after you left its workspace: it stays there, and
+                    // the focus stays where you are.
+                    log.debug("window \(window.id) (\(watcher.bundleID ?? "?", privacy: .public)) opened in hidden workspace \(window.workspace)")
+                    let here = activeDisplay.flatMap { displayed[$0] }
+                    ignoreFocusChanges()
+                    movedAway = window.id
+                    retile()
+                    if let here { focusWindow(in: here) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+                }
+                return
             }
-            return
+            scheduleRetile()
+            // Some apps put the window on screen a moment after announcing it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
         }
-        scheduleRetile()
-        // Some apps put the window on screen a moment after announcing it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
     }
 
     /// The tracked window of an AX element, compared locally (asking the app for the

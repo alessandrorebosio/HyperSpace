@@ -80,38 +80,38 @@ extension WindowManager {
 
     /// Shows a workspace on its own display and focuses it; the other displays keep theirs.
     func switchWorkspace(_ index: Int) {
-        enterScope()
-        defer { leaveScope() }
-        guard running, (0..<workspaceCount).contains(index) else { return }
-        syncDisplays()
-        let screens = currentScreens()
-        guard let screen = home(of: index, screens) else { return }
-        // Even with nothing to focus (an empty workspace), the refocusing caused by hiding
-        // the old windows must not bring the old workspace back.
-        ignoreFocusChanges()
-        let focusedWorkspace = self.focusedWorkspace
-        log.debug("switch to workspace \(index) on display \(screen.id) (shown there: \(self.displayed[screen.id] ?? -1), focused: \(focusedWorkspace ?? -1))")
-        if let current = focusedWorkspace, current != index {
-            previousWorkspace = current
-            if let window = focused(), window.workspace == current, !window.scratchpad { lastFocused[current] = window.id }
+        scoped {
+            guard running, (0..<workspaceCount).contains(index) else { return }
+            syncDisplays()
+            let screens = currentScreens()
+            guard let screen = home(of: index, screens) else { return }
+            // Even with nothing to focus (an empty workspace), the refocusing caused by hiding
+            // the old windows must not bring the old workspace back.
+            ignoreFocusChanges()
+            let focusedWorkspace = self.focusedWorkspace
+            log.debug("switch to workspace \(index) on display \(screen.id) (shown there: \(self.displayed[screen.id] ?? -1), focused: \(focusedWorkspace ?? -1))")
+            if let current = focusedWorkspace, current != index {
+                previousWorkspace = current
+                if let window = focused(), window.workspace == current, !window.scratchpad { lastFocused[current] = window.id }
+            }
+            // Any workspace switch closes the scratchpad, the one you are on included: left on
+            // screen behind the windows focused below, it would still show (in gaps, screenshots).
+            let shown = windows.values.filter { $0.scratchpad && $0.scratchpadShown }
+            if !shown.isEmpty { parkScratchpad(shown, screens: screens, bounds: currentBounds()) }
+            if displayed[screen.id] != index {
+                showWorkspace(index, on: screen.id)
+                retile()
+            }
+            // The focus moves asynchronously: the menu bar is told what it will be, not what the
+            // old window still is (an empty workspace has no focus change to correct it later).
+            let target = focusWindow(in: index)
+            // A real switch takes the pointer to the middle of the display (pointer follows focus);
+            // not while a button is held, which would end a drag.
+            if focusedWorkspace != index, config.mouseFollowsFocus, NSEvent.pressedMouseButtons == 0 {
+                Pointer.warp(to: screen.visible.center)
+            }
+            notifyWorkspace(focused: .some(target))
         }
-        // Any workspace switch closes the scratchpad, the one you are on included: left on
-        // screen behind the windows focused below, it would still show (in gaps, screenshots).
-        let shown = windows.values.filter { $0.scratchpad && $0.scratchpadShown }
-        if !shown.isEmpty { parkScratchpad(shown, screens: screens, bounds: currentBounds()) }
-        if displayed[screen.id] != index {
-            showWorkspace(index, on: screen.id)
-            retile()
-        }
-        // The focus moves asynchronously: the menu bar is told what it will be, not what the
-        // old window still is (an empty workspace has no focus change to correct it later).
-        let target = focusWindow(in: index)
-        // A real switch takes the pointer to the middle of the display (pointer follows focus);
-        // not while a button is held, which would end a drag.
-        if focusedWorkspace != index, config.mouseFollowsFocus, NSEvent.pressedMouseButtons == 0 {
-            Pointer.warp(to: screen.visible.center)
-        }
-        notifyWorkspace(focused: .some(target))
     }
 
     func switchToPreviousWorkspace() {
@@ -120,22 +120,22 @@ extension WindowManager {
 
     /// Moves only the focused window; the displays keep showing what they show.
     func moveFocusedWindow(toWorkspace index: Int) {
-        enterScope()
-        defer { leaveScope() }
-        guard running, (0..<workspaceCount).contains(index), let window = focused(), window.workspace != index else { return }
-        let source = window.workspace
-        ignoreFocusChanges()
-        // Its dialogs go along.
-        let moving = [window] + dialogWindows(of: window)
-        moving.forEach { $0.workspace = index }
-        log.debug("move window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
-        // A floating window going to a workspace shown on another display keeps its place there.
-        carryFloating(moving, screens: currentScreens())
-        retile()
-        guard display(showing: index) == nil else { return }
-        // It went out of sight: focus what is left, and if nothing is, keep its workspace hidden.
-        movedAway = window.id
-        focusWindow(in: source)
+        scoped {
+            guard running, (0..<workspaceCount).contains(index), let window = focused(), window.workspace != index else { return }
+            let source = window.workspace
+            ignoreFocusChanges()
+            // Its dialogs go along.
+            let moving = [window] + dialogWindows(of: window)
+            moving.forEach { $0.workspace = index }
+            log.debug("move window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
+            // A floating window going to a workspace shown on another display keeps its place there.
+            carryFloating(moving, screens: currentScreens())
+            retile()
+            guard display(showing: index) == nil else { return }
+            // It went out of sight: focus what is left, and if nothing is, keep its workspace hidden.
+            movedAway = window.id
+            focusWindow(in: source)
+        }
     }
 
     /// Parks a window in the bottom-right corner of its screen, nearly all of it off-screen.
@@ -210,36 +210,36 @@ extension WindowManager {
     /// Returns the window it focuses (nil for the display alone).
     @discardableResult
     func focusWindow(in workspace: Int) -> ManagedWindow? {
-        enterScope()
-        defer { leaveScope() }
-        let bounds = currentBounds()
-        let candidates = orderedWindows.filter {
-            $0.workspace == workspace && !$0.scratchpad && bounds[$0.id] != nil
+        scopedValue {
+            let bounds = currentBounds()
+            let candidates = orderedWindows.filter {
+                $0.workspace == workspace && !$0.scratchpad && bounds[$0.id] != nil
+            }
+            if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
+                focus(target)
+                return target
+            } else if let id = display(showing: workspace), case let screens = currentScreens(),
+                      let screen = screens.first(id: id) {
+                activeDisplay = id
+                // Already holding the focus there (the same workspace asked again, a held key
+                // repeating): nothing to do, the pointer is not clicked again.
+                if heldDisplay == id, focusAnchor.shown { return nil }
+                bringPointer(to: screen.visible.center, on: screen)
+                // Nothing to focus there: take the keyboard away from the window you left (on
+                // another display it would keep typing there). An invisible window of ours on that
+                // display is clicked, which makes HyperSpace active there: macOS then makes it the
+                // active display too (menu bar, new windows, Spotlight open there). Also asked
+                // through AX, off the main thread (which has to answer), in case the click is not
+                // possible (a mouse button held).
+                focusRequest += 1
+                heldDisplay = id
+                focusAnchor.show(on: screen)
+                let me = getpid()
+                axQueues.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.focusAnchor.takeKey() }
+            }
+            return nil
         }
-        if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
-            focus(target)
-            return target
-        } else if let id = display(showing: workspace), case let screens = currentScreens(),
-                  let screen = screens.first(id: id) {
-            activeDisplay = id
-            // Already holding the focus there (the same workspace asked again, a held key
-            // repeating): nothing to do, the pointer is not clicked again.
-            if heldDisplay == id, focusAnchor.shown { return nil }
-            bringPointer(to: screen.visible.center, on: screen)
-            // Nothing to focus there: take the keyboard away from the window you left (on
-            // another display it would keep typing there). An invisible window of ours on that
-            // display is clicked, which makes HyperSpace active there: macOS then makes it the
-            // active display too (menu bar, new windows, Spotlight open there). Also asked
-            // through AX, off the main thread (which has to answer), in case the click is not
-            // possible (a mouse button held).
-            focusRequest += 1
-            heldDisplay = id
-            focusAnchor.show(on: screen)
-            let me = getpid()
-            axQueues.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.focusAnchor.takeKey() }
-        }
-        return nil
     }
 
     /// The focus leaves the empty workspace it was held on.
@@ -284,18 +284,18 @@ extension WindowManager {
     /// Tells the menu bar what each display shows; called often (every focus change), so it
     /// only looks up the focused display when there are several, and only reports changes.
     func notifyWorkspace(focused window: ManagedWindow?? = nil) {
-        enterScope()
-        defer { leaveScope() }
-        var notice: WorkspaceBar?
-        if running, config.enabled, config.workspaces.count > 1 {
-            let screens = currentScreens()
-            let names = screens.map { displayed[$0.id].map(name(of:)) ?? "–" }
-            let focusedID = screens.count > 1 ? focusedScreen(window ?? focused())?.id : nil
-            notice = WorkspaceBar(names: names, focused: screens.firstIndex { $0.id == focusedID } ?? 0)
+        scoped {
+            var notice: WorkspaceBar?
+            if running, config.enabled, config.workspaces.count > 1 {
+                let screens = currentScreens()
+                let names = screens.map { displayed[$0.id].map(name(of:)) ?? "–" }
+                let focusedID = screens.count > 1 ? focusedScreen(window ?? focused())?.id : nil
+                notice = WorkspaceBar(names: names, focused: screens.firstIndex { $0.id == focusedID } ?? 0)
+            }
+            if let last = lastNotice, last == notice { return }
+            lastNotice = .some(notice)
+            onWorkspaceChange?(notice)
         }
-        if let last = lastNotice, last == notice { return }
-        lastNotice = .some(notice)
-        onWorkspaceChange?(notice)
     }
 
     // MARK: - Menu
@@ -303,25 +303,25 @@ extension WindowManager {
     /// Every workspace with its windows in tiling order, for when the menu opens. Titles are
     /// the ones kept up to date by the title notifications: no AX round trip here.
     func summaries() -> [WorkspaceSummary] {
-        enterScope()
-        defer { leaveScope() }
-        guard running, config.enabled, config.workspaces.count > 1 else { return [] }
-        syncDisplays()
-        let screens = currentScreens()
-        var apps: [pid_t: NSRunningApplication] = [:]
-        // In tiling order within each workspace.
-        let byWorkspace = Dictionary(grouping: orderedWindows.filter { !$0.scratchpad }, by: \.workspace)
-        return (0..<workspaceCount).map { index in
-            let members = byWorkspace[index] ?? []
-            let entries = members.map { window -> WorkspaceSummary.Window in
-                let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
-                apps[window.pid] = app
-                let title = window.title?.nilIfEmpty
-                return WorkspaceSummary.Window(app: app?.localizedName ?? window.bundleID ?? "App",
-                                               title: title, icon: app?.icon)
+        scopedValue {
+            guard running, config.enabled, config.workspaces.count > 1 else { return [] }
+            syncDisplays()
+            let screens = currentScreens()
+            var apps: [pid_t: NSRunningApplication] = [:]
+            // In tiling order within each workspace.
+            let byWorkspace = Dictionary(grouping: orderedWindows.filter { !$0.scratchpad }, by: \.workspace)
+            return (0..<workspaceCount).map { index in
+                let members = byWorkspace[index] ?? []
+                let entries = members.map { window -> WorkspaceSummary.Window in
+                    let app = apps[window.pid] ?? NSRunningApplication(processIdentifier: window.pid)
+                    apps[window.pid] = app
+                    let title = window.title?.nilIfEmpty
+                    return WorkspaceSummary.Window(app: app?.localizedName ?? window.bundleID ?? "App",
+                                                   title: title, icon: app?.icon)
+                }
+                let display = display(showing: index).flatMap { id in screens.firstIndex { $0.id == id } }.map { $0 + 1 }
+                return WorkspaceSummary(index: index, name: name(of: index), display: display, windows: entries)
             }
-            let display = display(showing: index).flatMap { id in screens.firstIndex { $0.id == id } }.map { $0 + 1 }
-            return WorkspaceSummary(index: index, name: name(of: index), display: display, windows: entries)
         }
     }
 }

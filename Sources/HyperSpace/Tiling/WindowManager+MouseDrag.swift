@@ -90,39 +90,39 @@ extension WindowManager {
             dragEndedEarly = point
             return
         }
-        enterScope()
-        defer { leaveScope() }
-        guard let session = drag else { return }
-        drag = nil
-        guard running, let id = session.id, let window = windows[id], !window.isFloating else { return }
+        scoped {
+            guard let session = drag else { return }
+            drag = nil
+            guard running, let id = session.id, let window = windows[id], !window.isFloating else { return }
 
-        let bounds = currentBounds()
-        switch session.mode {
-        case .move:
-            // Dropping a tiled window onto another one swaps them; dropping it on another
-            // display moves it into the workspace shown there.
-            if let target = visible(bounds, tiledOnly: true).first(where: { $0.0.id != id && $0.1.contains(point) }) {
-                swapOrder(id, target.0.id)
-                if window.workspace == target.0.workspace {
-                    columns[window.workspace]?.swap(id, target.0.id)
+            let bounds = currentBounds()
+            switch session.mode {
+            case .move:
+                // Dropping a tiled window onto another one swaps them; dropping it on another
+                // display moves it into the workspace shown there.
+                if let target = visible(bounds, tiledOnly: true).first(where: { $0.0.id != id && $0.1.contains(point) }) {
+                    swapOrder(id, target.0.id)
+                    if window.workspace == target.0.workspace {
+                        columns[window.workspace]?.swap(id, target.0.id)
+                    }
+                    window.workspace = target.0.workspace
+                } else if let screen = currentScreens().first(where: { $0.frame.contains(point) }),
+                          let workspace = displayed[screen.id] {
+                    window.workspace = workspace
                 }
-                window.workspace = target.0.workspace
-            } else if let screen = currentScreens().first(where: { $0.frame.contains(point) }),
-                      let workspace = displayed[screen.id] {
-                window.workspace = workspace
+            case .resize:
+                // Resizing a tiled window drags the master/stack split instead (tall and wide only).
+                guard let frame = bounds[id], let screen = currentScreens().screen(for: frame) else { break }
+                var state = state(for: screen.id)
+                guard state.layout == .tall || state.layout == .wide else { break }
+                let isMaster = tiledWindows(in: window.workspace, bounds: bounds).first === window
+                let delta = state.layout == .tall
+                    ? (point.x - session.start.x) / screen.visible.width
+                    : (point.y - session.start.y) / screen.visible.height
+                state.adjustRatio(by: isMaster ? delta : -delta)
+                setState(state, for: screen.id)
             }
-        case .resize:
-            // Resizing a tiled window drags the master/stack split instead (tall and wide only).
-            guard let frame = bounds[id], let screen = currentScreens().screen(for: frame) else { break }
-            var state = state(for: screen.id)
-            guard state.layout == .tall || state.layout == .wide else { break }
-            let isMaster = tiledWindows(in: window.workspace, bounds: bounds).first === window
-            let delta = state.layout == .tall
-                ? (point.x - session.start.x) / screen.visible.width
-                : (point.y - session.start.y) / screen.visible.height
-            state.adjustRatio(by: isMaster ? delta : -delta)
-            setState(state, for: screen.id)
+            scheduleRetile()
         }
-        scheduleRetile()
     }
 }

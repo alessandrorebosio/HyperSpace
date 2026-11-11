@@ -167,7 +167,7 @@ final class WindowManager {
 
     /// The displays, the on-screen windows and the focused window cost a window-server query,
     /// several `NSScreen` reads and a synchronous AX round trip. A command (a shortcut, a
-    /// notification) reads each at most once: between `enterScope` and `leaveScope` the first
+    /// notification) reads each at most once: inside `scoped` the first
     /// read is kept and every function the command calls shares it. Scopes nest, so a command
     /// calling another one stays in its own. Outside a scope every read is fresh.
     struct Scope {
@@ -180,14 +180,23 @@ final class WindowManager {
     var scope: Scope?
     private var scopeDepth = 0
 
-    func enterScope() {
+    /// Runs `body` in a command scope: the displays, window bounds and focused window are read
+    /// at most once for it, however many times it asks. Scopes nest; the outermost one ends them.
+    func scoped(_ body: () -> Void) {
         scopeDepth += 1
         if scopeDepth == 1 { scope = Scope() }
+        defer {
+            scopeDepth -= 1
+            if scopeDepth == 0 { scope = nil }
+        }
+        body()
     }
 
-    func leaveScope() {
-        scopeDepth -= 1
-        if scopeDepth == 0 { scope = nil }
+    /// `scoped` for a body that returns a value.
+    func scopedValue<T>(_ body: () -> T) -> T {
+        var result: T?
+        scoped { result = body() }
+        return result!
     }
 
     func currentScreens() -> [ScreenInfo] {
@@ -355,15 +364,15 @@ final class WindowManager {
 
     /// Remembers the workspace an app is being opened from, the first time it is seen.
     private func noteLaunch(_ app: NSRunningApplication) {
-        enterScope()
-        defer { leaveScope() }
-        let pid = app.processIdentifier
-        guard app.activationPolicy == .regular, !launches.contains(pid),
-              app.launchDate.map({ Date().timeIntervalSince($0) < 30 }) ?? !app.isFinishedLaunching,
-              !windows.values.contains(where: { $0.pid == pid }),
-              let workspace = focusedWorkspace else { return }
-        log.debug("launch of \(app.bundleIdentifier ?? "?", privacy: .public) from workspace \(workspace)")
-        launches.launched(pid, in: workspace)
+        scoped {
+            let pid = app.processIdentifier
+            guard app.activationPolicy == .regular, !launches.contains(pid),
+                  app.launchDate.map({ Date().timeIntervalSince($0) < 30 }) ?? !app.isFinishedLaunching,
+                  !windows.values.contains(where: { $0.pid == pid }),
+                  let workspace = focusedWorkspace else { return }
+            log.debug("launch of \(app.bundleIdentifier ?? "?", privacy: .public) from workspace \(workspace)")
+            launches.launched(pid, in: workspace)
+        }
     }
 
     private func adopt(_ pending: ArraySlice<NSRunningApplication>) {
@@ -446,10 +455,11 @@ final class WindowManager {
     /// An app activation and its focused-window change arrive together: one lookup for both.
     func scheduleFocusUpdate() {
         guard running else { return }
-        focusCoalescer.schedule { [weak self] in
-            guard let self else { return }
-            enterScope()
-            defer { leaveScope() }
+        focusCoalescer.schedule { [weak self] in self?.updateFocus() }
+    }
+
+    private func updateFocus() {
+        scoped {
             let window = focused()
             if let window, window.pid != lastFrontPID {
                 // Its app came to the front (⌘Tab, a click, the Dock): its dialogs come along.
@@ -475,66 +485,66 @@ final class WindowManager {
 
     func retile() {
         guard running, config.enabled, drag == nil, !dragStarting else { return }
-        enterScope()
-        defer { leaveScope() }
-        syncDisplays()
-        let screens = currentScreens()
-        guard !screens.isEmpty else { return }
-        let bounds = currentBounds()
-        let shown = Set(displayed.values)
-        let tiledByWorkspace = Dictionary(grouping: orderedWindows.filter { Self.isTiled($0, bounds: bounds) }, by: \.workspace)
+        scoped {
+            syncDisplays()
+            let screens = currentScreens()
+            guard !screens.isEmpty else { return }
+            let bounds = currentBounds()
+            let shown = Set(displayed.values)
+            let tiledByWorkspace = Dictionary(grouping: orderedWindows.filter { Self.isTiled($0, bounds: bounds) }, by: \.workspace)
 
-        for window in windows.values {
-            if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
-                // A dialog of a scratchpad window comes and goes with it.
-                if !owner.scratchpadShown {
+            for window in windows.values {
+                if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
+                    // A dialog of a scratchpad window comes and goes with it.
+                    if !owner.scratchpadShown {
+                        parkOrKeepHidden(window, bounds: bounds, screens: screens)
+                    } else if let frame = bounds[owner.id], let screen = screens.screen(for: frame) {
+                        restore(window, on: screen, screens)
+                    }
+                    continue
+                }
+                if window.scratchpad {
+                    // Out of the workspaces: parked unless shown.
+                    if !window.scratchpadShown { parkOrKeepHidden(window, bounds: bounds, screens: screens) }
+                    continue
+                }
+                if !shown.contains(window.workspace) {
                     parkOrKeepHidden(window, bounds: bounds, screens: screens)
-                } else if let frame = bounds[owner.id], let screen = screens.screen(for: frame) {
+                } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
                     restore(window, on: screen, screens)
                 }
-                continue
             }
-            if window.scratchpad {
-                // Out of the workspaces: parked unless shown.
-                if !window.scratchpadShown { parkOrKeepHidden(window, bounds: bounds, screens: screens) }
-                continue
-            }
-            if !shown.contains(window.workspace) {
-                parkOrKeepHidden(window, bounds: bounds, screens: screens)
-            } else if window.isFloating, let screen = screens.first(where: { displayed[$0.id] == window.workspace }) {
-                restore(window, on: screen, screens)
-            }
-        }
 
-        for screen in screens {
-            guard let workspace = displayed[screen.id] else { continue }
-            let tiled = (tiledByWorkspace[workspace] ?? []).filter { window in
-                // A native full-screen window covers the whole display, menu bar included.
-                window.hiddenFrame != nil || !screens.contains { bounds[window.id]!.isClose(to: $0.frame) }
+            for screen in screens {
+                guard let workspace = displayed[screen.id] else { continue }
+                let tiled = (tiledByWorkspace[workspace] ?? []).filter { window in
+                    // A native full-screen window covers the whole display, menu bar included.
+                    window.hiddenFrame != nil || !screens.contains { bounds[window.id]!.isClose(to: $0.frame) }
+                }
+                guard !tiled.isEmpty else { continue }
+                let state = state(for: screen.id)
+                log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map { $0.bundleID ?? "?" }, privacy: .public)")
+                let frames: [CGWindowID: CGRect]
+                if state.layout == .columns {
+                    var layout = columns[workspace] ?? ColumnLayout()
+                    layout.sync(with: tiled.map(\.id), focused: lastFocused[workspace])
+                    columns[workspace] = layout
+                    frames = layout.frames(in: area(of: screen), gap: config.gap, peek: config.accordionPadding) { windows[$0]?.weight ?? 1 }
+                } else {
+                    let focusedIndex = tiled.firstIndex { $0.id == lastFocused[workspace] } ?? 0
+                    let kind = accordionWorkspaces.contains(workspace) ? .accordion : state.layout
+                    let list = Layout.frames(kind, weights: tiled.map(\.weight), in: area(of: screen),
+                                             gap: config.gap, ratio: state.ratio, focused: focusedIndex, peek: config.accordionPadding)
+                    frames = Dictionary(uniqueKeysWithValues: zip(tiled.map(\.id), list))
+                }
+                for window in tiled {
+                    guard let frame = frames[window.id] else { continue }
+                    window.hiddenFrame = nil
+                    if !(bounds[window.id]?.isClose(to: frame, tolerance: 1) ?? false) { setFrame(window, frame, from: bounds[window.id], screens: screens) }
+                }
             }
-            guard !tiled.isEmpty else { continue }
-            let state = state(for: screen.id)
-            log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map { $0.bundleID ?? "?" }, privacy: .public)")
-            let frames: [CGWindowID: CGRect]
-            if state.layout == .columns {
-                var layout = columns[workspace] ?? ColumnLayout()
-                layout.sync(with: tiled.map(\.id), focused: lastFocused[workspace])
-                columns[workspace] = layout
-                frames = layout.frames(in: area(of: screen), gap: config.gap, peek: config.accordionPadding) { windows[$0]?.weight ?? 1 }
-            } else {
-                let focusedIndex = tiled.firstIndex { $0.id == lastFocused[workspace] } ?? 0
-                let kind = accordionWorkspaces.contains(workspace) ? .accordion : state.layout
-                let list = Layout.frames(kind, weights: tiled.map(\.weight), in: area(of: screen),
-                                         gap: config.gap, ratio: state.ratio, focused: focusedIndex, peek: config.accordionPadding)
-                frames = Dictionary(uniqueKeysWithValues: zip(tiled.map(\.id), list))
-            }
-            for window in tiled {
-                guard let frame = frames[window.id] else { continue }
-                window.hiddenFrame = nil
-                if !(bounds[window.id]?.isClose(to: frame, tolerance: 1) ?? false) { setFrame(window, frame, from: bounds[window.id], screens: screens) }
-            }
+            scheduleSave()
         }
-        scheduleSave()
     }
 
     /// The display's visible frame (no menu bar, no Dock) less the padding: every layout
@@ -567,31 +577,31 @@ final class WindowManager {
     /// ignores a background app raising a window on another display, it checks and retries.
     /// `frame` is where the window is going, when we just moved it (the move is not done yet).
     func focus(_ window: ManagedWindow, at frame: CGRect? = nil) {
-        enterScope()
-        defer { leaveScope() }
-        ignoreFocusChanges()
-        focusRequest += 1
-        let request = focusRequest
-        releaseHeldFocus()
-        let dialogs = dialogs(of: window)
-        axQueues.perform(window.pid) {
-            AX.focus(window.element, pid: window.pid)
-            dialogs.forEach(AX.raise)
-        }
-        lastFrontPID = window.pid
-        let screens = currentScreens()
-        if let frame = frame ?? currentBounds()[window.id], let screen = screens.screen(for: frame) {
-            activeDisplay = screen.id
-            bringPointer(to: frame.center, on: screen)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            // A later focus (another workspace, keys pressed in a row) wins over this retry.
-            guard let self, focusRequest == request,
-                  NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
-            note("focus did not take for \(window.bundleID ?? "?") window \(window.id), retrying")
+        scoped {
             ignoreFocusChanges()
-            NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
-            axQueues.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
+            focusRequest += 1
+            let request = focusRequest
+            releaseHeldFocus()
+            let dialogs = dialogs(of: window)
+            axQueues.perform(window.pid) {
+                AX.focus(window.element, pid: window.pid)
+                dialogs.forEach(AX.raise)
+            }
+            lastFrontPID = window.pid
+            let screens = currentScreens()
+            if let frame = frame ?? currentBounds()[window.id], let screen = screens.screen(for: frame) {
+                activeDisplay = screen.id
+                bringPointer(to: frame.center, on: screen)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                // A later focus (another workspace, keys pressed in a row) wins over this retry.
+                guard let self, focusRequest == request,
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
+                note("focus did not take for \(window.bundleID ?? "?") window \(window.id), retrying")
+                ignoreFocusChanges()
+                NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
+                axQueues.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
+            }
         }
     }
 
@@ -700,12 +710,12 @@ final class WindowManager {
     }
 
     func updateActiveScreen(_ change: (inout ScreenState) -> Void) {
-        enterScope()
-        defer { leaveScope() }
-        guard let id = focusedScreen()?.id else { return }
-        var state = state(for: id)
-        change(&state)
-        setState(state, for: id)
-        scheduleRetile()
+        scoped {
+            guard let id = focusedScreen()?.id else { return }
+            var state = state(for: id)
+            change(&state)
+            setState(state, for: id)
+            scheduleRetile()
+        }
     }
 }
