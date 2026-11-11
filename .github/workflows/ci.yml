@@ -36,7 +36,9 @@ jobs:
             DEVELOPER_DIR=/Library/Developer/CommandLineTools swift --version
             DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build -c release --scratch-path .build-clt
           else
-            echo "::warning::No Command Line Tools on this runner, skipped"
+            # The constraint must not go unchecked without anyone noticing.
+            echo "::error::No Command Line Tools on this runner: the CLT-only build cannot be checked"
+            exit 1
           fi
 
       - name: Build the app

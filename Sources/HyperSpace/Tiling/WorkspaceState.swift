@@ -53,11 +53,16 @@ struct WorkspaceState: Codable, Equatable {
         return state
     }
 
+    /// A failure (a full disk) is logged: the next start then finds older workspaces or none.
     func save() {
-        guard let data = try? Self.encoder.encode(self) else { return }
         let url = Self.fileURL
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        do {
+            let data = try Self.encoder.encode(self)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            log.error("cannot save workspaces: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private static let encoder: JSONEncoder = {
