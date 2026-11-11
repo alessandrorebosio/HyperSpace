@@ -34,13 +34,18 @@ struct PeripheralBattery: Equatable {
 enum Peripherals {
     static func batteries() -> [PeripheralBattery] {
         var found: [PeripheralBattery] = []
+        // An Apple device shows under both classes: one entry per device, by serial number
+        // (or name, when it has none), so two identical devices both show.
+        var seen = Set<String>()
         for serviceClass in ["AppleDeviceManagementHIDEventService", "IOHIDDevice"] {
             var iterator: io_iterator_t = 0
             guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching(serviceClass), &iterator) == KERN_SUCCESS else { continue }
             defer { IOObjectRelease(iterator) }
             while case let service = IOIteratorNext(iterator), service != 0 {
                 defer { IOObjectRelease(service) }
-                guard let battery = battery(of: service), !found.contains(where: { $0.name == battery.name }) else { continue }
+                guard let battery = battery(of: service) else { continue }
+                let key = property(service, "SerialNumber") as? String ?? property(service, "DeviceAddress") as? String ?? battery.name
+                guard seen.insert(key).inserted else { continue }
                 found.append(battery)
             }
         }
@@ -48,7 +53,7 @@ enum Peripherals {
     }
 
     private static func battery(of service: io_object_t) -> PeripheralBattery? {
-        guard let percent = (property(service, "BatteryPercent") as? NSNumber)?.intValue, (1...100).contains(percent) else { return nil }
+        guard let percent = (property(service, "BatteryPercent") as? NSNumber)?.intValue, (0...100).contains(percent) else { return nil }
         let name = property(service, "Product") as? String ?? "Wireless device"
         let page = (property(service, "PrimaryUsagePage") as? NSNumber)?.intValue
         let usage = (property(service, "PrimaryUsage") as? NSNumber)?.intValue

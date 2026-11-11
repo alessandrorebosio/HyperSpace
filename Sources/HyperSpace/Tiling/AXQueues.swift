@@ -37,6 +37,11 @@ final class AXQueues {
         queues[pid] = nil
     }
 
+    /// Forgets the queues of every app but `running`.
+    func prune(keeping running: Set<pid_t>) {
+        queues = queues.filter { running.contains($0.key) }
+    }
+
     /// Waits for the pending writes (on quit, so parked windows really come back).
     func flush(timeout: TimeInterval) {
         let group = DispatchGroup()

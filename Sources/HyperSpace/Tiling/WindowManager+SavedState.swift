@@ -24,11 +24,14 @@ extension WindowManager {
         restoredState = state
         restorer = WorkspaceRestorer(state)
         log.debug("restoring \(state.windows.count) window(s) saved \(state.savedAt, privacy: .public)")
+        restoreGeneration += 1
+        let generation = restoreGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
-            self?.restorer = nil
-            self?.restoredState = nil
-            self?.restoredIndex = [:]
-            self?.scheduleSave()
+            guard let self, restoreGeneration == generation else { return }
+            restorer = nil
+            restoredState = nil
+            restoredIndex = [:]
+            scheduleSave()
         }
     }
 

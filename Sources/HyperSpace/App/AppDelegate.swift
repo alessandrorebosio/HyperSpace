@@ -36,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var statusMenu: StatusMenu!
     private var permissionTimer: Timer?
+    /// SIGTERM and SIGINT (`killall`, a logout script) quit like the menu does, so the key
+    /// remaps are reset and parked windows come back.
+    private var signalSources: [DispatchSourceSignal] = []
     private var trusted = false
     private var config: Config?
 
@@ -80,6 +83,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager.onEnabledChange = { [weak self] in self?.statusMenu.tilingEnabled = $0 }
         // At login macOS reopens apps for a while (also after a logout, unlike a boot check).
         if launchedAtLogin { windowManager.revealAfter = Date().addingTimeInterval(90) }
+
+        for number in [SIGTERM, SIGINT] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { NSApp.terminate(nil) }
+            source.resume()
+            signalSources.append(source)
+        }
 
         trusted = Permissions.isTrusted(prompt: true)
         if !trusted { waitForPermission() }

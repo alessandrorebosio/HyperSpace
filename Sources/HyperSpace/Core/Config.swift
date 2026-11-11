@@ -323,12 +323,52 @@ struct Config {
         let raw: RawConfig
         do {
             raw = try JSONDecoder().decode(RawConfig.self, from: data)
-        } catch let DecodingError.dataCorrupted(context) {
-            throw ConfigError("invalid JSON: \(context.underlyingError?.localizedDescription ?? context.debugDescription)")
-        } catch {
-            throw ConfigError("invalid config: \(error)")
+        } catch let error as DecodingError {
+            throw ConfigError(Self.describe(error))
         }
         return try Config(raw)
+    }
+
+    /// A decoding error in the words of the file: where, and what was expected
+    /// ("keyboard.bindings[3].keys: expected text").
+    static func describe(_ error: DecodingError) -> String {
+        func path(_ codingPath: [CodingKey]) -> String {
+            codingPath.reduce("") { text, key in
+                if let index = key.intValue { return text + "[\(index)]" }
+                return text.isEmpty ? key.stringValue : text + "." + key.stringValue
+            }
+        }
+        func expected(_ type: Any.Type) -> String {
+            switch type {
+            case is String.Type: return "text"
+            case is Bool.Type: return "true or false"
+            case is Int.Type, is Double.Type, is CGFloat.Type: return "a number"
+            case is [Any].Type: return "a list"
+            default:
+                let name = "\(type)"
+                return name.hasPrefix("Array") ? "a list" : "an object"
+            }
+        }
+        func at(_ context: DecodingError.Context) -> String {
+            let where_ = path(context.codingPath)
+            return where_.isEmpty ? "" : where_ + ": "
+        }
+        switch error {
+        case .dataCorrupted(let context):
+            if context.codingPath.isEmpty {
+                return "invalid JSON: \(context.underlyingError?.localizedDescription ?? context.debugDescription)"
+            }
+            return "\(at(context))\(context.debugDescription)"
+        case .typeMismatch(let type, let context):
+            return "\(at(context))expected \(expected(type))"
+        case .valueNotFound(let type, let context):
+            return "\(at(context))expected \(expected(type)), found null"
+        case .keyNotFound(let key, let context):
+            let parent = path(context.codingPath)
+            return "\(parent.isEmpty ? "" : parent + ": ")missing \"\(key.stringValue)\""
+        @unknown default:
+            return "invalid config: \(error)"
+        }
     }
 
     init(_ raw: RawConfig) throws {

@@ -127,6 +127,8 @@ final class WindowManager {
     var restorer: WorkspaceRestorer?
     var restoredState: WorkspaceState?
     var restoredIndex: [CGWindowID: Int] = [:]
+    /// Counts the restores, so the timer that ends one cannot end a later one.
+    var restoreGeneration = 0
     /// The last state written (its date left out), so an unchanged state is not written again.
     var lastSaved: WorkspaceState?
     let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
@@ -265,6 +267,8 @@ final class WindowManager {
     private func start() {
         guard !running else { return }
         running = true
+        // Apps that quit while tiling was off were never forgotten.
+        axQueues.prune(keeping: Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier)))
 
         let center = NSWorkspace.shared.notificationCenter
         func observe(_ name: Notification.Name, _ handler: @escaping (NSRunningApplication?) -> Void) {
@@ -408,6 +412,17 @@ final class WindowManager {
         focusEpoch.removeAll()
         pendingDiscoveries = 0
         afterDiscoveries.removeAll()
+        // Nothing of this run may leak into the next start.
+        restorer = nil
+        restoredState = nil
+        restoredIndex.removeAll()
+        restoreGeneration += 1
+        pendingScratchpad.removeAll()
+        scratchpadFitted = nil
+        movedAway = nil
+        drag = nil
+        dragStarting = false
+        dragEndedEarly = nil
     }
 
     /// After a crash windows can be left parked off-screen: bring them back.
