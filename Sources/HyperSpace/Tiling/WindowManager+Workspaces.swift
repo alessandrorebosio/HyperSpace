@@ -95,11 +95,10 @@ extension WindowManager {
             previousWorkspace = current
             if let window = focused(), window.workspace == current, !window.scratchpad { lastFocused[current] = window.id }
         }
-        // A real workspace change closes the scratchpad.
-        if focusedWorkspace != index || displayed[screen.id] != index {
-            let shown = windows.values.filter { $0.scratchpad && $0.scratchpadShown }
-            if !shown.isEmpty { parkScratchpad(shown, screens: screens, bounds: currentBounds()) }
-        }
+        // Any workspace switch closes the scratchpad, the one you are on included: left on
+        // screen behind the windows focused below, it would still show (in gaps, screenshots).
+        let shown = windows.values.filter { $0.scratchpad && $0.scratchpadShown }
+        if !shown.isEmpty { parkScratchpad(shown, screens: screens, bounds: currentBounds()) }
         if displayed[screen.id] != index {
             showWorkspace(index, on: screen.id)
             retile()
