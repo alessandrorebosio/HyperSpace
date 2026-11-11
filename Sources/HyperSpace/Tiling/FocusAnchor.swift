@@ -44,7 +44,8 @@ final class FocusAnchor: NSObject, NSWindowDelegate {
     func show(on screen: ScreenInfo) {
         let center = screen.visible.center
         point = center
-        window.setFrameOrigin(NSPoint(x: center.x - 1, y: ScreenInfo.primaryHeight - center.y - 1))
+        // The 2×2 pt window centered there, in AppKit coordinates.
+        window.setFrameOrigin(ScreenInfo.flipped(CGRect(x: center.x - 1, y: center.y - 1, width: 2, height: 2)).origin)
         window.orderFrontRegardless()
         shown = true
         window.makeKey()

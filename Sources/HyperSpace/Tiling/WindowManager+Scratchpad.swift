@@ -76,7 +76,7 @@ extension WindowManager {
             window.scratchpadShown = false
             window.hiddenFrame = nil
             window.workspace = focusedWorkspace ?? window.workspace
-            log.debug("window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) back into workspace \(window.workspace)")
+            log.debug("window \(window.id) (\(window.appLabel, privacy: .public)) back into workspace \(window.workspace)")
             retile()
             focus(window)
         } else {
@@ -101,7 +101,7 @@ extension WindowManager {
             let target = Self.scratchpadFrame(in: screen.visible, size: config.scratchpadSize)
             let frame = scratchpadFitted.flatMap { $0.target == target ? target.centered($0.size, rounded: true) : nil } ?? target
             let current = currentBounds()[window.id]
-            log.debug("show scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) on display \(screen.id)")
+            log.debug("show scratchpad window \(window.id) (\(window.appLabel, privacy: .public)) on display \(screen.id)")
             window.scratchpadShown = true
             window.hiddenFrame = nil
             setFrame(window, frame, from: current, screens: screens)
@@ -161,7 +161,7 @@ extension WindowManager {
                 hide(window, from: shown, screens: screens)
                 frame = frame ?? shown
             }
-            log.debug("hide scratchpad window \(window.id) (\(window.bundleID ?? "?", privacy: .public))")
+            log.debug("hide scratchpad window \(window.id) (\(window.appLabel, privacy: .public))")
         }
         // Its dialogs go with it.
         for dialog in pad.flatMap(dialogWindows) where dialog.hiddenFrame == nil {

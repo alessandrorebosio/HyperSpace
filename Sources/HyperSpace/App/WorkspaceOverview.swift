@@ -129,18 +129,15 @@ final class WorkspaceOverview {
 
 struct OverviewView: View {
     struct Card: Identifiable {
-        let index: Int
-        let name: String
+        let summary: WorkspaceSummary
         let keys: String?
-        let display: Int?
+        /// `summary.apps`, worked out once.
         let apps: [WorkspaceSummary.App]
-        var id: Int { index }
+        var id: Int { summary.index }
 
         init(_ summary: WorkspaceSummary, keys: String?) {
-            index = summary.index
-            name = summary.name
+            self.summary = summary
             self.keys = keys
-            display = summary.display
             apps = summary.apps
         }
     }
@@ -165,7 +162,7 @@ struct OverviewView: View {
             ForEach(rows.indices, id: \.self) { row in
                 HStack(alignment: .top, spacing: Self.spacing) {
                     ForEach(rows[row]) { card in
-                        CardView(card: card, focused: card.index == focused)
+                        CardView(card: card, focused: card.summary.index == focused)
                     }
                 }
             }
@@ -183,10 +180,10 @@ struct OverviewView: View {
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Text(card.name)
+                    Text(card.summary.name)
                         .font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
-                    if let display = card.display {
+                    if card.summary.display != nil {
                         Image(systemName: "display")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)

@@ -9,8 +9,7 @@ enum Pointer {
     /// Where the pointer is, falling back to AppKit's location (main thread).
     static var location: CGPoint {
         if let location = eventLocation { return location }
-        let mouse = NSEvent.mouseLocation
-        return CGPoint(x: mouse.x, y: ScreenInfo.primaryHeight - mouse.y)
+        return ScreenInfo.flipped(NSEvent.mouseLocation)
     }
 
     /// Moves the pointer without freezing it afterwards (a plain warp ignores the mouse briefly).

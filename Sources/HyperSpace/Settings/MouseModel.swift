@@ -115,7 +115,7 @@ final class MouseModel: ObservableObject, FileBackedModel {
         for (_, items) in presets {
             for item in items {
                 if byAction[item.action] == nil { byAction[item.action] = item.name }
-                if item.action.hasPrefix("key "), let combo = try? KeyCombo.parse(String(item.action.dropFirst(4))) {
+                if let combo = keyCombo(of: item.action) {
                     byCombo.append((combo, item.name))
                 }
             }
@@ -123,10 +123,20 @@ final class MouseModel: ObservableObject, FileBackedModel {
         return (byAction, byCombo)
     }()
 
+    /// The shortcut a "key …" action sends, as written.
+    static func keys(of action: String) -> String? {
+        action.hasPrefix("key ") ? String(action.dropFirst(4)) : nil
+    }
+
+    /// The shortcut a "key …" action sends, parsed.
+    static func keyCombo(of action: String) -> KeyCombo? {
+        keys(of: action).flatMap { try? KeyCombo.parse($0) }
+    }
+
     /// The preset name for an action, matching key shortcuts by meaning ("cmd+[" == "cmd+left_bracket").
     private static func presetName(_ action: String) -> String? {
         if let name = presetNames.byAction[action] { return name }
-        guard action.hasPrefix("key "), let combo = try? KeyCombo.parse(String(action.dropFirst(4))) else { return nil }
+        guard let combo = keyCombo(of: action) else { return nil }
         return presetNames.byCombo.first { $0.combo == combo }?.name
     }
 
@@ -159,7 +169,7 @@ final class MouseModel: ObservableObject, FileBackedModel {
     static func actionLabel(_ action: String) -> String {
         if action == "none" { return "Disabled" }
         if let name = presetName(action) { return name }
-        if action.hasPrefix("key ") { return RemapTarget.label(String(action.dropFirst(4))) }
+        if let keys = keys(of: action) { return RemapTarget.label(keys) }
         return action
     }
 

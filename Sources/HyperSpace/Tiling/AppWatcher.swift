@@ -5,6 +5,8 @@ import AppKit
 final class AppWatcher {
     let pid: pid_t
     let bundleID: String?
+    /// The app, for log lines.
+    var appLabel: String { bundleID ?? "?" }
     let element: AXUIElement
     private let observer: AXObserver
     private let refcon: UnsafeMutableRawPointer

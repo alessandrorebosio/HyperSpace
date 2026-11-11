@@ -5,6 +5,8 @@ final class ManagedWindow {
     let element: AXUIElement
     let pid: pid_t
     let bundleID: String?
+    /// The app, for log lines.
+    var appLabel: String { bundleID ?? "?" }
     var isFloating = false
     /// A dialog (or dialog-like window: no zoom, no full screen): always floats unless toggled by hand.
     var isDialog = false

@@ -331,7 +331,7 @@ final class WindowManager {
         syncDisplays()
         // One app per run loop turn, the frontmost first: shortcuts stay responsive while
         // apps that are slow to answer (at login) are adopted, and the screen tiles once.
-        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontmost = frontmostPID
         let pending = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
             .sorted { ($0.processIdentifier == frontmost ? 0 : 1) < ($1.processIdentifier == frontmost ? 0 : 1) }
@@ -346,9 +346,8 @@ final class WindowManager {
         // The focused window of the removed display moving must not switch workspaces.
         ignoreFocusChanges()
         syncDisplays()
-        scheduleRetile()
         // macOS relocates the windows of the removed display a moment after the notification.
-        DispatchQueue.main.asyncAfter(delays: [0.5, 1.5]) { [weak self] in self?.scheduleRetile() }
+        scheduleRetile(after: [0.5, 1.5])
         notifyWorkspace()
     }
 
@@ -447,6 +446,21 @@ final class WindowManager {
     // MARK: - Layout
 
     /// Coalesces bursts of events (an app opening five windows) into one retile.
+    /// The scratchpad window a dialog belongs to, if it belongs to one: it comes and goes with it.
+    func scratchpadOwner(of window: ManagedWindow) -> ManagedWindow? {
+        guard let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad else { return nil }
+        return owner
+    }
+
+    /// The app in front, if any.
+    var frontmostPID: pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+
+    /// Retiles now and again after each of `delays` (apps that settle a moment later).
+    func scheduleRetile(after delays: [TimeInterval]) {
+        scheduleRetile()
+        DispatchQueue.main.asyncAfter(delays: delays) { [weak self] in self?.scheduleRetile() }
+    }
+
     func scheduleRetile() {
         guard running, !adopting else { return }
         retileCoalescer.schedule { [weak self] in self?.retile() }
@@ -466,7 +480,7 @@ final class WindowManager {
                 let dialogs = dialogs(of: window)
                 if !dialogs.isEmpty { axQueues.perform(window.pid) { dialogs.forEach(AX.raise) } }
             }
-            lastFrontPID = window?.pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+            lastFrontPID = window?.pid ?? frontmostPID
             followFocus(window)
             notifyWorkspace(focused: window)
         }
@@ -494,7 +508,7 @@ final class WindowManager {
             let tiledByWorkspace = Dictionary(grouping: orderedWindows.filter { Self.isTiled($0, bounds: bounds) }, by: \.workspace)
 
             for window in windows.values {
-                if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
+                if let owner = scratchpadOwner(of: window) {
                     // A dialog of a scratchpad window comes and goes with it.
                     if !owner.scratchpadShown {
                         parkOrKeepHidden(window, bounds: bounds, screens: screens)
@@ -523,7 +537,7 @@ final class WindowManager {
                 }
                 guard !tiled.isEmpty else { continue }
                 let state = state(for: screen.id)
-                log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map { $0.bundleID ?? "?" }, privacy: .public)")
+                log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map(\.appLabel), privacy: .public)")
                 let frames: [CGWindowID: CGRect]
                 if state.layout == .columns {
                     var layout = columns[workspace] ?? ColumnLayout()
@@ -596,8 +610,8 @@ final class WindowManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 // A later focus (another workspace, keys pressed in a row) wins over this retry.
                 guard let self, focusRequest == request,
-                      NSWorkspace.shared.frontmostApplication?.processIdentifier != window.pid else { return }
-                note("focus did not take for \(window.bundleID ?? "?") window \(window.id), retrying")
+                      frontmostPID != window.pid else { return }
+                note("focus did not take for \(window.appLabel) window \(window.id), retrying")
                 ignoreFocusChanges()
                 NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
                 axQueues.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
@@ -629,7 +643,7 @@ final class WindowManager {
         guard !steps.isEmpty else { return }
         let app = apps[window.pid]?.element
         let element = window.element
-        let name = window.bundleID ?? "?"
+        let name = window.appLabel
         axQueues.perform(window.pid) { [weak self] in
             // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
             // animate every AX resize; switch it off while we move the window.

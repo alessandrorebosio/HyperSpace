@@ -48,7 +48,7 @@ extension WindowManager {
                     if window.scratchpad { flags.append(window.scratchpadShown ? "scratchpad shown" : "scratchpad") }
                     if window.hiddenFrame != nil { flags.append("parked") }
                     if bounds[window.id] == nil { flags.append("off screen") }
-                    lines.append("  \(window.bundleID ?? "?") #\(window.id) “\(title)” \(bounds[window.id].map(Self.describe) ?? "-") \(flags.joined(separator: " "))")
+                    lines.append("  \(window.appLabel) #\(window.id) “\(title)” \(bounds[window.id].map(Self.describe) ?? "-") \(flags.joined(separator: " "))")
                 }
             }
             lines.append("Watched apps: " + apps.values.map { $0.bundleID ?? "\($0.pid)" }.sorted().joined(separator: ", "))

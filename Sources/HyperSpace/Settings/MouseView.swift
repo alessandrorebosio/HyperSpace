@@ -45,25 +45,13 @@ private struct MouseRuleRow: View {
     let rule: MouseModel.Rule
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                buttonCap
-                RuleArrow()
-                actionCap
-                Spacer(minLength: 12)
-                trailing
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    buttonCap
-                    Spacer(minLength: 12)
-                    trailing
-                }
-                HStack(spacing: 8) {
-                    RuleArrow()
-                    actionCap
-                }
-            }
+        RuleRowLayout {
+            buttonCap
+        } second: {
+            RuleArrow()
+            actionCap
+        } trailing: {
+            trailing
         }
     }
 

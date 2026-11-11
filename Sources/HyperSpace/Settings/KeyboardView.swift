@@ -86,24 +86,12 @@ private struct RuleRow: View {
     let rule: KeyboardModel.Rule
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                keys
-                Spacer(minLength: 12)
-                keyboardPicker
-                trailing
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    keys
-                    Spacer(minLength: 12)
-                    trailing
-                }
-                HStack(spacing: 8) {
-                    Text("On").foregroundStyle(.secondary)
-                    keyboardPicker
-                }
-            }
+        RuleRowLayout(secondAtEnd: true, spacing: 10, secondLabel: "On") {
+            keys
+        } second: {
+            keyboardPicker
+        } trailing: {
+            trailing
         }
     }
 

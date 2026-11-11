@@ -19,7 +19,7 @@ extension WindowManager {
     /// the main thread, for apps that do not always announce a focus change. Only an app not
     /// looked at yet is asked here, once.
     private func readFocused() -> ManagedWindow? {
-        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+        guard let pid = frontmostPID,
               let watcher = apps[pid] else { return nil }
         if let id = focusedIn[pid] {
             refreshFocused(pid)

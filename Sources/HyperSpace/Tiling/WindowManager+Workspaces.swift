@@ -127,7 +127,7 @@ extension WindowManager {
             // Its dialogs go along.
             let moving = [window] + dialogWindows(of: window)
             moving.forEach { $0.workspace = index }
-            log.debug("move window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
+            log.debug("move window \(window.id) (\(window.appLabel, privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
             // A floating window going to a workspace shown on another display keeps its place there.
             carryFloating(moving, screens: currentScreens())
             retile()
@@ -255,7 +255,7 @@ extension WindowManager {
         if heldDisplay != nil, Date() > followFocusAfter { releaseHeldFocus() }
         window.focusedAt = Date()
         // A dialog of a scratchpad window lives with it, not in a workspace.
-        if let owner = window.parent.flatMap({ windows[$0] }), owner.scratchpad {
+        if let owner = scratchpadOwner(of: window) {
             owner.focusedAt = window.focusedAt
             return
         }
@@ -277,7 +277,7 @@ extension WindowManager {
         }
         if window.id != movedAway { movedAway = nil }
         guard Date() > followFocusAfter, window.id != movedAway, display(showing: window.workspace) == nil else { return }
-        log.debug("follow focus to window \(window.id) (\(window.bundleID ?? "?", privacy: .public)) in workspace \(window.workspace)")
+        log.debug("follow focus to window \(window.id) (\(window.appLabel, privacy: .public)) in workspace \(window.workspace)")
         switchWorkspace(window.workspace)
     }
 

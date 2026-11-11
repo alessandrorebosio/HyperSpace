@@ -17,10 +17,10 @@ struct ScreenInfo {
         let screens = NSScreen.screens
         guard let primary = screens.first else { return [] }
         let height = primary.frame.height
-        func flip(_ r: CGRect) -> CGRect { CGRect(x: r.minX, y: height - r.maxY, width: r.width, height: r.height) }
         let all = screens.map { screen in
             let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
-            return ScreenInfo(id: id, frame: flip(screen.frame), visible: flip(screen.visibleFrame), name: screen.localizedName)
+            return ScreenInfo(id: id, frame: flipped(screen.frame, height: height),
+                              visible: flipped(screen.visibleFrame, height: height), name: screen.localizedName)
         }
         let present = all.filter { !DisplayMonitor.absent.contains($0.id) }
         return (present.isEmpty ? all : present)
@@ -37,6 +37,16 @@ extension ScreenInfo {
     /// Height of the main display: AppKit's bottom-left coordinates and the top-left ones of AX
     /// and CGEvent mirror each other around it.
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
+
+    /// Between AppKit's bottom-left coordinates and the top-left ones of AX and CGEvent (the
+    /// flip is its own inverse), against the main display's height.
+    static func flipped(_ rect: CGRect, height: CGFloat = primaryHeight) -> CGRect {
+        CGRect(x: rect.minX, y: height - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    static func flipped(_ point: CGPoint, height: CGFloat = primaryHeight) -> CGPoint {
+        CGPoint(x: point.x, y: height - point.y)
+    }
 
     /// The display's UUID: unlike its id, the same every time the monitor is plugged in.
     var uuid: String { Self.uuid(of: id) }

@@ -8,7 +8,7 @@ extension WindowManager {
         guard running, app.activationPolicy == .regular, pid != getpid(), apps[pid] == nil, !app.isTerminated else { return }
         if let watcher = AppWatcher(app: app, refcon: refcon) {
             apps[pid] = watcher
-            log.debug("watch \(watcher.bundleID ?? "?", privacy: .public)")
+            log.debug("watch \(watcher.appLabel, privacy: .public)")
             discover(watcher)
         } else if attempt < 20 {
             if attempt == 0 || attempt == 19 { note("cannot watch \(app.bundleIdentifier ?? "?") yet (attempt \(attempt + 1))") }
@@ -80,7 +80,7 @@ extension WindowManager {
     @discardableResult
     private func track(_ probe: AX.WindowProbe, in watcher: AppWatcher) -> ManagedWindow? {
         let element = probe.element
-        let appID = watcher.bundleID ?? "?"
+        let appID = watcher.appLabel
         let role = probe.role ?? "-"
         guard let id = probe.id else {
             // The Finder desktop (a scroll area) is listed among its windows: not worth a line.
@@ -124,7 +124,7 @@ extension WindowManager {
         // Opened while you work in a scratchpad window of its app (⌘N, or ⌘T in a terminal):
         // it joins the scratchpad instead of the tiling.
         if parent == nil, !window.scratchpad, restored == nil,
-           NSWorkspace.shared.frontmostApplication?.processIdentifier == watcher.pid,
+           frontmostPID == watcher.pid,
            let current = windows.values.filter({ $0.pid == watcher.pid }).max(by: { $0.focusedAt < $1.focusedAt }),
            current.scratchpad, current.scratchpadShown {
             log.debug("window \(id) opened from scratchpad window \(current.id): joins the scratchpad")
@@ -156,7 +156,7 @@ extension WindowManager {
         windowIDs[window.pid, default: []].append(id)
         order.append(id)
         watcher.watch(element)
-        log.debug("track \(watcher.bundleID ?? "?", privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)\(parent.map { " dialog of \($0.id)" } ?? "")")
+        log.debug("track \(watcher.appLabel, privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)\(parent.map { " dialog of \($0.id)" } ?? "")")
         return window
     }
 
@@ -185,7 +185,7 @@ extension WindowManager {
         guard Date() > revealAfter else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, windows[window.id] === window, display(showing: window.workspace) == nil else { return }
-            log.debug("reveal workspace \(window.workspace) for opened app \(window.bundleID ?? "?", privacy: .public)")
+            log.debug("reveal workspace \(window.workspace) for opened app \(window.appLabel, privacy: .public)")
             lastFocused[window.workspace] = window.id
             switchWorkspace(window.workspace)
             // The window may reach the screen a moment later: focus it then.
@@ -298,7 +298,7 @@ extension WindowManager {
             let pid = watcher.pid
             // A scratchpad window is shown where you are, whatever its workspace.
             if window.scratchpad { return }
-            if display(showing: window.workspace) == nil, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+            if display(showing: window.workspace) == nil, frontmostPID == pid {
                 lastFocused[window.workspace] = window.id
                 if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
                     // An app you just opened shows its assigned workspace, so its window is visible.
@@ -306,7 +306,7 @@ extension WindowManager {
                 } else {
                     // It finished loading after you left its workspace: it stays there, and
                     // the focus stays where you are.
-                    log.debug("window \(window.id) (\(watcher.bundleID ?? "?", privacy: .public)) opened in hidden workspace \(window.workspace)")
+                    log.debug("window \(window.id) (\(watcher.appLabel, privacy: .public)) opened in hidden workspace \(window.workspace)")
                     let here = activeDisplay.flatMap { displayed[$0] }
                     ignoreFocusChanges()
                     movedAway = window.id
@@ -316,9 +316,8 @@ extension WindowManager {
                 }
                 return
             }
-            scheduleRetile()
             // Some apps put the window on screen a moment after announcing it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+            scheduleRetile(after: [0.25])
         }
     }
 

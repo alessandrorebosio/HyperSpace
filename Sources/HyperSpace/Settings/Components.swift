@@ -263,6 +263,59 @@ extension KeyboardModel: CaptureModel {}
 extension MouseModel: CaptureModel {}
 extension TilingModel: CaptureModel {}
 
+// MARK: - Rule rows
+
+/// A rule row of the Keyboard and Mouse pages: on one line when it fits, else the first part
+/// with the trailing controls on one line and the second part under them.
+struct RuleRowLayout<First: View, Second: View, Trailing: View>: View {
+    /// On one line, the second part sits before the trailing controls (a picker) rather than
+    /// next to the first (an arrow and a target).
+    var secondAtEnd = false
+    var spacing: CGFloat = 8
+    /// Put before the second part when it has a line of its own ("On" before a keyboard).
+    var secondLabel: String?
+    let first: First
+    let second: Second
+    let trailing: Trailing
+
+    init(secondAtEnd: Bool = false, spacing: CGFloat = 8, secondLabel: String? = nil,
+         @ViewBuilder first: () -> First, @ViewBuilder second: () -> Second, @ViewBuilder trailing: () -> Trailing) {
+        self.secondAtEnd = secondAtEnd
+        self.spacing = spacing
+        self.secondLabel = secondLabel
+        self.first = first()
+        self.second = second()
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: spacing) {
+                first
+                if secondAtEnd {
+                    Spacer(minLength: 12)
+                    second
+                } else {
+                    second
+                    Spacer(minLength: 12)
+                }
+                trailing
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: spacing) {
+                    first
+                    Spacer(minLength: 12)
+                    trailing
+                }
+                HStack(spacing: 8) {
+                    if let secondLabel { Text(secondLabel).foregroundStyle(.secondary) }
+                    second
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Notices
 
 /// A notice at the top of a page: what is wrong and the one button that fixes it.
