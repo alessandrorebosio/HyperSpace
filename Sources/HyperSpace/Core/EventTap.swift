@@ -149,6 +149,12 @@ final class EventTap {
     /// Locks for `KeyboardLock.minutes` (or until unlocked when 0), or unlocks.
     func setKeyboardLocked(_ locked: Bool) {
         guard locked != isKeyboardLocked else { return }
+        // Without the permission there is no tap to ignore the keys: a lock would only claim to be on.
+        if locked, !Permissions.isTrusted(prompt: false) {
+            log.error("keyboard not locked: Accessibility permission missing")
+            NSSound.beep()
+            return
+        }
         isKeyboardLocked = locked
         unlockTimer?.invalidate()
         unlockTimer = nil

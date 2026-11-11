@@ -68,7 +68,7 @@ final class GeneralModel: ObservableObject {
 
     /// How the app is doing, in a few words with a color: on the sidebar and the General page.
     var health: (text: String, color: Color) {
-        if !accessibilityGranted { return ("Accessibility needed", .orange) }
+        if !accessibilityGranted { return (Permissions.missingShort, .orange) }
         if problem != nil { return ("Needs attention", .red) }
         return ("Running", .green)
     }

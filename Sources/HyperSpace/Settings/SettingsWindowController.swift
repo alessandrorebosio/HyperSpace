@@ -8,8 +8,9 @@ final class SettingsNavigation: ObservableObject {
         case keyboard, mouse, trackpad, tiling, workspaces, windowRules, shortcuts, general
 
         /// Pages whose features stay off, fully or in part, without the Accessibility permission
-        /// (the trackpad's sliders hold the pointer still through the event tap).
-        var needsPermission: Bool { self != .keyboard && self != .general }
+        /// (the keyboard's combinations and lock, and the trackpad's held pointer, go through
+        /// the event tap). General shows its own notice.
+        var needsPermission: Bool { self != .general }
 
         var title: String {
             switch self {

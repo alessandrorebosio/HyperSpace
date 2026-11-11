@@ -7,6 +7,7 @@ struct KeyboardView: View {
     var body: some View {
         Form {
             PageHero(page: .keyboard)
+            PermissionNotice(detail: "Remapping one key to another already works. Combinations (the hyper key, ⌃⌥⇧…) and the keyboard lock need HyperSpace to be allowed in Privacy & Security → Accessibility.")
 
             Section {
                 KeyboardLockRow(model: model, countdown: model.unlockCountdown)
@@ -50,6 +51,7 @@ struct KeyboardView: View {
 private struct KeyboardLockRow: View {
     @ObservedObject var model: KeyboardModel
     @ObservedObject var countdown: UnlockCountdown
+    @Environment(\.permissionMissing) private var permissionMissing
 
     var body: some View {
         HStack(spacing: 12) {
@@ -63,6 +65,8 @@ private struct KeyboardLockRow: View {
                     .buttonStyle(.borderedProminent)
             } else {
                 Button("Lock Keyboard") { model.setKeyboardLocked(true) }
+                    // Without the event tap a lock would only claim to be on.
+                    .disabled(permissionMissing)
             }
         }
         .padding(.vertical, 2)

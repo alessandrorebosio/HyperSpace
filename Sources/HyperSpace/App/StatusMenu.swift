@@ -30,7 +30,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         var text: String {
             switch self {
-            case .permission: return "Accessibility not granted to this build"
+            // A rebuilt, ad-hoc signed app may lose the grant: say it is this build's.
+            case .permission: return "\(Permissions.missingTitle): not granted to this build"
             case .config(let message): return "Config error: \(message)"
             }
         }
@@ -39,7 +40,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         /// (the whole message stays in the tooltip and in Settings).
         var menuTitle: String {
             switch self {
-            case .permission: return "Accessibility permission needed"
+            case .permission: return Permissions.missingTitle
             case .config(let message):
                 let line = message.split(separator: "\n").first.map(String.init) ?? message
                 return "Config error: " + (line.count > 48 ? String(line.prefix(47)) + "…" : line)
@@ -177,26 +178,31 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         // Lock and Unlock share one place, so the mouse finds Unlock where it clicked Lock.
         let locked = keyboardLocked
         let left = locked ? host.keyboardUnlocksAt().map { " (\(KeyboardLock.remaining(until: $0)))" } ?? "" : ""
-        let lock = ClosureMenuItem(locked ? "Unlock Keyboard" + left : "Lock Keyboard") { [host] in host.setKeyboardLocked(!locked) }
-        lock.attributedTitle = Self.title(lock.title, symbol: locked ? "lock.open" : "lock")
-        menu.addItem(lock)
+        menu.addItem(Self.item(locked ? "Unlock Keyboard" + left : "Lock Keyboard", symbol: locked ? "lock.open" : "lock") { [host] in
+            host.setKeyboardLocked(!locked)
+        })
         menu.addItem(.separator())
 
-        let settings = ClosureMenuItem("Settings…") { [host] in host.openSettings() }
+        let settings = Self.item("Settings…", symbol: "gearshape") { [host] in host.openSettings() }
         settings.keyEquivalent = ","
-        settings.attributedTitle = Self.title(settings.title, symbol: "gearshape")
         menu.addItem(settings)
-        let debug = ClosureMenuItem("Copy Debug Info") { [host] in
+        let debug = Self.item("Copy Debug Info", symbol: "doc.on.doc") { [host] in
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(host.debugInfo(), forType: .string)
         }
-        debug.attributedTitle = Self.title(debug.title, symbol: "doc.on.doc")
         debug.toolTip = "Displays, workspaces and windows, to paste when something goes wrong"
         menu.addItem(debug)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit HyperSpace", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.attributedTitle = Self.title(quit.title, symbol: "power")
         menu.addItem(quit)
+    }
+
+    /// An item with a symbol before its title.
+    private static func item(_ title: String, symbol: String, _ handler: @escaping () -> Void) -> ClosureMenuItem {
+        let item = ClosureMenuItem(title, handler: handler)
+        item.attributedTitle = Self.title(title, symbol: symbol)
+        return item
     }
 
     /// Where the text of every item starts: the symbols sit in the slot before it.

@@ -309,7 +309,7 @@ struct PermissionNotice: View {
     var body: some View {
         if missing {
             Section {
-                NoticeRow(symbol: "lock.shield.fill", color: .orange, title: "Accessibility permission needed",
+                NoticeRow(symbol: "lock.shield.fill", color: .orange, title: Permissions.missingTitle,
                           detail: detail, button: "Open System Settings…") { Permissions.openSettings() }
             }
         }

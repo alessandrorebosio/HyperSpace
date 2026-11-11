@@ -63,7 +63,7 @@ struct WindowRulesView: View {
                 }
             } header: {
                 SectionHeader(title: "Scratchpad Apps") {
-                    AddAppMenu(candidates: model.scratchpadCandidates, chooseTitle: "Choose App…",
+                    AddAppMenu(candidates: model.scratchpadCandidates, chooseTitle: "Other App…",
                                add: model.addScratchpadApp, choose: model.chooseAppForScratchpad)
                 }
             } footer: {
