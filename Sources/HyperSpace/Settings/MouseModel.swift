@@ -169,6 +169,9 @@ final class MouseModel: ObservableObject {
                 return true
             }
         case .action:
+            // A bound shortcut is recorded, not run. As on the Shortcuts page, Escape alone
+            // cancels and Delete alone clears (the button then does nothing).
+            eventTap.setKeyBindingsSuspended(true)
             monitor.start(.keyDown) { [weak self] event in
                 guard let self else { return false }
                 guard let name = KeyCodes.name(forKeyCode: event.keyCode) else {
@@ -176,8 +179,11 @@ final class MouseModel: ObservableObject {
                     return true
                 }
                 let modifiers = Modifiers(event.modifierFlags)
-                let combo = modifiers.text(key: name)
-                update(field) { $0.action = "key \(combo)" }
+                switch (name, modifiers.isEmpty) {
+                case ("escape", true): stopCapture()
+                case ("delete", true): update(field) { $0.action = "none" }
+                default: update(field) { $0.action = "key \(modifiers.text(key: name))" }
+                }
                 return true
             }
         }
@@ -185,7 +191,11 @@ final class MouseModel: ObservableObject {
 
     func stopCapture() {
         monitor.stop()
-        if case .button = capturing { eventTap.setButtonsSuspended(false) }
+        switch capturing {
+        case .button: eventTap.setButtonsSuspended(false)
+        case .action: eventTap.setKeyBindingsSuspended(false)
+        case nil: return
+        }
         capturing = nil
     }
 

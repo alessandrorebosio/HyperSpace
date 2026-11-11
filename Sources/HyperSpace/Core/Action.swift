@@ -56,6 +56,15 @@ enum Action: Equatable {
     /// button shows it until pressed again).
     case workspaceOverview
 
+    /// Whether holding the shortcut repeats the action with the key's autorepeat. Only moves
+    /// that make sense in steps do; the rest (launching, toggling, a shell command) run once.
+    var repeats: Bool {
+        switch self {
+        case .focus, .swap, .resize, .adjustRatio, .sendKey, .media: return true
+        default: return false
+        }
+    }
+
     static func parse(_ text: String) throws -> Action {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)

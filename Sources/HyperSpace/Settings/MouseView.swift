@@ -29,7 +29,7 @@ struct MouseView: View {
                 }
             } footer: {
                 SectionFooter(
-                    "Click the mouse button over this window (hold modifiers to include them), then press the keys it should send or pick an action from the menu.",
+                    "Click the mouse button over this window (hold modifiers to include them), then press the keys it should send or pick an action from the menu. Esc cancels, Delete disables the button.",
                     error: model.saveError
                 )
             }

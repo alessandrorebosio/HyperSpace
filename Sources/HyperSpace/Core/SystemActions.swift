@@ -170,7 +170,10 @@ enum MediaKey: String {
                 timestamp: 0, windowNumber: 0, context: nil, subtype: 8,
                 data1: keyType << 16 | state, data2: -1
             )
-            event?.cgEvent?.post(tap: .cghidEventTap)
+            guard let cgEvent = event?.cgEvent else { continue }
+            // Ours: let through by the tap, also while the keyboard is locked.
+            cgEvent.setIntegerValueField(.eventSourceUserData, value: EventTap.syntheticMarker)
+            cgEvent.post(tap: .cghidEventTap)
         }
     }
 }

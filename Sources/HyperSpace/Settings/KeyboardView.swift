@@ -37,7 +37,7 @@ struct KeyboardView: View {
                 }
             } footer: {
                 SectionFooter(
-                    "Click a key cap, then press the key. For a combination, hold the keys together and release them.",
+                    "Click a key cap, then press the key. For a combination, hold the keys together and release them. Every key is recorded, Esc too: click the cap again to cancel.",
                     error: model.saveError
                 )
             }

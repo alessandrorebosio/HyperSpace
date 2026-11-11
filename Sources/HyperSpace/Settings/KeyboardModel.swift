@@ -136,6 +136,8 @@ final class KeyboardModel: ObservableObject {
         soleModifierKey = nil
         capturePreview = ""
         remapper.suspend()
+        // A bound shortcut is recorded, not run.
+        eventTap.setKeyBindingsSuspended(true)
         monitor.start([.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return false }
             if case .to = capturing {
@@ -185,6 +187,7 @@ final class KeyboardModel: ObservableObject {
         capturing = nil
         capturePreview = ""
         remapper.resume()
+        eventTap.setKeyBindingsSuspended(false)
     }
 
     private func finishCapture(_ name: String) {

@@ -49,4 +49,9 @@ final class DragController {
     func end(_ point: CGPoint) {
         DispatchQueue.main.async { [self] in windowManager.endDrag(at: point) }
     }
+
+    /// The drag ends at the pointer: its mouse-up will never be seen.
+    func cancel() {
+        DispatchQueue.main.async { [self] in windowManager.endDrag(at: Pointer.location) }
+    }
 }

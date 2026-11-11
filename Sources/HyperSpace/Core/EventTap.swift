@@ -113,7 +113,7 @@ final class EventTap {
         heldModifiers = []
         clearSwallowedKeys()
         if includingMouse {
-            dragMode = nil
+            cancelDrag()
             heldPointer = nil
             clearSwallowedButtons()
         }
@@ -131,6 +131,14 @@ final class EventTap {
         overviewKey = -1
         let onOverview = onOverview
         DispatchQueue.main.async { onOverview(false) }
+    }
+
+    /// Tap thread: a modifier-drag whose mouse-up will not be seen (a new config, a tap that
+    /// timed out) ends where the pointer is, so the window manager does not wait for it.
+    private func cancelDrag() {
+        guard dragMode != nil else { return }
+        dragMode = nil
+        drag.cancel()
     }
 
     /// Tap thread: the same for mouse buttons.
@@ -230,6 +238,8 @@ final class EventTap {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            // Events were missed meanwhile, the mouse-up of a drag among them perhaps.
+            cancelDrag()
             return pass
         default:
             break
@@ -300,6 +310,7 @@ final class EventTap {
             guard index >= 0 else { return false }
             swallowedKeys[code] = true
             let action = config.actions[Int(index)]
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             if action == .workspaceOverview {
                 // Open while the key is down: autorepeat changes nothing, the key up closes it.
                 guard overviewKey != code else { return true }
@@ -308,7 +319,8 @@ final class EventTap {
                 DispatchQueue.main.async { onOverview(true) }
                 return true
             }
-            dispatch(action)
+            // Held: one action, unless it is one that moves in steps.
+            if !isRepeat || action.repeats { dispatch(action) }
             return true
         }
         if swallowedKeys[code] {
