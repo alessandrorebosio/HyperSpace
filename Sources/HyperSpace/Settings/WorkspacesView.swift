@@ -20,10 +20,13 @@ struct WorkspacesView: View {
                                  trailing: RemoveButton.width) {
                         ForEach(model.workspaces) { workspace in
                             GridRow {
-                                TextField("Name", text: Binding(get: { workspace.name }, set: { model.rename(workspace.id, to: $0) }))
-                                    .textFieldStyle(.roundedBorder)
-                                    .labelsHidden()
-                                    .frame(width: 120)
+                                HStack(spacing: 4) {
+                                    TextField("Name", text: Binding(get: { workspace.name }, set: { model.rename(workspace.id, to: $0) }))
+                                        .textFieldStyle(.roundedBorder)
+                                        .labelsHidden()
+                                    WarningBadge(text: model.nameWarning(for: workspace))
+                                }
+                                .frame(width: 140)
                                 ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
                                     .equatable()
                                 ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
@@ -62,9 +65,12 @@ struct WorkspacesView: View {
                     HStack(spacing: 10) {
                         AppLabel(bundleID: rule.app)
                         Spacer(minLength: 12)
-                        Picker("Workspace", selection: Binding(get: { rule.workspace }, set: { model.setAssignment(rule.id, workspace: $0) })) {
-                            ForEach(model.workspaces.map(\.name), id: \.self) { name in
-                                Text(name).tag(name)
+                        Picker("Workspace", selection: Binding(get: { rule.workspace }, set: { if let id = $0 { model.setAssignment(rule.id, workspace: id) } })) {
+                            ForEach(model.workspaces) { workspace in
+                                Text(workspace.savedName).tag(Optional(workspace.id))
+                            }
+                            if rule.workspace == nil {
+                                Text("\(rule.text) (no such workspace)").tag(UUID?.none)
                             }
                         }
                         .labelsHidden()

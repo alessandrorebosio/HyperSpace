@@ -11,7 +11,7 @@ struct KeyboardView: View {
             Section {
                 KeyboardLockRow(model: model, countdown: model.unlockCountdown)
                 SettingRow(title: "Unlock automatically", detail: "When nobody unlocks it with the mouse first.") {
-                    Picker("Unlock automatically", selection: $model.lockMinutes) {
+                    Picker("Unlock automatically", selection: Binding(get: { model.lockMinutes }, set: { model.setLockMinutes($0) })) {
                         ForEach(KeyboardLock.choices, id: \.self) { Text(KeyboardLock.label(minutes: $0)).tag($0) }
                     }
                     .labelsHidden()

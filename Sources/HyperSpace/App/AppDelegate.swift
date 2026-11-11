@@ -11,9 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focused: { [unowned self] in windowManager.focusedWorkspace },
         switchKeys: { [unowned self] in config?.tiling.switchKeys ?? [:] }
     ))
-    private lazy var runner = ActionRunner(windowManager: windowManager, overview: overview) { [weak self] in
-        self?.store.reload()
-    }
+    private lazy var runner = ActionRunner(
+        windowManager: windowManager, overview: overview,
+        reload: { [weak self] in self?.store.reload() },
+        toggleTiling: { [weak self] in
+            guard let self else { return }
+            setTilingEnabled(!statusMenu.tilingEnabled)
+        }
+    )
     private lazy var eventTap = EventTap(
         drag: DragController(windowManager: windowManager),
         onAction: { [weak self] action in self?.runner.run(action) },
@@ -82,15 +87,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.start()
     }
 
-    /// From the menu bar: saved in the config, so it lasts and Settings shows the same. The
-    /// reload that follows the write applies it; the window manager is told at once anyway.
+    /// From the menu bar or the `tiling` action: saved in the config, so it lasts and an open
+    /// Settings window follows. The reload that follows the write applies it.
     private func setTilingEnabled(_ on: Bool) {
         if let error = ConfigWriter.save(section: "tiling", { $0["enabled"] = on }) {
+            // The file cannot be written (a syntax error): tiling still follows, until a reload.
             statusMenu.problem = .config(error)
+            windowManager.setEnabled(on)
             return
         }
         statusMenu.tilingEnabled = on
-        NotificationCenter.default.post(name: TilingModel.enabledDidChange, object: on)
     }
 
     @objc private func showSettings(_ sender: Any?) {

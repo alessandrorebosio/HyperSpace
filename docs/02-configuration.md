@@ -197,6 +197,6 @@ Three workspaces, assigned apps, a scratchpad and a few remaps:
 - **Workspace state**: `~/Library/Application Support/HyperSpace/workspaces.json` ([page 7](07-workspaces-and-displays.md#saved-state-and-restore)).
 - **Per-display layout and master ratio**: changed by actions (`layout …`, `ratio …`); they are **not written** to the file but are kept per display UUID in `workspaces.json`, so they survive a restart and unplugging the monitor.
   A reload that changes `layout`/`masterRatio` clears the per-display values.
-- **Tiling on/off**: the menu bar's *Tiling* item writes `tiling.enabled` (like the Settings switch). The `tiling` action only toggles at runtime: a reload brings back the file's value.
+- **Tiling on/off**: the menu bar's *Tiling* item, the Settings switch and the `tiling` action all write `tiling.enabled`, so the choice lasts. Only when the file cannot be written (a syntax error) does the action toggle tiling until the next reload.
 - **Settings window frame**: saved by AppKit (`HyperSpaceSettings`).
 - **Launch at login**: handled by `SMAppService.mainApp`.

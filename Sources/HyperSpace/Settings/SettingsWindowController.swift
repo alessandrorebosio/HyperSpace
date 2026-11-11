@@ -89,6 +89,17 @@ struct SettingsModels {
         general = GeneralModel(actions: actions)
     }
 
+    /// The file was loaded (by the app, after any change): pages whose part of it changed
+    /// elsewhere show the new values, and the status follows. A file that does not parse
+    /// changes nothing on the pages: the settings keep what they showed.
+    func reload() {
+        if let root = ConfigWriter.readIfValid() {
+            let pages: [FileBackedModel] = [keyboard, mouse, trackpad, tiling]
+            for page in pages { page.reload(from: root) }
+        }
+        general.refresh()
+    }
+
     /// A key press or click being recorded on one page must not stay armed on another.
     func stopCaptures() {
         keyboard.stopCapture()
@@ -228,6 +239,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let actions: GeneralModel.Actions
     private var window: NSWindow?
     private var models: SettingsModels?
+    private var configObserver: NSObjectProtocol?
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
         self.remapper = remapper
@@ -247,6 +259,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.center()
             self.window = window
             self.models = models
+            configObserver = NotificationCenter.default.addObserver(
+                forName: ConfigStore.didLoad, object: nil, queue: .main
+            ) { [weak self] _ in self?.models?.reload() }
         }
         // In the Dock and ⌘Tab while the window is open, like a regular app.
         NSApp.setActivationPolicy(.regular)
@@ -283,7 +298,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         models?.stopCaptures()
-        remapper.onKeyboardsChanged = nil
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = nil
         window = nil
         models = nil
         AppLauncher.forgetAppInfo()

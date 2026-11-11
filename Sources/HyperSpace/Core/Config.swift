@@ -260,6 +260,11 @@ extension TilingConfig {
         name?.nilIfEmpty ?? "\(index + 1)"
     }
 
+    /// The workspace an app rule points at among `names`: by name, else by 1-based number.
+    static func workspaceIndex(_ text: String, names: [String]) -> Int? {
+        names.firstIndex(of: text) ?? Int(text).map { $0 - 1 }.flatMap { names.indices.contains($0) ? $0 : nil }
+    }
+
     /// Whether a window floats: its app is floating, or a title rule matches it.
     func floats(app bundleID: String?, title: String?) -> Bool {
         if let bundleID, floating.contains(bundleID) { return true }
@@ -439,9 +444,11 @@ struct Config {
             }
         }
         let names = tiling.workspaces
+        if let twice = names.enumerated().first(where: { names.firstIndex(of: $0.element) != $0.offset }) {
+            throw ConfigError("two workspaces are named '\(twice.element)'")
+        }
         for rule in raw.assign ?? [] {
-            guard let index = names.firstIndex(of: rule.workspace)
-                    ?? Int(rule.workspace).map({ $0 - 1 }).flatMap({ names.indices.contains($0) ? $0 : nil }) else {
+            guard let index = TilingConfig.workspaceIndex(rule.workspace, names: names) else {
                 throw ConfigError("app rule for \(rule.app): no workspace named '\(rule.workspace)'")
             }
             tiling.assignments[rule.app] = index

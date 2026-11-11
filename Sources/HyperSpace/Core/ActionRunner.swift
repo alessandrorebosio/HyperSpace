@@ -4,13 +4,17 @@ import AppKit
 final class ActionRunner {
     private let windowManager: WindowManager
     private let reload: () -> Void
+    /// Turns tiling on or off the way the menu bar does: saved in the config.
+    private let toggleTiling: () -> Void
     private let overview: WorkspaceOverview
     private var children: Set<Process> = []
 
-    init(windowManager: WindowManager, overview: WorkspaceOverview, reload: @escaping () -> Void) {
+    init(windowManager: WindowManager, overview: WorkspaceOverview, reload: @escaping () -> Void,
+         toggleTiling: @escaping () -> Void) {
         self.windowManager = windowManager
         self.overview = overview
         self.reload = reload
+        self.toggleTiling = toggleTiling
     }
 
     func run(_ action: Action) {
@@ -21,7 +25,7 @@ final class ActionRunner {
         case .setLayout(let kind): windowManager.setLayout(kind)
         case .adjustRatio(let delta): windowManager.adjustRatio(CGFloat(delta))
         case .toggleFloat: windowManager.toggleFloat()
-        case .toggleTiling: windowManager.toggleEnabled()
+        case .toggleTiling: toggleTiling()
         case .toggleAccordion: windowManager.toggleAccordion()
         case .retile: windowManager.retile()
         case .focusNextDisplay: windowManager.focusNextDisplay()

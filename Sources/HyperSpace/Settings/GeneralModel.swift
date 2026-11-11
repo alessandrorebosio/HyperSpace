@@ -22,10 +22,11 @@ final class GeneralModel: ObservableObject {
     init(actions: Actions) {
         self.actions = actions
         refresh()
-        // Back from System Settings: the permission may have just been granted.
+        // Back from System Settings: the permission may have just been granted (and the
+        // config fixed in an editor).
         activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                                             object: nil, queue: .main) { [weak self] _ in
-            self?.refreshPermission()
+            self?.refresh()
         }
     }
 

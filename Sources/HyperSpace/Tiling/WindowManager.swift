@@ -243,8 +243,10 @@ final class WindowManager {
         scheduleRetile()
     }
 
-    func toggleEnabled() {
-        config.enabled.toggle()
+    /// Tiling on or off until the next config load (when the file cannot be written).
+    func setEnabled(_ on: Bool) {
+        guard config.enabled != on else { return }
+        config.enabled = on
         config.enabled ? start() : stop()
         onEnabledChange?(config.enabled)
         scheduleRetile()

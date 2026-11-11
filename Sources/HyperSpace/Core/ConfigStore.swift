@@ -6,6 +6,10 @@ final class ConfigStore {
     static let url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".hyperspace/config.json")
 
+    /// Posted on the main thread after every load, successful or not (`onChange` has run):
+    /// the settings window follows the file with it.
+    static let didLoad = Notification.Name("HyperSpace.configDidLoad")
+
     var onChange: ((Result<Config, Error>) -> Void)?
 
     private var source: DispatchSourceFileSystemObject?
@@ -22,6 +26,7 @@ final class ConfigStore {
 
     func reload() {
         onChange?(Result { try Config.load(from: Self.url) })
+        NotificationCenter.default.post(name: Self.didLoad, object: self)
     }
 
     func openInEditor() {

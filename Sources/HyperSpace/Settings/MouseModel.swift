@@ -3,7 +3,7 @@ import Combine
 
 /// State of the mouse settings. Every change is written to config.json at once;
 /// the config watcher then applies it to the event tap.
-final class MouseModel: ObservableObject {
+final class MouseModel: ObservableObject, FileBackedModel {
     struct Rule: Identifiable, Equatable {
         let id = UUID()
         /// CGEvent button number: 2 = middle, 3 = back, 4 = forward, …
@@ -11,6 +11,9 @@ final class MouseModel: ObservableObject {
         var modifiers: Modifiers
         /// An action string: "key cmd+left_bracket", "none", or anything from the config.
         var action: String
+        /// Modifiers as written in the file when they do not parse: written back as they were,
+        /// not dropped (which would make the rule fire without them), until the button is recorded again.
+        var invalidModifiers: String?
 
         var isComplete: Bool { button != nil && !action.isEmpty }
     }
@@ -20,18 +23,26 @@ final class MouseModel: ObservableObject {
         case action(UUID)
     }
 
-    @Published var rules: [Rule] = []
+    @Published private(set) var rules: [Rule] = []
     @Published private(set) var reverseScroll = TapConfig.defaultReverseScroll
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
 
     private let eventTap: EventTap
     private let monitor = LocalEventMonitor()
+    private var synced = SyncedSlice(sections: "mouse")
+    /// The scroll setting as loaded: written only once it changes.
+    private var loadedReverseScroll: Bool?
 
     /// `config`: the file as `ConfigWriter.read()` returns it.
     init(eventTap: EventTap, config: [String: Any]) {
         self.eventTap = eventTap
         load(config)
+    }
+
+    func reload(from root: [String: Any]) {
+        guard capturing == nil, synced.changed(in: root) else { return }
+        load(root)
     }
 
     deinit {
@@ -120,6 +131,7 @@ final class MouseModel: ObservableObject {
     }
 
     func setReverseScroll(_ on: Bool) {
+        guard reverseScroll != on else { return }
         reverseScroll = on
         save()
     }
@@ -165,7 +177,7 @@ final class MouseModel: ObservableObject {
             monitor.start(.otherMouseDown) { [weak self] event in
                 guard let self, event.buttonNumber >= 2, event.buttonNumber < 32 else { return false }
                 let modifiers = Modifiers(event.modifierFlags)
-                update(field) { $0.button = event.buttonNumber; $0.modifiers = modifiers }
+                update(field) { $0.button = event.buttonNumber; $0.modifiers = modifiers; $0.invalidModifiers = nil }
                 return true
             }
         case .action:
@@ -222,24 +234,37 @@ final class MouseModel: ObservableObject {
 
     private func load(_ config: [String: Any]) {
         let mouse = ConfigWriter.section("mouse", of: config)
-        reverseScroll = mouse["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
+        let reverse = mouse["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
+        if reverseScroll != reverse { reverseScroll = reverse }
+        loadedReverseScroll = reverse
         // In the order of the file: when two rules share a button, the last one wins.
         rules = (mouse["buttons"] as? [[String: Any]] ?? []).map {
-            Rule(button: $0["button"] as? Int,
-                 modifiers: (try? Modifiers.parse($0["modifiers"] as? String ?? "")) ?? [],
-                 action: $0["action"] as? String ?? "")
+            let text = $0["modifiers"] as? String ?? ""
+            let modifiers = try? Modifiers.parse(text)
+            return Rule(button: $0["button"] as? Int, modifiers: modifiers ?? [],
+                        action: $0["action"] as? String ?? "", invalidModifiers: modifiers == nil ? text : nil)
         }
+        synced.record(config)
     }
 
     private func save() {
         let complete = rules.filter(\.isComplete)
-        saveError = ConfigWriter.save(section: "mouse") { mouse in
-            mouse["reverseScroll"] = reverseScroll
-            mouse["buttons"] = complete.map { rule -> [String: Any] in
-                var entry: [String: Any] = ["button": rule.button!, "action": rule.action]
-                if !rule.modifiers.isEmpty { entry["modifiers"] = rule.modifiers.configText }
-                return entry
+        let error = ConfigWriter.save(recording: &synced) { root in
+            ConfigWriter.edit(&root, section: "mouse") { mouse in
+                // Left out until changed, like every option the user never set.
+                if reverseScroll != loadedReverseScroll { mouse["reverseScroll"] = reverseScroll }
+                mouse["buttons"] = complete.map { rule -> [String: Any] in
+                    var entry: [String: Any] = ["button": rule.button!, "action": rule.action]
+                    if let invalid = rule.invalidModifiers {
+                        entry["modifiers"] = invalid
+                    } else if !rule.modifiers.isEmpty {
+                        entry["modifiers"] = rule.modifiers.configText
+                    }
+                    return entry
+                }
             }
         }
+        if error == nil { loadedReverseScroll = reverseScroll }
+        Optional.assignChange(error, to: &saveError)
     }
 }

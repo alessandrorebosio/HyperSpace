@@ -3,7 +3,7 @@ import Combine
 
 /// State of the remap editor. Every change is written to config.json at once;
 /// the config watcher then applies it to the keyboards.
-final class KeyboardModel: ObservableObject {
+final class KeyboardModel: ObservableObject, FileBackedModel {
     struct Rule: Identifiable, Equatable {
         let id = UUID()
         var from: String
@@ -19,7 +19,7 @@ final class KeyboardModel: ObservableObject {
         case to(UUID)
     }
 
-    @Published var rules: [Rule] = []
+    @Published private(set) var rules: [Rule] = []
     @Published private(set) var keyboards: [KeyboardRemapper.Keyboard] = []
     @Published private(set) var capturing: Field?
     @Published private(set) var saveError: String?
@@ -29,14 +29,16 @@ final class KeyboardModel: ObservableObject {
     /// "2:41" until the lock lifts by itself: its own object, so the tick every second redraws
     /// the lock row only, not every remap.
     let unlockCountdown = UnlockCountdown()
-    @Published var lockMinutes = KeyboardLock.minutes {
-        didSet { KeyboardLock.minutes = lockMinutes }
-    }
+    @Published private(set) var lockMinutes = KeyboardLock.minutes
 
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
     private var lockObserver: NSObjectProtocol?
     private let monitor = LocalEventMonitor()
+    /// The remaps and the hyper key; the bindings belong to the Shortcuts page.
+    private var synced = SyncedSlice { root in
+        ConfigWriter.section("keyboard", of: root).filter { $0.key != "bindings" }
+    }
     // Target capture: the most modifiers held at once, and the physical key when only one was pressed.
     private var peakModifiers: Modifiers = []
     private var modifierPresses = 0
@@ -58,7 +60,19 @@ final class KeyboardModel: ObservableObject {
 
     deinit {
         stopCapture()
+        remapper.onKeyboardsChanged = nil
         if let lockObserver { NotificationCenter.default.removeObserver(lockObserver) }
+    }
+
+    func reload(from root: [String: Any]) {
+        guard capturing == nil, synced.changed(in: root) else { return }
+        load(root)
+    }
+
+    func setLockMinutes(_ minutes: Int) {
+        guard minutes != lockMinutes else { return }
+        lockMinutes = minutes
+        KeyboardLock.minutes = minutes
     }
 
     private func syncLock() {
@@ -223,6 +237,7 @@ final class KeyboardModel: ObservableObject {
         rules = RawConfig.Remap.withHyperKey(remaps, hyperKey: keyboard["hyperKey"] as? String).map {
             Rule(from: $0.from, to: $0.to, keyboard: $0.keyboard ?? KeyboardTarget.allText)
         }
+        synced.record(config)
     }
 
     private func refreshKeyboards() {
@@ -231,14 +246,17 @@ final class KeyboardModel: ObservableObject {
 
     private func save() {
         let complete = rules.filter(\.isComplete)
-        saveError = ConfigWriter.save(section: "keyboard") { keyboard in
-            keyboard["hyperKey"] = nil
-            keyboard["remap"] = complete.map { rule -> [String: Any] in
-                var entry: [String: Any] = ["from": rule.from, "to": rule.to]
-                if rule.keyboard != KeyboardTarget.allText { entry["keyboard"] = rule.keyboard }
-                return entry
+        let error = ConfigWriter.save(recording: &synced) { root in
+            ConfigWriter.edit(&root, section: "keyboard") { keyboard in
+                keyboard["hyperKey"] = nil
+                keyboard["remap"] = complete.map { rule -> [String: Any] in
+                    var entry: [String: Any] = ["from": rule.from, "to": rule.to]
+                    if rule.keyboard != KeyboardTarget.allText { entry["keyboard"] = rule.keyboard }
+                    return entry
+                }
             }
         }
+        Optional.assignChange(error, to: &saveError)
     }
 }
 

@@ -8,6 +8,13 @@ enum ConfigWriter {
         parse(try? Data(contentsOf: ConfigStore.url))
     }
 
+    /// The file, or nil when it exists but does not parse (the settings keep what they show).
+    static func readIfValid() -> [String: Any]? {
+        guard let data = try? Data(contentsOf: ConfigStore.url),
+              !String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [:] }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
     /// One top-level object of `root` ("keyboard", "mouse"…), empty when missing.
     static func section(_ key: String, of root: [String: Any]) -> [String: Any] {
         root[key] as? [String: Any] ?? [:]
