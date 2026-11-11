@@ -216,6 +216,9 @@ final class WindowManager {
     // MARK: - Lifecycle
 
     func apply(_ newConfig: TilingConfig) {
+        // A reload that changed only other sections (a remap, a binding), with tiling already
+        // in the state asked for: nothing to redo.
+        if newConfig == config, running == config.enabled { return }
         if newConfig.layout != config.layout || newConfig.masterRatio != config.masterRatio {
             screenStates.removeAll()
         }
@@ -642,12 +645,15 @@ final class WindowManager {
         let steps = Self.frameSteps(from: current, to: frame, sameDisplay: sameDisplay)
         guard !steps.isEmpty else { return }
         let app = apps[window.pid]?.element
+        let axState = apps[window.pid]?.axState
         let element = window.element
         let name = window.appLabel
         axQueues.perform(window.pid) { [weak self] in
             // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
-            // animate every AX resize; switch it off while we move the window.
-            let enhanced = app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
+            // animate every AX resize; switch it off while we move the window. Read once per
+            // app, and again after a move that failed.
+            let enhanced = axState?.enhancedUI ?? app.flatMap { AX.bool($0, "AXEnhancedUserInterface") } ?? false
+            axState?.enhancedUI = enhanced
             if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", false) }
             var failure = AXError.success
             for step in steps {
@@ -665,6 +671,7 @@ final class WindowManager {
                 AX.setSize(element, frame.size)
             }
             if failure != .success {
+                axState?.enhancedUI = nil
                 DispatchQueue.main.async { self?.note("moving a window of \(name) failed: AX error \(failure.rawValue)") }
             }
             if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }

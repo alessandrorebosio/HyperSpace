@@ -161,10 +161,18 @@ final class TilingModel: ObservableObject, FileBackedModel {
                 mouseFollowsFocus: mouseFollowsFocus, floating: floating, floatingWindows: floatingWindows)
     }
 
+    /// The connected displays, for the workspaces' display menus: read when the window opens
+    /// and when displays change, not on every redraw (each keystroke in a name).
+    @Published private(set) var screens = ScreenInfo.current()
+    private var screenObserver: NSObjectProtocol?
+
     /// `config`: the file as `ConfigWriter.read()` returns it.
     init(eventTap: EventTap, config: [String: Any]) {
         self.eventTap = eventTap
         load(config)
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.screens = ScreenInfo.current() }
     }
 
     /// Follows the file, unless a shortcut is being recorded or a name typed.
@@ -174,6 +182,7 @@ final class TilingModel: ObservableObject, FileBackedModel {
     }
 
     deinit {
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         stopCapture()
         // A rename typed just before closing the window is still saved.
         if renameSave.isPending { save() }

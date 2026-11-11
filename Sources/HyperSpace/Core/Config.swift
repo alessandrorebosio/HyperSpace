@@ -188,7 +188,7 @@ struct TapConfig: Equatable {
     }
 }
 
-struct TilingConfig {
+struct TilingConfig: Equatable {
     /// The defaults of every option, shared by the config parser and the settings pages.
     static let defaultEnabled = true
     static let defaultLayout = LayoutKind.columns

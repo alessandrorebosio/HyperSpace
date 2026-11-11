@@ -5,8 +5,7 @@ struct WorkspacesView: View {
     @ObservedObject var model: TilingModel
 
     var body: some View {
-        // Read once per redraw (a keystroke in a name field), not once per workspace row.
-        let screens = ScreenInfo.current()
+        let screens = model.screens
         Form {
             PageHero(page: .workspaces)
             PermissionNotice()

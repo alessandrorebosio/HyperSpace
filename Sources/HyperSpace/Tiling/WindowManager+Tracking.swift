@@ -33,11 +33,17 @@ extension WindowManager {
     func discover(_ watcher: AppWatcher, then done: (() -> Void)? = nil) {
         let pid = watcher.pid
         let app = watcher.element
+        // Windows already tracked are not described again (`track` would skip them anyway):
+        // only their id is read, which spares a busy app most of the round trips.
+        let known = Set(windowIDs[pid] ?? [])
         pendingDiscoveries += 1
         axQueues.read(pid, {
             let main = AX.element(app, kAXMainWindowAttribute).flatMap(AX.windowID)
             let focused = AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID)
-            return (AX.elements(app, kAXWindowsAttribute).map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
+            let unknown = AX.elements(app, kAXWindowsAttribute).filter { element in
+                AX.windowID(element).map { !known.contains($0) } ?? true
+            }
+            return (unknown.map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
         }, then: { [weak self] (probes: [AX.WindowProbe], focused: CGWindowID?) in
             self?.discovered(probes, focused: focused, watcher: watcher, then: done)
         })
@@ -209,6 +215,7 @@ extension WindowManager {
 
     /// Space switch: pick up windows AX could not see before and drop dead ones.
     func rescan() {
+        // (CGWindowListCreate, which returns only the ids, is not available from Swift.)
         let alive = Set(
             (CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? [])
                 .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }

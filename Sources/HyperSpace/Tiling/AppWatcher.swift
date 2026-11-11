@@ -1,5 +1,11 @@
 import AppKit
 
+/// Per-app AX facts worth not asking again, confined to the app's serial AX queue.
+final class AXAppState {
+    /// Whether the app has AXEnhancedUserInterface on; nil until read (and after a failed move).
+    var enhancedUI: Bool?
+}
+
 /// AX observer for one running application. Notifications are delivered on the
 /// main run loop; nothing is polled.
 final class AppWatcher {
@@ -8,6 +14,8 @@ final class AppWatcher {
     /// The app, for log lines.
     var appLabel: String { bundleID ?? "?" }
     let element: AXUIElement
+    /// What the app's AX queue remembers between moves; only touched on that queue.
+    let axState = AXAppState()
     private let observer: AXObserver
     private let refcon: UnsafeMutableRawPointer
 
