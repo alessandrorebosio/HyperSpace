@@ -72,7 +72,7 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 
 - Displays are remembered by **UUID** (`CGDisplayCreateUUIDFromDisplayID`), which stays the same when a monitor is plugged in again (its id may not).
 - A display disconnected: its workspaces move to the main display (their home becomes unavailable; a `homeOverride` pointing to a missing display is ignored), and the workspace it showed is remembered (`departed`). When it returns it **shows that workspace again**, with its windows and columns, and its layout/ratio.
-- **Standby or another input**: `DisplayMonitor` polls every 5 s (only with several displays). A display that is asleep or inactive (`CGDisplayIsAsleep` / `!CGDisplayIsActive`) for **60 s** is left out of the layout as if unplugged; it comes back on the first poll it is awake. Not applied when every display is dark (the Mac sleeping). A monitor switched to another input that macOS still reports as active cannot be told apart and is not left out.
+- **Standby or another input**: `DisplayMonitor` polls every 5 s while tiling runs (one cheap call with a single display). A display that is asleep or inactive (`CGDisplayIsAsleep` / `!CGDisplayIsActive`) for **60 s** is left out of the layout as if unplugged; it comes back on the first poll it is awake. Not applied when every display is dark (the Mac sleeping). A monitor switched to another input that macOS still reports as active cannot be told apart and is not left out.
 - macOS moves the windows of a removed display onto the remaining one, parked ones too: a parked window found in view is **parked again** (retiles run right away and at 0.5 s and 1.5 s after the change), and a floating one whose display is gone gets where macOS put it as its saved frame. Focus changes right after a display change do not switch workspaces.
 - After any display change `syncDisplays` re-assigns which workspace each display shows, and a retile follows.
 - The menu bar title is refreshed (see [Settings and menu](09-settings-and-menu.md)).
@@ -81,7 +81,7 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 
 - Moving between displays of different sizes, floating windows keep their position and size as **percentages of the visible frame** (`ScreenInfo.relocate`), both when their workspace comes back on another display and on `move-to-workspace` to a workspace shown elsewhere. Tiled windows are simply re-laid out.
 - A window whose workspace is not displayed is moved to the **bottom-right corner of its display** (position `maxX−1, maxY−1`: practically all of it off-screen). Its previous frame is remembered (`hiddenFrame`).
-- Parked windows come back: when their workspace is shown (tiled ones are placed by the retile; floating ones return to their frame, centred on the new display if needed), on **quit**, when tiling is **turned off**, and after a **crash** (at startup,
+- Parked windows come back: when their workspace is shown (tiled ones are placed by the retile; floating ones return to their frame, or the same place relative to the new display), on **quit**, when tiling is **turned off**, and after a **crash** (at startup,
   windows with less than 10% visible on any display are centred on the main display).
 - Writes use the per-app `AXQueues` queues; on quit, pending writes are flushed (up to 1.5 s) so windows really come back.
 - ⌘Tab or a click on a window of a hidden workspace **shows that workspace** (focus follows), except for focus changes caused by HyperSpace itself (ignored for 0.6 s after it moves things) and for a window just moved away.
@@ -114,9 +114,11 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 | `displays` | display UUID → workspace it shows (displays not connected included) |
 | `moved` | workspace → UUID of the display it was moved to |
 | `layouts` | display UUID → layout and master ratio |
+| `accordions` | per workspace, the columns that are stacked as an accordion |
+| `accordionWorkspaces` | workspaces stacked whole with the `accordion` shortcut |
 | `savedAt` | when |
 
-- **When**: 2 s after a change (and only if the state really changed, ignoring titles), and immediately on quit. Titles are read on the `HyperSpace.state` queue. Nothing is saved while a restore is still matching windows.
+- **When**: 2 s after a change (and only if the state really changed, ignoring titles), and immediately on quit. The state is built on the main thread from the titles already cached on the windows, and written on the `HyperSpace.state` queue. Nothing is saved while a restore is still matching windows.
 - **Restore**: at start the state is loaded if it is **less than 7 days old**. For a minute, each window found is matched to a saved one: same app and title, otherwise the first unclaimed saved window of that app (titles change, e.g. browser tabs).
   The window takes its saved workspace, floating flag, scratchpad flag, order and columns. App rules take precedence over the saved workspace. After 60 s the matching ends. Saved windows for apps not reopened yet are kept in the file on quit.
 - `displays`, `moved` and `layouts` are matched by UUID; a saved display not connected yet keeps its workspace for when it is plugged in.

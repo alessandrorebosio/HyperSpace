@@ -5,7 +5,7 @@
 ```
 Sources/HyperSpace/
 ├── main.swift          entry point: NSApplication + AppDelegate (or the `--render-settings` screenshots, no AppDelegate)
-├── App/                AppDelegate, StatusMenu (menu bar), MainMenu (app menu)
+├── App/                AppDelegate, StatusMenu (menu bar), MainMenu (app menu), WorkspaceOverview
 ├── Core/               config, actions, event tap, key codes, permissions
 ├── Keyboard/           HID remaps, keyboard lock, caps lock, synthetic keys, layout
 ├── Mouse/              DragController (bridge between tap and window manager), EdgeSliders + EdgeSliderTracker (trackpad edges)
@@ -23,6 +23,7 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
   do not make you jump between workspaces.
 - **`StatusMenu`**: menu bar icon and menu (rebuilt only when opened).
 - **`MainMenu`**: the app's menu bar while the Settings window is open (⌘W, ⌘Q, ⌘, copy/paste).
+- **`WorkspaceOverview`**: the panel of every workspace with its apps and shortcut, shown while `workspace-overview` is held.
 
 ### `Core/`
 - **`Config.swift`**: `RawConfig` (the JSON as written) → `Config` (validated and compiled: `remaps`, `TapConfig`, `TilingConfig`). `TapConfig` holds the lookup tables used by the event tap.
@@ -32,7 +33,8 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 - **`EventTap.swift`**: the single active `CGEventTap`, shared by keyboard and mouse.
 - **`KeyCodes.swift`**: key table (name ↔ virtual keycode ↔ HID usage; the modifier key codes come from it). **`Modifiers.swift`**: `Modifiers` and `KeyCombo` with the one parser for modifier lists (also used by `RemapTarget`), and the conversions from `CGEventFlags` and `NSEvent.ModifierFlags`.
 - **`RemapTarget.swift`**: remap destination (single key or combination) and `CarrierPool`.
-- **`Permissions.swift`**: Accessibility check and opening the settings pane.
+- **`Permissions.swift`**: Accessibility check, opening the settings pane, and the words for a missing permission.
+- **`DeviceWatcher.swift`**: IOKit match notifications for keyboards and trackpads plugged in.
 
 ### `Keyboard/`
 `KeyboardRemapper` (writes `UserKeyMapping` per keyboard via IOKit), `KeyEmitter` (synthetic key events), `KeyboardLayout` (maps symbols to the active layout),
@@ -43,14 +45,14 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 `EdgeSliders`: the trackpad edge sliders, from MultitouchSupport's frames (on its own thread) through `EdgeSliderTracker` to volume and brightness keys posted on the main thread ([details](04-mouse.md#trackpad-edge-sliders-trackpad)).
 
 ### `Tiling/`
-- **`WindowManager`** (class, stored state, command scope, lifecycle, tracking, layout, mouse drag) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow`; **`WorkspaceSummary`** holds `WorkspaceSummary` (with its per-app list) and `WorkspaceBar`.
+- **`WindowManager`** (class, stored state, command scope, lifecycle, layout) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Tracking`** (finding, adopting and forgetting windows), **`+MouseDrag`** (modifier-drag to move and resize), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow`; **`WorkspaceSummary`** holds `WorkspaceSummary` (with its per-app list) and `WorkspaceBar`.
 - **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `CGRect.centered`), **`ScreenInfo`** (a display's frames, UUID, relocating and centering), **`ColumnLayout`** (i3-style columns).
 - **`AppWatcher`** (one `AXObserver` per app), **`AXQueues`** (per-app serial queues), **`AX`** (Accessibility API helpers; `AX.probe` and `AX.frame` read their attributes in one round trip).
 - **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible window HyperSpace clicks on an empty workspace's display, so HyperSpace becomes the active app there and that display the active one).
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
-SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`KeyboardModel`, `MouseModel`, `TrackpadModel`, `TilingModel`, `GeneralModel`, each in its own file), one view file per page (`KeyboardView`, `MouseView`, `TilingView`, `WorkspacesView`, `WindowRulesView`, `ShortcutsView`, `GeneralView`), and the shared components in `Components.swift`. The models hold the state, record keys and buttons and save; the views only call them. The config file is read once for all of them when the window opens. A `@Published` assignment redraws every view observing the model, equal value or not, so setters assign only changes, and state that changes often (the unlock countdown, the floating rule being typed) lives in its own small `ObservableObject`; shortcut caps take values and are `Equatable`. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
+SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`KeyboardModel`, `MouseModel`, `TrackpadModel`, `TilingModel`, `GeneralModel`, each in its own file), one view file per page (`KeyboardView`, `MouseView`, `TrackpadView`, `TilingView`, `WorkspacesView`, `WindowRulesView`, `ShortcutsView`, `GeneralView`), and the shared components in `Components.swift`. The models hold the state, record keys and buttons and save; the views only call them. The config file is read once for all of them when the window opens; after that each model follows it (`ConfigStore.didLoad`, `SyncedSlice` in `FileSync.swift`): when its part of the file changed elsewhere it reloads, and it writes only the keys that changed. A `@Published` assignment redraws every view observing the model, equal value or not, so setters assign only changes, and state that changes often (the unlock countdown, the floating rule being typed) lives in its own small `ObservableObject`; shortcut caps take values and are `Equatable`. `SettingsSnapshot` draws the pages to PNG files for `--render-settings`, without starting anything else. See [page 9](09-settings-and-menu.md).
 
 ## Threads and queues
 
@@ -60,7 +62,7 @@ SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`
 | **MultitouchSupport thread** (only with the edge sliders on) | Trackpad frames: `EdgeSliderTracker` runs there behind a lock; only notches and the start or end of a hold go to the main thread. |
 | **Main thread** | Everything else: window state, actions, AX reads, `NSWorkspace`/AX notifications, UI. |
 | **`AXQueues` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
-| **`HyperSpace.state` queue** (QoS `utility`) | Reads titles and writes `workspaces.json` off the main thread. |
+| **`HyperSpace.state` queue** (QoS `utility`) | Writes `workspaces.json` off the main thread (the state, titles included, is built on the main thread from the titles cached on the windows). |
 
 Communication rules:
 
@@ -108,10 +110,10 @@ Mouse movement is intercepted only with the trackpad edge sliders on: every move
 
 ## Window manager: how it reacts
 
-- **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. The only polling is `DisplayMonitor` (every 5 s, only with several displays).
+- **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. The only polling is `DisplayMonitor` (every 5 s while tiling runs; with one display each poll is a single cheap call).
 - Bursts of events are coalesced into one retile (30 ms delay).
 - Visibility and position of windows come from `CGWindowListCopyWindowInfo` without titles (so no Screen Recording). **A command reads the window list, the displays (`NSScreen`) and the focused window (a synchronous AX call) once**: the first read is kept for the whole command (`WindowManager.enterScope`/`leaveScope`, nested commands share it) and every function it calls reuses it, so a workspace switch costs one `CGWindowList` call, one display read and one AX read. Outside a command every read is fresh; a newly tracked window drops the cached window list.
-- A window is moved only if its position really differs from the target (2 pt tolerance).
+- A window is moved only if its position really differs from the target (1 pt tolerance).
 - See [Tiling](06-tiling.md), [Workspaces and displays](07-workspaces-and-displays.md) and [Scratchpad](08-scratchpad.md).
 
 ## Startup and quit

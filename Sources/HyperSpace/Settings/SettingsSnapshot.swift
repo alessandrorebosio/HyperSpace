@@ -38,7 +38,7 @@ enum SettingsSnapshot {
         let windowManager = WindowManager()
         let eventTap = EventTap(drag: DragController(windowManager: windowManager), onAction: { _ in }, onOverview: { _ in })
         let models = SettingsModels(remapper: KeyboardRemapper(), eventTap: eventTap,
-                                    actions: GeneralModel.Actions(openConfig: {}, problem: { nil }))
+                                    actions: GeneralModel.Actions(openConfig: {}, configProblem: { nil }))
 
         var failures = 0
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {

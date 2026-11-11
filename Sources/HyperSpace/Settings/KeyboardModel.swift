@@ -1,8 +1,8 @@
 import AppKit
 import Combine
 
-/// State of the remap editor. Every change is written to config.json at once;
-/// the config watcher then applies it to the keyboards.
+/// State of the Keyboard page: the key remaps and the keyboard lock. Every remap change is
+/// written to config.json at once; the config watcher then applies it to the keyboards.
 final class KeyboardModel: ObservableObject, FileBackedModel {
     struct Rule: Identifiable, Equatable {
         let id = UUID()

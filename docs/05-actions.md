@@ -5,6 +5,10 @@ an unknown action or bad arguments is a config error. The verb is case-insensiti
 
 Window-manager commands only work while tiling is on (`running`), otherwise they do nothing.
 
+**Holding a shortcut**: an action runs once per press. Only the ones that move in steps repeat with the key's autorepeat: `focus`, `swap`, `resize`, `ratio`, `key` and `media` (`Action.repeats`).
+
+**Names**: config keys are camelCase (`reverseScroll`), key names and arguments snake_case (`caps_lock`, `mission_control`, `play_pause`), verbs kebab-case (`move-to-workspace`). `media next` / `previous` also accept the key names `next_track` / `previous_track`.
+
 ## Windows and layout
 
 | Action | Arguments | Effect |
@@ -16,7 +20,7 @@ Window-manager commands only work while tiling is on (`running`), otherwise they
 | `ratio` | signed number, e.g. `+0.05`, `-0.05` | Change the focused display's master ratio; clamped to 0.1…0.9. |
 | `float` | — | Toggle the focused window between floating and tiled. From then on the user's choice beats config rules (`userOverride`). |
 | `resize` | `width` \| `height` and points, e.g. `resize width +50` | Grow/shrink the focused window. Floating (tiling on): resized directly (minimum 160×100). Tiled: moves the master/column split or changes the window's share of the stack/column (see [Tiling](06-tiling.md#resize)). |
-| `tiling` | — | Turn tiling on/off at runtime (not written to the file). |
+| `tiling` | — | Turn tiling on/off, written to `tiling.enabled` like the menu bar's switch (only at runtime when the file cannot be written). |
 | `accordion` | — | Stack the focused workspace's windows as an accordion, or unstack them, on top of the current layout (see [Tiling](06-tiling.md#accordion-on-any-layout)). |
 | `retile` | — | Recompute the layout now. |
 

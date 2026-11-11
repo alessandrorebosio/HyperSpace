@@ -16,7 +16,7 @@ notifications, drivers/kexts, root.
 - **Signing and the grant**: macOS ties the Accessibility grant to the app's *designated requirement*. A plain ad-hoc signature bases it on the binary hash, which changes on every build, so the grant is lost even though the switch
   looks on in System Settings. `make app` therefore signs ad-hoc pinning the requirement to the bundle id (`identifier "com.alessandrorebosio.HyperSpace"`) so the grant survives rebuilds. This is convenient for development but weaker (any app signed with that bundle id inherits the grant).
   For a strong binding create a self-signed code-signing certificate named **`HyperSpace Dev`** (*Keychain Access → Certificate Assistant → Create a Certificate*, *Self Signed Root*, *Code Signing*): if present, `make app` uses it automatically.
-- The app cannot be sandboxed nor go on the Mac App Store: it uses the private (but long-stable) `_AXUIElementGetWindow`, like yabai/Amethyst/Rectangle.
+- The app cannot be sandboxed nor go on the Mac App Store: it uses private (but long-stable) interfaces: `_AXUIElementGetWindow` like yabai/Amethyst/Rectangle, `CoreDockSendNotification` for the Mission Control actions and MultitouchSupport for the trackpad edge sliders.
 - Known limit: Spaces are not created or managed; windows of the visible Space on each display are tiled.
 
 ## Troubleshooting

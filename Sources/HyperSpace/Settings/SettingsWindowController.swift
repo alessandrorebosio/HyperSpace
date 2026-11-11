@@ -60,7 +60,8 @@ final class SettingsNavigation: ObservableObject {
             case .workspaces: return "Virtual workspaces, their shortcuts and the apps that open in each."
             case .windowRules: return "Windows that float and apps kept in the scratchpad."
             case .shortcuts: return "Keys to move the focus and windows, resize and change display."
-            case .general: return "Startup, the configuration file and permissions."
+            // General opens with the app's own card, not a hero: no line.
+            case .general: return ""
             }
         }
     }
@@ -190,10 +191,7 @@ private struct SidebarStatus: View {
                 .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 Text("HyperSpace").font(.callout.weight(.semibold))
-                HStack(spacing: 5) {
-                    Circle().fill(state.color).frame(width: 7, height: 7)
-                    Text(state.text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
+                StatusPill(text: state.text, color: state.color, compact: true)
             }
             Spacer(minLength: 0)
         }

@@ -67,7 +67,7 @@ struct WindowRulesView: View {
                                add: model.addScratchpadApp, choose: model.chooseAppForScratchpad)
                 }
             } footer: {
-                SectionFooter("Show / hide puts the app centered above the other windows, and hides it again. To tiling and back moves its window into the current workspace, and back into the scratchpad.")
+                SectionFooter("Show / hide puts the app centered above the other windows, and hides it again. To tiling and back moves its window into the current workspace, and back into the scratchpad. Click a shortcut and press the keys: Esc cancels, Delete clears it.")
             }
         }
         .formStyle(.grouped)

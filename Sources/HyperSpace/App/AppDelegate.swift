@@ -31,7 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remapper: remapper, eventTap: eventTap,
         actions: GeneralModel.Actions(
             openConfig: { [unowned self] in store.openInEditor() },
-            problem: { [unowned self] in statusMenu.problem?.text }
+            // The permission has its own row and notice there.
+            configProblem: { [unowned self] in statusMenu.problem.flatMap { $0.isConfig ? $0.text : nil } }
         )
     )
     private var statusMenu: StatusMenu!

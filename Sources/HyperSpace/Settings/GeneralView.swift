@@ -34,7 +34,7 @@ struct GeneralView: View {
                 }
                 if let problem = model.problem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
@@ -96,18 +96,26 @@ private struct AppCard: View {
 
 }
 
-/// A colored dot and a word, on a tinted capsule.
-private struct StatusPill: View {
+/// A colored dot and a word: on a tinted capsule, or plain and small (the sidebar).
+struct StatusPill: View {
     let text: String
     let color: Color
+    var compact = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text(text).font(.callout.weight(.medium))
+        if compact {
+            HStack(spacing: 5) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        } else {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(text).font(.callout.weight(.medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.14)))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(color.opacity(0.14)))
     }
 }

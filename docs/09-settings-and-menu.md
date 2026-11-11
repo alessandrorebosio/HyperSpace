@@ -29,7 +29,7 @@ The menu is rebuilt only when it opens (`menuNeedsUpdate`).
 - Opened from the menu (**Settings…**, ⌘,) or by double-clicking the app.
 - Built on demand and **destroyed on close**, so it costs nothing while closed. While open, HyperSpace becomes a regular app (Dock icon, ⌘Tab, its own menu bar: `MainMenu`, ⌘W closes the window); when closed it goes back to being a menu bar-only app.
 - Resizable (minimum 720×460, default 900×640, frame remembered), Liquid Glass sidebar and toolbar on macOS 26.
-- Every change is written to `config.json` at once (see [Configuration](02-configuration.md)); a save error replaces the footer of the section it came from. The pages never mention the file, except General. Gap and padding read from the file are clamped to 0–64 like the sliders; a title rule listed twice shows once; a workspace with no (or an empty) name shows its position, as the config reads it.
+- Every change is written to `config.json` at once (see [Configuration](02-configuration.md)); a save error replaces the footer of the section it came from. Only the keys a change touches are written: an option never set stays out of the file, and a value the page rounds or cannot show stays as written until it is changed here. A file with a syntax error is never written: the save reports it instead. While the window is open, a change made elsewhere (an editor, the menu bar's *Tiling* item, the `tiling` action) shows on the page it belongs to, unless a shortcut is being recorded or a name typed there. The pages never mention the file, except General. Gap and padding read from the file are clamped to 0–64 like the sliders; a title rule listed twice shows once; a workspace with no (or an empty) name shows its position, as the config reads it.
 - Switching page stops any key or button recording in progress.
 
 ### Layout
@@ -39,7 +39,7 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 
 **Every page** is a grouped `Form` with the same structure, top to bottom:
 1. **Hero** (`PageHero`): the page's icon (44 pt), its name and one line saying what it is for. Tiling puts its on/off switch on the right of the hero, like Wi-Fi in System Settings.
-2. **Notices** (`NoticeRow`), only when something stops the page from working: *Accessibility permission needed* (pages that need it: all but Keyboard and General) with *Open System Settings…*, and on the window pages *Tiling is off* with *Turn On*.
+2. **Notices** (`NoticeRow`), only when something stops the page from working: *Accessibility permission needed* (every page but General, which has its own; on Keyboard it says that 1:1 remaps already work) with *Open System Settings…*, and on the window pages *Tiling is off* with *Turn On*.
 3. **Sections**. A list puts its add button in its header, on the right (`SectionHeader` + `AddButton`, or `AddMenu` when the item is picked from a menu; `AddAppMenu` for an app). An empty list says so with a centered line (`EmptyRow`) instead of showing nothing. The section footer holds one hint, or the last save error in its place (`SectionFooter`).
 
 ### Components (`Settings/Components.swift`)
@@ -63,11 +63,11 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 ### Keyboard
 - **Keyboard Lock**: the state (*Keyboard active* / *Keyboard locked*, with the countdown) and *Lock Keyboard* / *Unlock*; under it *Unlock automatically* (1/3/5/10 minutes, Never), disabled while locked. ([details](03-keyboard.md#keyboard-lock))
 - **Remaps** (*+ Add Remap*): source key cap → target key cap, the ▾ menu with all keys (grouped as in the key table), the keyboard picker (All keyboards, Built-in, All external, or a connected keyboard by name), a duplicate warning, remove.
-  Recording: the source takes the first key; the target takes a key, a modifier+key combination, or modifiers alone (hold them together, release). Remaps are suspended while recording. Incomplete rules are not saved. ([details](03-keyboard.md#remapping-from-settings))
+  Recording: the source takes the first key; the target takes a key, a modifier+key combination, or modifiers alone (hold them together, release). Every key is recorded, Esc included: click the cap again to cancel. Remaps and key bindings are suspended while recording. Incomplete rules are not saved. *Lock Keyboard* is disabled while the Accessibility permission is missing. ([details](03-keyboard.md#remapping-from-settings))
 
 ### Mouse
 - **Scrolling**: *Reverse scroll wheel* (mice with a wheel only).
-- **Buttons** (*+ Add Button*): mouse button (with modifiers, recorded by clicking it over the window) → action (keys to send, a ready-made action from ▾, or *Disable Button*). A new mapping goes straight from the button to its action. ([details](04-mouse.md))
+- **Buttons** (*+ Add Button*): mouse button (with modifiers, recorded by clicking it over the window) → action (keys to send, a ready-made action from ▾, or *Disable Button*). A new mapping goes straight from the button to its action. Recording the action: Esc cancels, Delete disables the button; key bindings are suspended meanwhile. ([details](04-mouse.md))
 
 ### Trackpad
 - **Edge sliders**: the switch and, for the *Left edge* and *Right edge*, Volume, Display brightness or Nothing (dimmed while the switch is off). The sliders start without waiting for the permission, but holding the pointer still needs the event tap: an Accessibility notice says so while it is missing. ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
@@ -76,23 +76,23 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 - **Hero switch**: tiling on or off (`tiling.enabled`). Off: the other sections are dimmed and kept.
 - **Layout**: the five layouts as thumbnails, drawn with the current gap, margin and accordion edges; the chosen one is ringed in the accent color.
 - **Spacing**: *Gap between windows* and *Margin around the screen* (0–64 pt, step 2).
-- **Accordion**: *Visible edges* (`accordionPadding`, 0–120 pt, step 5) with a to-scale preview; used by the Accordion layout and by workspaces stacked with the `accordion` shortcut.
+- **Accordion**: *Visible edges* (`accordionPadding`, 0–200 pt, step 5) with a to-scale preview; used by the Accordion layout and by workspaces stacked with the `accordion` shortcut.
 - **Focus**: *Pointer follows focus* (to the display that gets the focus, and to its middle on a workspace switch).
 
 ### Workspaces
-- **Workspaces** (*+ Add Workspace*): a grid with **Name** (renames are saved 0.5 s after typing and carry the app rules along), **Show workspace** and **Move window here** shortcuts, **Display** (*Any display*, *Main display*, or a connected monitor by name: pins the workspace there), remove.
+- **Workspaces** (*+ Add Workspace*): a grid with **Name** (renames are saved 0.5 s after typing; an empty name or one another workspace has gets a warning and is not saved, the last valid one is kept; app rules follow their workspace whatever its name), **Show workspace** and **Move window here** shortcuts, **Display** (*Any display*, *Main display*, or a connected monitor by name: pins the workspace there), remove.
 - **App Rules** (*+ Add App*: running apps, or *Other App…*; needs a workspace first): app → the workspace its new windows open in.
 
 ### Window Rules
 - **Floating**: apps whose windows are never tiled (*All windows*) and title rules (an app, or *Any app*, + *Title contains “…”*). The last row writes a new rule: app picker, optional title, *+ Add*. ([details](06-tiling.md#floating-windows-and-rules))
-- **Scratchpad Apps** (*+ Add App*): a grid with **App**, **Show / hide** and **To tiling and back** shortcuts, remove. Adding an app starts recording its first shortcut. ([details](08-scratchpad.md))
+- **Scratchpad Apps** (*+ Add App*): a grid with **App**, **Show / hide** and **To tiling and back** shortcuts, remove. Adding an app starts recording its first shortcut; Esc there takes the app off the list again (an app without shortcuts is not saved). ([details](08-scratchpad.md))
 
 ### Shortcuts
 Click a cap and press the keys; Esc cancels, Delete clears.
 - **Focus & Move**: Left, Down, Up, Right × *Focus* / *Move window* (`focus …` / `swap …`).
 - **Resize**: Width, Height × *Smaller* / *Larger* (`resize width -50` / `+50` …).
 - **Displays**: *Focus other display* (`focus-display`), *Move workspace to other display* (`move-workspace-to-display`).
-- **More**: *Previous workspace* (`workspace back-and-forth`), *Toggle floating* (`float`), *Stack windows as an accordion* (`accordion`), *Move window to or from the scratchpad* (`move-to-scratchpad`).
+- **More**: *Previous workspace* (`workspace back-and-forth`), *Show workspaces while held* (`workspace-overview`), *Toggle floating* (`float`), *Stack windows as an accordion* (`accordion`), *Move window to or from the scratchpad* (`move-to-scratchpad`).
 
 These shortcuts are ordinary entries of `keyboard.bindings`. The rows come from `TilingModel.pairedShortcuts` / `singleShortcuts`, the single source for titles and actions. Saving edits only the **last** binding of each action (the one the page shows) in place, and adds one if there is none; other bindings, even more for the same action, stay as they are. Clearing a shortcut removes that last binding only. A shortcut used twice gets a warning (only the last one works).
 While recording, key bindings are suspended (so an existing shortcut reaches the window) but remaps stay on (so caps lock → ⌃⌥⇧ can be part of a shortcut).
@@ -101,7 +101,7 @@ While recording, key bindings are suspended (so an existing shortcut reaches the
 - **App card**: icon, name, version (`CFBundleShortVersionString`) and the state as a colored pill.
 - **Accessibility permission needed** notice while it is missing.
 - **Startup**: *Launch at login* (`SMAppService`).
-- **Configuration**: the file path (selectable), the current problem if any, *Edit Config…*, *Show in Finder*.
+- **Configuration**: the file path (selectable), the config error if any (in red, like every error), *Edit Config…*, *Show in Finder*.
 - **Permission**: Accessibility, *Allowed* or *Open System Settings…* (checked again whenever the app becomes active).
 - **Quit HyperSpace**.
 

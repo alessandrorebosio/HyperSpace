@@ -126,7 +126,7 @@ enum Action: Equatable {
             guard let action = SystemAction(rawValue: arg.lowercased()) else { throw ConfigError("unknown system action in '\(text)'") }
             return .system(action)
         case "media":
-            guard let key = MediaKey(rawValue: arg.lowercased()) else { throw ConfigError("unknown media key in '\(text)'") }
+            guard let key = MediaKey(configText: arg) else { throw ConfigError("unknown media key in '\(text)'") }
             return .media(key)
         case "click": return .click(try Modifiers.parse(arg))
         case "scratchpad": return .scratchpad(arg.isEmpty ? nil : arg)

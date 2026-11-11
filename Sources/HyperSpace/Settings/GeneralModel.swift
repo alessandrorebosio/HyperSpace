@@ -7,13 +7,14 @@ import SwiftUI
 final class GeneralModel: ObservableObject {
     struct Actions {
         var openConfig: () -> Void
-        /// The current problem shown in the menu bar (config error, missing permission).
-        var problem: () -> String?
+        /// The config error shown in the menu bar, if any.
+        var configProblem: () -> String?
     }
 
     @Published private(set) var launchAtLogin = false
     @Published private(set) var accessibilityGranted = false
-    /// What needs attention: the problem shown in the menu bar, or the last action that failed here.
+    /// What needs attention apart from the permission: the config error shown in the menu bar,
+    /// or the last action that failed here.
     @Published private(set) var problem: String?
 
     let actions: Actions
@@ -40,7 +41,7 @@ final class GeneralModel: ObservableObject {
         let login = SMAppService.mainApp.status == .enabled
         if launchAtLogin != login { launchAtLogin = login }
         refreshPermission()
-        let current = actions.problem()
+        let current = actions.configProblem()
         if problem != current { problem = current }
     }
 

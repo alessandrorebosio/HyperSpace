@@ -1,5 +1,4 @@
 import AppKit
-import IOKit
 import os
 
 /// The trackpad edge sliders: one finger slid up or down along the left or right edge changes

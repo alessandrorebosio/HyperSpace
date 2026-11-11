@@ -127,9 +127,9 @@ This applies to keys *sent*; incoming *bindings* always use the physical keycode
 
 To clean the keyboard without typing. From *Settings → Keyboard → Keyboard Lock* or the menu bar (**Lock Keyboard**).
 
-- Every `keyDown`, `keyUp` and `flagsChanged` event is dropped, and so are system keys (media, volume, brightness: `NX_SYSDEFINED` subtype 8); other subtypes (coming from the mouse) pass. Touch ID and the power button cannot be locked.
+- Every `keyDown`, `keyUp` and `flagsChanged` event is dropped, and so are system keys (media, volume, brightness: `NX_SYSDEFINED` subtype 8); other subtypes (coming from the mouse) pass, and so do the media keys HyperSpace posts itself (a mouse button or the trackpad edges set to volume still work). Touch ID and the power button cannot be locked.
 - Unlock **with the mouse**: *Unlock* on the page or **Unlock Keyboard** in the menu (same spot as Lock).
 - **Automatic unlock** after 1, 3, 5, 10 minutes or never (picker next to the button, default 3), with a countdown on the page and in the menu. The picker is disabled while locked.
 - While locked the menu bar icon shows a lock (and the icon is shown even if tiling is off).
-- The lock is **not saved**: quitting HyperSpace re-enables the keyboard. It needs the tap, hence Accessibility.
+- The lock is **not saved**: quitting HyperSpace re-enables the keyboard. It needs the tap, hence Accessibility: without the permission *Lock Keyboard* is disabled (and the menu item only beeps).
 - On lock/unlock, the modifiers held by carriers and the swallowed-key state are cleared.

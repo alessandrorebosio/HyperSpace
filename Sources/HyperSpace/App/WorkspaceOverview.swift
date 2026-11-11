@@ -190,7 +190,6 @@ struct OverviewView: View {
                         Image(systemName: "display")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
-                            .help("On display \(display)")
                     }
                     Spacer(minLength: 4)
                     if let keys = card.keys {

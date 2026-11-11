@@ -91,7 +91,7 @@ A window floats if any of these holds (rules 2–3: `TilingConfig.floats`):
 
 - Title rules are applied when the window is tracked and again on every **title change** (many windows get their title a moment after opening), unless the window has a user override.
 - On a config reload, rules are re-evaluated for all windows without a user override.
-- Floating windows are not moved by the layout. When their workspace is hidden they are parked like tiled ones; when the workspace comes back, they return to their frame (or are centred on the display now showing the workspace, if their frame was elsewhere).
+- Floating windows are not moved by the layout. When their workspace is hidden they are parked like tiled ones; when the workspace comes back, they return to their frame (or, if their frame was on another display, take the same place and size relative to the display now showing the workspace).
 - In *Settings → Window Rules → Floating*: an app with no title = all its windows; "Any app" with a title = title rule for every app.
 
 ## Dialogs

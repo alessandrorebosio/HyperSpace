@@ -282,15 +282,16 @@ Floating (an app with no title = all its windows). It also applies to windows th
 
 ```
 Sources/HyperSpace/
-├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open)
+├── App/        AppDelegate (wiring, permission), StatusMenu (menu bar), MainMenu (menu while Settings is open),
+│               WorkspaceOverview (workspaces while a key is held)
 ├── Settings/   window with a Keyboard/Mouse/Trackpad, Tiling/Workspaces/Window Rules/Shortcuts, General sidebar (SwiftUI, created only when opened); SettingsSnapshot (--render-settings)
 ├── Core/       EventTap, Config/ConfigStore/ConfigWriter/DefaultConfig, Action/ActionRunner, SystemActions, Pointer,
-│               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions,
+│               KeyCodes, Modifiers (and KeyCombo), RemapTarget, AppLauncher, Peripherals, Permissions, DeviceWatcher,
 │               Log, Extensions, Scheduling (Debouncer, Coalescer)
 ├── Keyboard/   KeyboardRemapper (UserKeyMapping per keyboard), KeyEmitter (synthetic events),
 │               KeyboardLayout, CapsLock, KeyboardLock
-├── Mouse/      DragController (tap → window manager bridge), EdgeSliders (trackpad edge sliders)
-└── Tiling/     WindowManager (+ Scratchpad, SavedState, Workspaces, Commands, Debug extensions), ManagedWindow,
+├── Mouse/      DragController (tap → window manager bridge), EdgeSliders + EdgeSliderTracker (trackpad edge sliders)
+└── Tiling/     WindowManager (+ Workspaces, Commands, Tracking, MouseDrag, Scratchpad, SavedState, Debug extensions), ManagedWindow,
                 WorkspaceSummary, ColumnLayout, AppWatcher (AXObserver), AXQueues (per-app AX calls), WorkspaceState (saved workspaces),
                 LaunchTracker, Layout, ScreenInfo, DisplayMonitor, FocusAnchor, AX helpers
 ```
@@ -305,7 +306,7 @@ Choices made for performance and minimal permissions:
 - **Lean hot path**: no locks of its own, and no allocation except the event a combination posts; bindings are compiled into `[Int16]` tables indexed by
   `keyCode << 4 | modifiers`; the config reaches the tap thread with `CFRunLoopPerformBlock`.
 - **Remaps and hyper key in the HID layer**, per keyboard via `IOHIDServiceClient` (no `hidutil` processes): zero CPU, no permission; new keyboards detected with IOKit notifications.
-- **Event-driven tiling**: `AXObserver` per app + `NSWorkspace` notifications, no polling. Bursts of
+- **Event-driven tiling**: `AXObserver` per app + `NSWorkspace` notifications; the only timer is a 5 s display check (one cheap call with a single display). Bursts of
   events are coalesced into a single retile; window visibility and position come from
   `CGWindowListCopyWindowInfo` (without titles → no Screen Recording), read once per command together with the displays
   and the focused window, and windows are moved only if their position actually differs.
@@ -321,6 +322,7 @@ Choices made for performance and minimal permissions:
 - Config watched with a kqueue `DispatchSource`: no cost until the file changes.
 
 ### Known limitations
-- Uses the private (but stable for years) function `_AXUIElementGetWindow`, like yabai/Amethyst/Rectangle:
-  the app cannot be sandboxed nor go on the Mac App Store (true of any AX-based window manager).
+- Uses three private (but stable for years) interfaces: `_AXUIElementGetWindow` (like yabai/Amethyst/Rectangle),
+  `CoreDockSendNotification` (Mission Control actions) and the MultitouchSupport framework (trackpad edge sliders).
+  The app cannot be sandboxed nor go on the Mac App Store (true of any AX-based window manager).
 - Spaces are not created/managed: the windows of the visible Space on each display are tiled.

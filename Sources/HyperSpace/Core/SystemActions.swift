@@ -148,6 +148,16 @@ enum MediaKey: String {
     case brightnessUp = "brightness_up"
     case brightnessDown = "brightness_down"
 
+    /// A name as written in the config, in any case; the key names `next_track` and
+    /// `previous_track` are accepted for `next` and `previous`.
+    init?(configText text: String) {
+        switch text.lowercased() {
+        case "next_track": self = .next
+        case "previous_track": self = .previous
+        case let name: self.init(rawValue: name)
+        }
+    }
+
     /// NX_KEYTYPE_* from IOKit/hidsystem/ev_keymap.h.
     private var keyType: Int {
         switch self {

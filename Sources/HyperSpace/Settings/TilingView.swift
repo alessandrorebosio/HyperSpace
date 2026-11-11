@@ -19,7 +19,7 @@ struct TilingView: View {
             } header: {
                 Text("Layout")
             } footer: {
-                SectionFooter("For every display, until you pick another layout from the menu bar or with a shortcut.")
+                SectionFooter("For every display, until you pick another layout with a shortcut.")
             }
             .disabled(!model.enabled)
 

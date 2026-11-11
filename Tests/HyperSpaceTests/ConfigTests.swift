@@ -20,9 +20,9 @@ import Testing
                             { "name": "music", "switch": "meh+m" } ],
             "assign": [ { "app": "com.spotify.client", "workspace": "music" } ] } }
         """#)
-        #expect(try action(config, "meh+1") == "workspace(0)")
-        #expect(try action(config, "hyper+1") == "moveToWorkspace(0)")
-        #expect(try action(config, "meh+m") == "workspace(1)")
+        #expect(try action(config, "meh+1") == .workspace(0))
+        #expect(try action(config, "hyper+1") == .moveToWorkspace(0))
+        #expect(try action(config, "meh+m") == .workspace(1))
         #expect(config.tiling.assignments["com.spotify.client"] == 1)
     }
 

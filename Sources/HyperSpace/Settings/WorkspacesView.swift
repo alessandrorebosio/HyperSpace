@@ -52,7 +52,7 @@ struct WorkspacesView: View {
                 }
             } footer: {
                 SectionFooter(
-                    "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one.",
+                    "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one. Click a shortcut and press the keys: Esc cancels, Delete clears it.",
                     error: model.saveError
                 )
             }
