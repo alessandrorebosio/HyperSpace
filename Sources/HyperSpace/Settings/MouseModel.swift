@@ -45,7 +45,8 @@ final class MouseModel: ObservableObject, FileBackedModel {
         load(root)
     }
 
-    deinit {
+    /// The window closes: nothing stays suspended.
+    func close() {
         stopCapture()
     }
 

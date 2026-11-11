@@ -102,6 +102,13 @@ struct SettingsModels {
         general.refresh()
     }
 
+    /// The window closes: captures end, a pending rename is saved, observers go.
+    func close() {
+        keyboard.close()
+        mouse.close()
+        tiling.close()
+    }
+
     /// A key press or click being recorded on one page must not stay armed on another.
     func stopCaptures() {
         keyboard.stopCapture()
@@ -296,7 +303,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        models?.stopCaptures()
+        models?.close()
         if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
         configObserver = nil
         window = nil

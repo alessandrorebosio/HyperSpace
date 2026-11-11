@@ -43,10 +43,14 @@ enum Navigation {
     )
     private static let xcode = (back: try! KeyCombo.parse("ctrl+cmd+left"), forward: try! KeyCombo.parse("ctrl+cmd+right"))
 
+    /// The menu bar is searched here, off the main thread: one AX call per menu item, up to
+    /// 0.3 s each for a slow app. The cache and its pruning are confined to this queue.
+    private static let queue = DispatchQueue(label: "HyperSpace.navigate", qos: .userInitiated)
     /// Menu items found per app, so the menu bar is searched once.
     private static var cache: [pid_t: [Bool: AXUIElement]] = [:]
     private static var lastPruned = Date.distantPast
 
+    /// Main thread.
     static func perform(back: Bool) {
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         log.debug("navigate \(back ? "back" : "forward", privacy: .public) in \(app.bundleIdentifier ?? "?", privacy: .public)")
@@ -54,9 +58,12 @@ enum Navigation {
             KeyEmitter.post(back ? xcode.back : xcode.forward)
             return
         }
-        if pressMenuItem(of: app.processIdentifier, back: back) { return }
-        log.debug("navigate: no menu item, posting mouse button")
-        Pointer.navigationButton(back: back)
+        let pid = app.processIdentifier
+        queue.async {
+            if pressMenuItem(of: pid, back: back) { return }
+            log.debug("navigate: no menu item, posting mouse button")
+            Pointer.navigationButton(back: back)
+        }
     }
 
     private static func pressMenuItem(of pid: pid_t, back: Bool) -> Bool {
@@ -110,8 +117,8 @@ enum Navigation {
     private static func pruneCache() {
         guard Date().timeIntervalSince(lastPruned) > 300 else { return }
         lastPruned = Date()
-        let running = Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier))
-        cache = cache.filter { running.contains($0.key) }
+        // Off the main thread: whether the process still exists, without AppKit.
+        cache = cache.filter { kill($0.key, 0) == 0 }
     }
 }
 

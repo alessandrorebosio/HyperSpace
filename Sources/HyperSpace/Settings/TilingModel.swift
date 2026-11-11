@@ -181,11 +181,14 @@ final class TilingModel: ObservableObject, FileBackedModel {
         load(root)
     }
 
+    /// The window closes: nothing stays suspended, and a rename typed just before is saved.
+    func close() {
+        stopCapture()
+        if renameSave.isPending { save() }
+    }
+
     deinit {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-        stopCapture()
-        // A rename typed just before closing the window is still saved.
-        if renameSave.isPending { save() }
     }
 
     // MARK: - Editing

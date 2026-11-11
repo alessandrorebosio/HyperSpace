@@ -58,9 +58,13 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
         remapper.onKeyboardsChanged = { [weak self] in self?.refreshKeyboards() }
     }
 
-    deinit {
+    /// The window closes: nothing stays suspended or observed.
+    func close() {
         stopCapture()
         remapper.onKeyboardsChanged = nil
+    }
+
+    deinit {
         if let lockObserver { NotificationCenter.default.removeObserver(lockObserver) }
     }
 
