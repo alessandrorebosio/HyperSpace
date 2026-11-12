@@ -113,6 +113,25 @@ import Testing
     }
 }
 
+@Suite struct ScreenNeighborTests {
+    func screen(_ id: CGDirectDisplayID, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat = 1000, _ h: CGFloat = 600) -> ScreenInfo {
+        let frame = CGRect(x: x, y: y, width: w, height: h)
+        return ScreenInfo(id: id, frame: frame, visible: frame)
+    }
+
+    /// An empty display has no window to find: the display itself is the target.
+    @Test func nearestDisplayThatWay() {
+        let screens = [screen(1, 0, 0), screen(2, 1000, 0), screen(3, 2000, 0), screen(4, 0, -600)]
+        #expect(screens.neighbor(of: 1, .right)?.id == 2)
+        #expect(screens.neighbor(of: 2, .left)?.id == 1)
+        #expect(screens.neighbor(of: 2, .right)?.id == 3)
+        #expect(screens.neighbor(of: 1, .up)?.id == 4)
+        #expect(screens.neighbor(of: 4, .down)?.id == 1)
+        #expect(screens.neighbor(of: 1, .left) == nil)
+        #expect(screens.neighbor(of: 3, .right) == nil)
+    }
+}
+
 @Suite struct FrameStepTests {
     typealias W = WindowManager
     let frame = CGRect(x: 100, y: 100, width: 800, height: 600)

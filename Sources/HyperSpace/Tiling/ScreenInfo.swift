@@ -121,6 +121,28 @@ extension Array where Element == ScreenInfo {
         return self[(index + 1) % count]
     }
 
+    /// The display next to the one with this id in a direction: the nearest one lying wholly
+    /// beyond its edge, the best-aligned first. Nil when there is none that way.
+    func neighbor(of id: CGDirectDisplayID, _ direction: Direction) -> ScreenInfo? {
+        guard let from = first(id: id)?.frame else { return nil }
+        let candidates = filter { other in
+            guard other.id != id else { return false }
+            switch direction {
+            case .left: return other.frame.maxX <= from.minX + 1
+            case .right: return other.frame.minX >= from.maxX - 1
+            case .up: return other.frame.maxY <= from.minY + 1
+            case .down: return other.frame.minY >= from.maxY - 1
+            }
+        }
+        func score(_ frame: CGRect) -> (CGFloat, CGFloat) {
+            let horizontal = direction == .left || direction == .right
+            let gap = horizontal ? abs(frame.center.x - from.center.x) : abs(frame.center.y - from.center.y)
+            let offset = horizontal ? abs(frame.center.y - from.center.y) : abs(frame.center.x - from.center.x)
+            return (gap, offset)
+        }
+        return candidates.min { score($0.frame) < score($1.frame) }
+    }
+
     func index(for rect: CGRect) -> Int {
         let center = rect.center
         if let i = firstIndex(where: { $0.frame.contains(center) }) { return i }

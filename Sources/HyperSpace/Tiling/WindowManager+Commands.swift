@@ -81,16 +81,31 @@ extension WindowManager {
     func focus(_ direction: Direction) {
         scoped {
             let bounds = currentBounds()
-            guard let current = focused(), let origin = bounds[current.id] else { return }
-            // Accordion: left and right go through the stack in order (the windows overlap, so
-            // their centers say little); past either end, on to the next display.
-            if let next = accordionNeighbor(of: current, direction, bounds) {
-                focus(next)
-                return
+            // On an empty workspace holding the focus, the window left behind is not where you are.
+            if heldDisplay == nil, let current = focused(), let origin = bounds[current.id] {
+                // Accordion: left and right go through the stack in order (the windows overlap, so
+                // their centers say little); past either end, on to the next display.
+                if let next = accordionNeighbor(of: current, direction, bounds) {
+                    focus(next)
+                    return
+                }
+                let candidates = visible(bounds).filter { $0.0.id != current.id }
+                if let target = Layout.neighbor(of: origin, direction, among: candidates) {
+                    focus(target)
+                    return
+                }
             }
-            let candidates = visible(bounds).filter { $0.0.id != current.id }
-            if let target = Layout.neighbor(of: origin, direction, among: candidates) { focus(target) }
+            focusDisplay(direction)
         }
+    }
+
+    /// No window that way: the focus goes to the display there, empty or not.
+    private func focusDisplay(_ direction: Direction) {
+        let screens = currentScreens()
+        guard screens.count > 1, let current = focusedScreen(), let next = screens.neighbor(of: current.id, direction),
+              let workspace = displayed[next.id] else { return }
+        let window = focusWindow(in: workspace)
+        notifyWorkspace(focused: .some(window))
     }
 
     /// The previous or next tiled window of an accordion, for left and right.
