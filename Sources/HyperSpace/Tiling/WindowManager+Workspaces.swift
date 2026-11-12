@@ -231,6 +231,9 @@ extension WindowManager {
                 // active display too (menu bar, new windows, Spotlight open there). Also asked
                 // through AX, off the main thread (which has to answer), in case the click is not
                 // possible (a mouse button held).
+                // The window left behind may report focus again as the anchor takes over: that
+                // is not the user leaving the empty display (as in `switchWorkspace`).
+                ignoreFocusChanges()
                 focusRequest += 1
                 heldDisplay = id
                 focusAnchor.show(on: screen)
