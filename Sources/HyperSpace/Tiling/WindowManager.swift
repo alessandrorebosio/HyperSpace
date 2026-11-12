@@ -325,11 +325,6 @@ final class WindowManager {
         // Window elements use the global AX timeout (6 s by default): an app still busy
         // launching at login must not stall the window manager that long.
         _ = AX.systemWide
-        focusAnchor.onResign = { [weak self] in
-            guard let self else { return }
-            heldDisplay = nil
-            scheduleFocusUpdate()
-        }
         loadSavedState()
         syncDisplays()
         // One app per run loop turn, the frontmost first: shortcuts stay responsive while

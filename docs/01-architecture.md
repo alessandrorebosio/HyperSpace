@@ -48,7 +48,7 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 - **`WindowManager`** (class, stored state, command scope, lifecycle, layout) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Tracking`** (finding, adopting and forgetting windows), **`+MouseDrag`** (modifier-drag to move and resize), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow`; **`WorkspaceSummary`** holds `WorkspaceSummary` (with its per-app list) and `WorkspaceBar`.
 - **`Layout`** (layout math for `tall`/`wide`/`columns`/`monocle`/`accordion`, neighbour search, `CGRect.centered`), **`ScreenInfo`** (a display's frames, UUID, relocating and centering), **`ColumnLayout`** (i3-style columns).
 - **`AppWatcher`** (one `AXObserver` per app), **`AXQueues`** (per-app serial queues), **`AX`** (Accessibility API helpers; `AX.probe` and `AX.frame` read their attributes in one round trip).
-- **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (invisible window HyperSpace clicks on an empty workspace's display, so HyperSpace becomes the active app there and that display the active one).
+- **`DisplayMonitor`** (displays asleep / on another input left out after 60 s), **`FocusAnchor`** (clicks the desktop of an empty workspace's display, so the Finder becomes the active app there and that display the active one).
 - **`WorkspaceState`** (saved state and `WorkspaceRestorer`), **`LaunchTracker`** (which workspace an app was opened from).
 
 ### `Settings/`
@@ -92,7 +92,7 @@ AppDelegate.apply
 - The tap **subscribes only to the events in use** (`TapConfig.eventMask`): with an empty config no tap is installed at all.
 - Without Accessibility `applyTrusted` is not called: only HID remaps are active. A 1 s timer polls until the permission arrives, then applies the already-loaded config.
 - A tap disabled by the system (`tapDisabledByTimeout`/`ByUserInput`) is re-enabled in the callback.
-- Events HyperSpace generates (synthetic keys, the `click` and `navigate` actions, the focus anchor's click) are stamped with `EventTap.syntheticMarker` (`0x48595045`) in `eventSourceUserData`; the tap lets them through untouched.
+- Events HyperSpace generates (synthetic keys, the `click` and `navigate` actions, the click on an empty display's desktop) are stamped with `EventTap.syntheticMarker` (`0x48595045`) in `eventSourceUserData`; the tap lets them through untouched.
 
 ## Events the tap subscribes to
 

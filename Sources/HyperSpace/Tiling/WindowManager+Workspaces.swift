@@ -226,20 +226,15 @@ extension WindowManager {
                 if heldDisplay == id, focusAnchor.shown { return nil }
                 bringPointer(to: screen.visible.center, on: screen)
                 // Nothing to focus there: take the keyboard away from the window you left (on
-                // another display it would keep typing there). An invisible window of ours on that
-                // display is clicked, which makes HyperSpace active there: macOS then makes it the
-                // active display too (menu bar, new windows, Spotlight open there). Also asked
-                // through AX, off the main thread (which has to answer), in case the click is not
-                // possible (a mouse button held).
-                // The window left behind may report focus again as the anchor takes over: that
-                // is not the user leaving the empty display (as in `switchWorkspace`).
+                // another display it would keep typing there). The desktop of that display is
+                // clicked, which makes the Finder active there: macOS then makes it the active
+                // display too (menu bar, new windows, Spotlight open there).
+                // The window left behind may report focus again meanwhile: that is not the user
+                // leaving the empty display (as in `switchWorkspace`).
                 ignoreFocusChanges()
                 focusRequest += 1
                 heldDisplay = id
                 focusAnchor.show(on: screen)
-                let me = getpid()
-                axQueues.perform(me) { AX.setBool(AXUIElementCreateApplication(me), kAXFrontmostAttribute, true) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.focusAnchor.takeKey() }
             }
             return nil
         }
@@ -253,7 +248,14 @@ extension WindowManager {
 
     /// ⌘Tab or a click on a window of a hidden workspace shows that workspace.
     func followFocus(_ window: ManagedWindow?) {
-        guard running, let window else { return }
+        guard running else { return }
+        guard let window else {
+            // Another app with no window of ours (⌘Tab to one, Spotlight): the empty display is
+            // left too. The Finder is the app our click made active there.
+            if heldDisplay != nil, Date() > followFocusAfter,
+               NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.finder" { releaseHeldFocus() }
+            return
+        }
         // A window focused by the user (not the refocusing we cause): the empty display is left.
         if heldDisplay != nil, Date() > followFocusAfter { releaseHeldFocus() }
         window.focusedAt = Date()

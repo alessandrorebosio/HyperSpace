@@ -1,90 +1,57 @@
 import AppKit
 
-/// A tiny, invisible window of HyperSpace's own. macOS makes the display of the active app's
-/// key window the active one (where the menu bar is lit, new windows and Spotlight open), and
-/// moving the pointer alone does not change it. On an empty workspace there is no window to
-/// focus, so this one takes the focus on that display instead.
+/// Makes a display with no window to focus the active one (where the menu bar is lit, new
+/// windows and Spotlight open). Moving the pointer alone does not change it, and a background
+/// app cannot make itself active there (macOS ignores NSApp.activate, and AX, from it).
 ///
-/// A background app cannot make itself active (macOS ignores NSApp.activate, and AX, from
-/// it), and a key window of an inactive app leaves the menu bar on the other display. A click
-/// is what macOS always honours: HyperSpace clicks its own window, which activates it there.
-final class FocusAnchor: NSObject, NSWindowDelegate {
-    /// Called when something else takes the key focus (a click, ⌘Tab, an app opening).
-    var onResign: (() -> Void)?
-
-    private final class Panel: NSWindow {
-        override var canBecomeKey: Bool { true }
-        override var canBecomeMain: Bool { false }
-    }
-
-    private lazy var window: NSWindow = {
-        let window = Panel(contentRect: NSRect(x: 0, y: 0, width: 2, height: 2), styleMask: [.borderless],
-                           backing: .buffered, defer: true)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.alphaValue = 0.01
-        // Explicitly false: the whole window takes clicks, transparent as it is.
-        window.ignoresMouseEvents = false
-        window.hasShadow = false
-        window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = false
-        // Above any window that could be there, so the click lands on it.
-        window.level = .popUpMenu
-        window.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary, .canJoinAllSpaces]
-        window.delegate = self
-        return window
-    }()
-
+/// HyperSpace clicks the empty desktop in the middle of that display, as you would: the
+/// Finder, which owns the desktop, becomes the active app there and the keyboard leaves the
+/// window on the other display. (A window of HyperSpace's own clicked there made HyperSpace
+/// active, but macOS 27 no longer lights the menu bar of an accessory app's display.)
+final class FocusAnchor {
+    /// Whether the focus is held on an empty display (until `dismiss`).
     private(set) var shown = false
-    /// Where the window is, in AX (top-left) coordinates.
+    /// Where the click goes, in AX (top-left) coordinates.
     private var point = CGPoint.zero
 
-    /// Puts it in the middle of the visible area of `screen` (AX coordinates) and makes
-    /// HyperSpace active there.
+    /// Clicks the desktop in the middle of the visible area of `screen`.
     func show(on screen: ScreenInfo) {
-        let center = screen.visible.center
-        point = center
-        // The 2×2 pt window centered there, in AppKit coordinates.
-        window.setFrameOrigin(ScreenInfo.flipped(CGRect(x: center.x - 1, y: center.y - 1, width: 2, height: 2)).origin)
-        window.orderFrontRegardless()
+        point = screen.visible.center
         shown = true
-        window.makeKey()
-        // Clicked once it is really on screen: sent right away, the click can land on the
-        // window of the workspace just left (still there for a moment), whose app would
-        // then take the focus and bring its workspace back.
+        // Not right away: the windows of the workspace just left are still there for a moment,
+        // and a click on one would focus its app and bring its workspace back.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self, shown else { return }
             click()
         }
     }
 
-    /// Once HyperSpace is frontmost: takes the key focus there (again, now as the active app).
-    func takeKey() {
-        guard shown else { return }
-        window.makeKeyAndOrderFront(nil)
-    }
-
     func dismiss() {
-        guard shown else { return }
         shown = false
-        window.orderOut(nil)
     }
 
-    /// Clicks the window, which brings the pointer to the middle of the display, and leaves
+    /// Clicks the desktop, which brings the pointer to the middle of the display, and leaves
     /// it there (sent back where it was, it would visibly jump to the middle and back).
-    /// Not while a button is held (a drag of yours would end).
+    /// Not while a button is held (a drag of yours would end), nor on a window that is there
+    /// (a floating window, a scratchpad): its app would take the focus instead.
     private func click() {
-        guard NSEvent.pressedMouseButtons == 0 else { return }
+        guard NSEvent.pressedMouseButtons == 0 else { return log.debug("empty display: no click, a button is held") }
+        if let owner = Self.windowOwner(at: point) {
+            return log.debug("empty display: no click, a window of \(owner, privacy: .public) is there")
+        }
         Pointer.warp(to: point)
         Pointer.click([], at: point)
     }
 
-    func windowDidResignKey(_ notification: Notification) {
-        // Becoming key again as the active app resigns it for a moment: only a real loss counts.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, shown, !window.isKeyWindow else { return }
-            dismiss()
-            onResign?()
-        }
+    /// The app of an ordinary window (layer 0) on screen at `point`, if any; the desktop is not one.
+    static func windowOwner(at point: CGPoint) -> String? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] else { return nil }
+        return list.first { info in
+            guard info[kCGWindowLayer as String] as? Int == 0,
+                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds) else { return false }
+            return rect.contains(point)
+        }.map { $0[kCGWindowOwnerName as String] as? String ?? "?" }
     }
 }

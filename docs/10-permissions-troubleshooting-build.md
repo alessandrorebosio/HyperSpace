@@ -34,7 +34,7 @@ notifications, drivers/kexts, root.
 | Windows left in the bottom-right corner | Normally restored on quit/tiling off; after a crash they are rescued (centred) at the next start |
 | Nothing at all after login | At login for 90 s apps with rules do not move you; the first config may still be loading |
 | Keyboard locked | Click *Unlock* with the mouse (menu or Settings → Keyboard); it also unlocks by itself after the chosen time; quitting unlocks |
-| Empty workspace on another display: menu bar stays lit on the other display, typing goes to the old window | HyperSpace clicks its invisible focus anchor to become active there ([Empty workspaces](07-workspaces-and-displays.md#empty-workspaces)); no click while a mouse button is held. Check the `empty workspace N: frontmost …` log line (it should say HyperSpace) |
+| Empty workspace on another display: menu bar stays lit on the other display, typing goes to the old window | HyperSpace clicks the desktop of that display so the Finder becomes active there ([Empty workspaces](07-workspaces-and-displays.md#empty-workspaces)); no click while a mouse button is held or a window covers the middle of the display (the log says `empty display: no click, …`) |
 | A window moved to another display has the wrong size | It is written again and retiled at 0.3 s and 0.8 s; an app with a minimum size larger than its tile keeps its own. Check *Copy Debug Info → Recent issues* for failed AX moves |
 | `Config error: mouse button must be between 2 and 31` | Buttons 0/1 (left/right click) cannot be mapped |
 

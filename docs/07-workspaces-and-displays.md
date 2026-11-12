@@ -24,7 +24,7 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift` an
 - **Workspace 1 lives on the main display** (the one with the menu bar), **2 on the second**, 3 on the third, and so on (displays ordered: main first, then left to right, then by `y`). Workspaces beyond the number of displays live on the main display.
 - Each display **shows exactly one** of its workspaces (the lowest-numbered one by default), or none if no workspace lives there.
 - `workspace n` (**`switchWorkspace`**) shows n on *its* display, remembers what it replaced, and focuses its last focused window (or the first one; with no windows, it moves the pointer to the display
-  centre and makes that display the active one through the focus anchor, see [Empty workspaces](#empty-workspaces)). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
+  centre and makes that display the active one by clicking its desktop, see [Empty workspaces](#empty-workspaces)). The menu bar highlights the target workspace right away. The other displays are untouched. The previously focused workspace is remembered for `back-and-forth`.
 - Focus moving to another display brings the pointer along (at the centre of the window, or of the display when the workspace is empty), and switching workspace puts it in the middle of the display's visible area (not when the workspace was already the focused one, nor while a mouse button is held); turn it off with `"mouseFollowsFocus": false` (Settings → Tiling → *Pointer follows focus*).
 
 ## Pinned workspaces
@@ -48,14 +48,14 @@ A workspace can be fixed to a display with `"display"` (Settings → Workspaces 
 
 An empty workspace has no window to focus, yet its display must become the active one: otherwise the keyboard keeps typing into the window left on the other display, and the menu bar, new windows and Spotlight stay there. macOS lights up a display's menu bar only for the **active app**, and it ignores a background app activating itself (`NSApp.activate`, or `AXFrontmost` on itself): a click is the one thing it always honours.
 
-So focusing an empty workspace (`workspace n`, `focus-display`, a window moved away leaving its workspace empty, a scratchpad hidden over one):
+So focusing an empty workspace (`workspace n`, `focus <dir>` or `focus-display` towards it, a window moved away leaving its workspace empty, a scratchpad hidden over one):
 
-1. `FocusAnchor` (`Tiling/FocusAnchor.swift`) puts a 2×2 window, nearly transparent, at `popUpMenu` level in the middle of the display's visible area;
-2. HyperSpace **clicks it** with a synthetic left click (no modifiers, stamped with `EventTap.syntheticMarker`, so the event tap and your mouse mappings ignore it), which makes HyperSpace the active app with its key window on that display. The pointer stays there, in the middle of the display. No click is sent while a mouse button is held: then only `AXFrontmost` is asked, as a fallback;
+1. HyperSpace (`FocusAnchor`, `Tiling/FocusAnchor.swift`) **clicks the desktop** in the middle of the display's visible area, a moment later (the windows of the workspace just left are still there for a moment), with a synthetic left click (no modifiers, stamped with `EventTap.syntheticMarker`, so the event tap and your mouse mappings ignore it). As with a click of yours on an empty desktop, the **Finder** becomes the active app on that display and its menu bar is lit there. The pointer stays in the middle of the display;
+2. no click is sent while a mouse button is held, nor when a window covers that point (a floating window, a scratchpad): its app would take the focus instead;
 3. until a window is focused, that display **counts as the focused one** for HyperSpace too (menu bar highlight, apps opened from there, layout and workspace commands), even if macOS still reports the window left behind as focused;
-4. the anchor goes away as soon as anything else takes the key focus (a click, ⌘Tab, an app opening) or HyperSpace focuses a window.
+4. that ends as soon as a window is focused, or another app than the Finder becomes active (⌘Tab, Spotlight, an app opening).
 
-While HyperSpace is active its own (small) menu bar is shown on that display.
+Earlier versions clicked an invisible window of HyperSpace's own instead; on macOS 27 that makes HyperSpace active but no longer moves the lit menu bar to that display.
 
 ## Moving windows and workspaces
 
