@@ -99,7 +99,7 @@ extension WindowManager {
             guard let screen = focusedScreen() ?? screens.first else { return }
             ignoreFocusChanges()
             let target = Self.scratchpadFrame(in: screen.visible, size: config.scratchpadSize)
-            let frame = scratchpadFitted.flatMap { $0.target == target ? target.centered($0.size, rounded: true) : nil } ?? target
+            let frame = Self.scratchpadFrame(target: target, fitted: scratchpadFitted)
             let current = currentBounds()[window.id]
             log.debug("show scratchpad window \(window.id) (\(window.appLabel, privacy: .public)) on display \(screen.id)")
             window.scratchpadShown = true
@@ -120,7 +120,9 @@ extension WindowManager {
                     size = AX.size(element) ?? size
                 }
                 guard let origin = AX.position(element) else { return false }
-                if misses(size) {
+                // Only a size near the one asked for is passed on: one far off (a move that
+                // failed, a window that refused) would show every scratchpad window that way.
+                if misses(size), Self.isNearFit(size, target.size) {
                     DispatchQueue.main.async { self?.scratchpadFitted = (target, size) }
                 }
                 let centered = target.centered(size, rounded: true)
@@ -169,6 +171,19 @@ extension WindowManager {
             hide(dialog, from: shown, screens: screens)
         }
         return frame
+    }
+
+    /// Where a scratchpad window goes: `target`, or centered on the size an earlier one took
+    /// instead of it (`fitted`, for that same target) when that size is near the target.
+    static func scratchpadFrame(target: CGRect, fitted: (target: CGRect, size: CGSize)?) -> CGRect {
+        guard let fitted, fitted.target == target, isNearFit(fitted.size, target.size) else { return target }
+        return target.centered(fitted.size, rounded: true)
+    }
+
+    /// A size missing `target` only by an app's sizing steps (a terminal's character cells):
+    /// within 10% in each dimension.
+    static func isNearFit(_ size: CGSize, _ target: CGSize) -> Bool {
+        abs(size.width - target.width) <= target.width * 0.1 && abs(size.height - target.height) <= target.height * 0.1
     }
 
     /// Centered in the visible area, `size` being fractions of it.

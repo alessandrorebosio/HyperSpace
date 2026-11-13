@@ -189,6 +189,27 @@ import Testing
         #expect(frame.centered(frame.size, rounded: true) == frame)
     }
 
+    @Test func nearFittedSizeIsShared() {
+        let target = CGRect(x: 74, y: 126, width: 1323, height: 738)
+        let frame = WindowManager.scratchpadFrame(target: target, fitted: (target, CGSize(width: 1316, height: 731)))
+        #expect(frame.size == CGSize(width: 1316, height: 731))
+        #expect(abs(frame.midX - target.midX) <= 1 && abs(frame.midY - target.midY) <= 1)
+    }
+
+    @Test func farFittedSizeIsIgnored() {
+        // A window left at the full visible area (a move that failed) is not the size to share.
+        let target = CGRect(x: 74, y: 126, width: 1323, height: 738)
+        #expect(WindowManager.scratchpadFrame(target: target, fitted: (target, CGSize(width: 1469, height: 922))) == target)
+        #expect(!WindowManager.isNearFit(CGSize(width: 1469, height: 922), target.size))
+    }
+
+    @Test func fittedSizeOfAnotherTargetIsIgnored() {
+        let target = CGRect(x: 74, y: 126, width: 1323, height: 738)
+        let other = CGRect(x: 0, y: 0, width: 1000, height: 700)
+        #expect(WindowManager.scratchpadFrame(target: target, fitted: (other, CGSize(width: 1316, height: 731))) == target)
+        #expect(WindowManager.scratchpadFrame(target: target, fitted: nil) == target)
+    }
+
     @Test func actionsAndSize() throws {
         let config = try HyperSpaceTests.config(#"""
         {"keyboard":{"bindings":[{"keys":"meh+x","action":"scratchpad com.anthropic.claudefordesktop"},
