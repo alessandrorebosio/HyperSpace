@@ -29,9 +29,11 @@ extension WindowManager {
                 let shown = pad.filter(\.scratchpadShown)
                 if shown.contains(where: { $0.id == focusedID }) { hideScratchpad(shown) } else { showScratchpad(pad) }
             } else if let window = mine.first(where: { $0.id == focusedID }) ?? mine.first {
-                // Already open in the tiling: it moves to the scratchpad.
+                // Already open in the tiling: it moves to the scratchpad, and the windows it
+                // leaves take its place.
                 window.scratchpad = true
                 showScratchpad(window)
+                retile()
             } else {
                 // Not open, or no window: its next window is the scratchpad one.
                 pendingScratchpad = pendingScratchpad.filter { $0.value > Date() }
