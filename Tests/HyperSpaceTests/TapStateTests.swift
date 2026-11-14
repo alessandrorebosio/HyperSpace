@@ -55,9 +55,50 @@ private final class Tap {
 
     @Test func autorepeatRunsOnlyStepwiseActions() throws {
         let tap = try state(bindings)
+        #expect(tap.key(code: code("h"), modifiers: [.cmd, .alt], down: true, isRepeat: false) == .run(.focus(.left)))
         #expect(tap.key(code: code("h"), modifiers: [.cmd, .alt], down: true, isRepeat: true) == .run(.focus(.left)))
         #expect(tap.key(code: code("f"), modifiers: [.cmd, .alt], down: true, isRepeat: false) == .run(.toggleFloat))
         #expect(tap.key(code: code("f"), modifiers: [.cmd, .alt], down: true, isRepeat: true) == .swallow)
+    }
+
+    /// Releasing a modifier while the key is still held: its repeats stay with the binding.
+    @Test func autorepeatKeepsItsBindingAfterAModifierIsReleased() throws {
+        let tap = try state(#"""
+        { "keyboard": { "bindings": [
+            { "keys": "cmd+alt+h", "action": "focus left" },
+            { "keys": "cmd+h", "action": "float" },
+            { "keys": "cmd+alt+f", "action": "float" }
+        ] } }
+        """#)
+        let h = code("h"), f = code("f")
+        #expect(tap.key(code: h, modifiers: [.cmd, .alt], down: true, isRepeat: false) == .run(.focus(.left)))
+        // ⌥ released: not "cmd+h", and not passed to the app as "hhhh".
+        #expect(tap.key(code: h, modifiers: [.cmd], down: true, isRepeat: true) == .run(.focus(.left)))
+        #expect(tap.key(code: h, modifiers: [], down: true, isRepeat: true) == .run(.focus(.left)))
+        #expect(tap.key(code: h, modifiers: [], down: false, isRepeat: false) == .swallow)
+
+        // An action that runs once keeps swallowing its repeats without modifiers too.
+        #expect(tap.key(code: f, modifiers: [.cmd, .alt], down: true, isRepeat: false) == .run(.toggleFloat))
+        #expect(tap.key(code: f, modifiers: [], down: true, isRepeat: true) == .swallow)
+        #expect(tap.key(code: f, modifiers: [], down: false, isRepeat: false) == .swallow)
+    }
+
+    /// A key the app got keeps its repeats, even once modifiers make it a binding.
+    @Test func autorepeatOfAKeyTheAppGotPasses() throws {
+        let tap = try state(bindings)
+        let h = code("h")
+        #expect(tap.key(code: h, modifiers: [], down: true, isRepeat: false) == .pass)
+        #expect(tap.key(code: h, modifiers: [.cmd, .alt], down: true, isRepeat: true) == .pass)
+        #expect(tap.key(code: h, modifiers: [.cmd, .alt], down: false, isRepeat: false) == .pass)
+    }
+
+    /// A key-up that was missed: the next plain press of that key is the app's, and so its up.
+    @Test func aNewUnboundPressForgetsAMissedKeyUp() throws {
+        let tap = try state(bindings)
+        let h = code("h")
+        #expect(tap.key(code: h, modifiers: [.cmd, .alt], down: true, isRepeat: false) == .run(.focus(.left)))
+        #expect(tap.key(code: h, modifiers: [], down: true, isRepeat: false) == .pass)
+        #expect(tap.key(code: h, modifiers: [], down: false, isRepeat: false) == .pass)
     }
 
     @Test func overviewOpensWhileHeldAndClosesOnRelease() throws {

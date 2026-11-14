@@ -1,18 +1,21 @@
 import AppKit
 
-/// One active CGEventTap shared by the keyboard and mouse mappers.
+/// The one active CGEventTap: key bindings, combination carriers, mouse buttons, reversed
+/// scrolling, modifier-drag, the keyboard lock and the trackpad's pointer and click holds.
 ///
 /// It runs on its own high-priority thread so that window-management work on the
 /// main thread can never delay input. All tap state is confined to that thread:
 /// config updates are handed over with `CFRunLoopPerformBlock`, so the hot path reads
-/// plain arrays and takes no locks of its own (the one allocation is the CGEvent a carrier posts).
+/// plain arrays and takes no locks of its own. It allocates only to post an event (a
+/// carrier's key) and to hand an action or the overview to the main thread.
+///
+/// Created once and kept for the app's lifetime: the tap thread and the C callback hold it
+/// unretained, so it is never released.
 final class EventTap {
     /// Stamped on events we synthesize so the tap lets them through untouched.
     static let syntheticMarker: Int64 = 0x4859_5045
     /// Posted on the main thread when the keyboard is locked or unlocked.
-    static let keyboardLockDidChange = Notification.Name("HyperSpaceKeyboardLockDidChange")
-    /// NX_SYSDEFINED: media, volume and brightness keys.
-    private static let systemDefined = CGEventType(rawValue: 14)!
+    static let keyboardLockDidChange = Notification.Name("HyperSpace.keyboardLockDidChange")
 
     /// Every key is ignored (e.g. to clean the keyboard); unlocked with the mouse. Main thread.
     private(set) var isKeyboardLocked = false
@@ -38,7 +41,13 @@ final class EventTap {
     /// Keys, buttons, held combinations and the overview key: the decisions, kept pure.
     private var state = TapState()
     private var config: TapConfig { state.config }
-    private var dragMode: DragMode?
+    /// A modifier-drag in progress: its mode says its button (left moves, right resizes).
+    private struct Drag {
+        let mode: DragMode
+        /// The other of left and right went down during the drag: swallowed, and so its up.
+        var otherButtonDown = false
+    }
+    private var activeDrag: Drag?
     private var keyboardLocked = false
     /// Where the pointer is held while a trackpad edge slider is in progress.
     private var heldPointer: CGPoint?
@@ -75,8 +84,13 @@ final class EventTap {
         ) { [weak self] _ in self?.pushConfig() }
     }
 
-    deinit {
-        if let layoutObserver { NotificationCenter.default.removeObserver(layoutObserver) }
+    // No deinit: the instance lives as long as the app (see above). Releasing it would leave
+    // the tap's refcon and the tap thread's `unowned self` dangling, and its tap state
+    // belongs to the tap thread, so the main thread could not tear it down safely anyway.
+
+    /// Tap thread: hands `value` to a main-thread handler.
+    private static func onMain<Value>(_ handler: @escaping (Value) -> Void, _ value: Value) {
+        DispatchQueue.main.async { handler(value) }
     }
 
     /// Runs a block on the tap thread, which owns all tap state.
@@ -110,15 +124,14 @@ final class EventTap {
 
     /// Tap thread: the key holding the overview went up (or is forgotten): it closes.
     private func closeOverview() {
-        let onOverview = onOverview
-        DispatchQueue.main.async { onOverview(false) }
+        Self.onMain(onOverview, false)
     }
 
     /// Tap thread: a modifier-drag whose mouse-up will not be seen (a new config, a tap that
     /// timed out) ends where the pointer is, so the window manager does not wait for it.
     private func cancelDrag() {
-        guard dragMode != nil else { return }
-        dragMode = nil
+        guard activeDrag != nil else { return }
+        activeDrag = nil
         drag.cancel()
     }
 
@@ -138,9 +151,12 @@ final class EventTap {
         if locked, KeyboardLock.minutes > 0 {
             let duration = TimeInterval(KeyboardLock.minutes * 60)
             keyboardUnlocksAt = Date().addingTimeInterval(duration)
-            unlockTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            let timer = Timer(timeInterval: duration, repeats: false) { [weak self] _ in
                 self?.setKeyboardLocked(false)
             }
+            // Common modes: the lock also lifts on time while a menu is open.
+            RunLoop.main.add(timer, forMode: .common)
+            unlockTimer = timer
         }
         log.info("keyboard \(locked ? "locked" : "unlocked", privacy: .public)")
         onTapThread { [self] in
@@ -155,8 +171,9 @@ final class EventTap {
     private func updateMask() {
         var newMask = config.eventMask
         if keyboardLocked {
-            for type in [CGEventType.keyDown, .keyUp, .flagsChanged, Self.systemDefined] {
-                newMask |= CGEventMask(1) << type.rawValue
+            for type in [CGEventType.keyDown.rawValue, CGEventType.keyUp.rawValue, CGEventType.flagsChanged.rawValue,
+                         SystemDefinedEvent.type] {
+                newMask |= CGEventMask(1) << type
             }
         }
         if newMask != mask || (tap == nil && newMask != 0) { installTap(mask: newMask) }
@@ -242,9 +259,9 @@ final class EventTap {
         if keyboardLocked {
             switch type {
             case .keyDown, .keyUp, .flagsChanged: return nil
-            case Self.systemDefined:
-                // Subtype 8 is the media/volume/brightness keys; other subtypes come from the mouse.
-                return NSEvent(cgEvent: event)?.subtype.rawValue == 8 ? nil : pass
+            case _ where type.rawValue == SystemDefinedEvent.type:
+                // Only the media, volume and brightness keys: other subtypes come from the mouse.
+                return NSEvent(cgEvent: event)?.subtype.rawValue == SystemDefinedEvent.mediaKeySubtype ? nil : pass
             default: break
             }
         }
@@ -278,13 +295,21 @@ final class EventTap {
             if !event.location.isClose(to: held, tolerance: 0.5) { Pointer.warp(to: held) }
             return nil
         case .leftMouseDown, .rightMouseDown:
+            let mode: DragMode = type == .leftMouseDown ? .move : .resize
+            if activeDrag != nil {
+                // During a drag the window keeps its gesture: another press neither restarts
+                // nor ends it, and the app sees neither it nor its release.
+                if activeDrag?.mode != mode { activeDrag?.otherButtonDown = true }
+                return nil
+            }
             if config.holdsCornerClicks, droppingCornerClicks {
                 if type == .leftMouseDown { droppedClicks.0 = true } else { droppedClicks.1 = true }
                 return nil
             }
-            return beginDrag(event, mode: type == .leftMouseDown ? .move : .resize) ? nil : pass
+            return beginDrag(event, mode: mode) ? nil : pass
         case .leftMouseDragged, .rightMouseDragged:
-            guard dragMode != nil else { return pass }
+            // Either type: with both buttons down macOS may report the drag as the other one's.
+            guard activeDrag != nil else { return pass }
             drag.update(event.location)
             return nil
         case .leftMouseUp, .rightMouseUp:
@@ -292,8 +317,15 @@ final class EventTap {
                 if type == .leftMouseUp { droppedClicks.0 = false } else { droppedClicks.1 = false }
                 return nil
             }
-            guard dragMode != nil else { return pass }
-            dragMode = nil
+            guard let current = activeDrag else { return pass }
+            let mode: DragMode = type == .leftMouseUp ? .move : .resize
+            guard mode == current.mode else {
+                // The other button: swallowed only if its press was.
+                guard current.otherButtonDown else { return pass }
+                activeDrag?.otherButtonDown = false
+                return nil
+            }
+            activeDrag = nil
             drag.end(event.location)
             return nil
         default:
@@ -312,8 +344,7 @@ final class EventTap {
             dispatch(action)
             return true
         case .overview(let shown):
-            let onOverview = onOverview
-            DispatchQueue.main.async { onOverview(shown) }
+            Self.onMain(onOverview, shown)
             return true
         case .postKey(let keyCode, let modifiers, let down):
             KeyEmitter.post(keyCode: keyCode, flags: modifiers.cgFlags, down: down)
@@ -335,14 +366,13 @@ final class EventTap {
 
     private func beginDrag(_ event: CGEvent, mode: DragMode) -> Bool {
         guard let required = config.dragModifier, Modifiers(event.flags) == required else { return false }
-        dragMode = mode
+        activeDrag = Drag(mode: mode)
         drag.begin(mode, at: event.location)
         return true
     }
 
     private func dispatch(_ action: Action) {
-        let onAction = onAction
-        DispatchQueue.main.async { onAction(action) }
+        Self.onMain(onAction, action)
     }
 }
 

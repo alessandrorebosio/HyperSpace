@@ -20,19 +20,25 @@ struct TapState {
         case postKey(keyCode: UInt16, modifiers: Modifiers, down: Bool)
     }
 
+    /// In `pressedActions`: the key is not held by a binding.
+    private static let notPressed: Int16 = -1
+
     private(set) var config = TapConfig()
     /// Modifiers of the modifier-only combinations currently held (e.g. caps lock → ⌃⌥⇧).
     private(set) var heldModifiers: Modifiers = []
     private var carrierDown: [Bool] = []
-    private var swallowedKeys = [Bool](repeating: false, count: 128)
-    private var swallowedButtons = [Bool](repeating: false, count: 32)
+    /// By key code: the index in `config.actions` of the binding a held key pressed, or
+    /// `notPressed`. Its autorepeat and its key-up belong to that binding, whatever the
+    /// modifiers are by then, and are swallowed with it.
+    private var pressedActions = [Int16](repeating: TapState.notPressed, count: TapConfig.keyCodeCount)
+    private var swallowedButtons = [Bool](repeating: false, count: TapConfig.buttonCount)
     /// The key code holding the workspace overview open, or -1.
-    private(set) var overviewKey = -1
+    private var overviewKey = -1
     /// Set while the settings window captures a mouse button: buttons reach the app unmapped.
-    private(set) var buttonsSuspended = false
+    private var buttonsSuspended = false
     /// Set while the settings window captures a shortcut: key bindings are ignored
     /// (combination keys still work, so caps lock → ⌃⌥⇧ can be part of the shortcut).
-    private(set) var keyBindingsSuspended = false
+    private var keyBindingsSuspended = false
 
     /// A new config: everything held or swallowed is forgotten. True when the overview was
     /// open and must close.
@@ -51,8 +57,7 @@ struct TapState {
             carrierDown = [Bool](repeating: false, count: config.carriers.count)
         }
         heldModifiers = []
-        for i in swallowedKeys.indices { swallowedKeys[i] = false }
-        return releaseOverview()
+        return releasePressedKeys()
     }
 
     /// The button-ups still owed to a swallowed press are not swallowed any more.
@@ -63,8 +68,7 @@ struct TapState {
     /// True when the overview was open and must close.
     mutating func setKeyBindingsSuspended(_ suspended: Bool) -> Bool {
         keyBindingsSuspended = suspended
-        for i in swallowedKeys.indices { swallowedKeys[i] = false }
-        return releaseOverview()
+        return releasePressedKeys()
     }
 
     mutating func setButtonsSuspended(_ suspended: Bool) {
@@ -72,7 +76,10 @@ struct TapState {
         clearButtons()
     }
 
-    private mutating func releaseOverview() -> Bool {
+    /// The key-ups still owed to a binding are not swallowed any more, and the overview is
+    /// released. True when it was open and must close.
+    private mutating func releasePressedKeys() -> Bool {
+        for i in pressedActions.indices { pressedActions[i] = Self.notPressed }
         guard overviewKey >= 0 else { return false }
         overviewKey = -1
         return true
@@ -81,32 +88,44 @@ struct TapState {
     /// A key down or up. `modifiers`: the event's, held combinations included; `isRepeat`:
     /// the key's autorepeat.
     mutating func key(code: Int, modifiers: Modifiers, down: Bool, isRepeat: Bool) -> Decision {
-        guard (0..<128).contains(code) else { return .pass }
+        guard (0..<TapConfig.keyCodeCount).contains(code) else { return .pass }
 
         let carrierIndex = Int(config.carrierTable[code])
         if carrierIndex >= 0 { return carrier(carrierIndex, modifiers: modifiers, down: down) }
-        if keyBindingsSuspended { return .pass }
-        if down {
-            let index = config.keyTable[TapConfig.slot(code, modifiers)]
-            guard index >= 0 else { return .pass }
-            swallowedKeys[code] = true
-            let action = config.actions[Int(index)]
-            if action == .workspaceOverview {
-                // Open while the key is down: autorepeat changes nothing, the key up closes it.
-                guard overviewKey != code else { return .swallow }
-                overviewKey = code
-                return .overview(true)
+        let pressed = pressedActions[code]
+        if !down {
+            guard pressed != Self.notPressed else { return .pass }
+            pressedActions[code] = Self.notPressed
+            if code == overviewKey {
+                overviewKey = -1
+                return .overview(false)
             }
-            // Held: one action, unless it is one that moves in steps.
-            return !isRepeat || action.repeats ? .run(action) : .swallow
+            return .swallow
         }
-        guard swallowedKeys[code] else { return .pass }
-        swallowedKeys[code] = false
-        if code == overviewKey {
-            overviewKey = -1
-            return .overview(false)
+        if isRepeat {
+            // The autorepeat of a key belongs to its press: a binding's is swallowed (and runs
+            // it again if it moves in steps) even after a modifier is released; the repeats of
+            // a key the app got stay with the app. (The overview does not repeat: held open.)
+            guard pressed != Self.notPressed else { return .pass }
+            let action = config.actions[Int(pressed)]
+            return action.repeats ? .run(action) : .swallow
         }
-        return .swallow
+        if keyBindingsSuspended { return .pass }
+        let index = config.keyTable[TapConfig.slot(code, modifiers)]
+        guard index >= 0 else {
+            // A new press of a key whose key-up was missed: it is the app's now.
+            pressedActions[code] = Self.notPressed
+            return .pass
+        }
+        pressedActions[code] = index
+        let action = config.actions[Int(index)]
+        if action == .workspaceOverview {
+            // Open while the key is down: the key up closes it.
+            guard overviewKey != code else { return .swallow }
+            overviewKey = code
+            return .overview(true)
+        }
+        return .run(action)
     }
 
     /// A carrier key stands for a combination: modifier-only combinations are held
@@ -126,7 +145,7 @@ struct TapState {
 
     /// A mouse button (other than left and right) down or up.
     mutating func button(_ button: Int, modifiers: Modifiers, down: Bool) -> Decision {
-        guard (0..<32).contains(button), !buttonsSuspended else { return .pass }
+        guard (0..<TapConfig.buttonCount).contains(button), !buttonsSuspended else { return .pass }
         if down {
             let index = config.buttonTable[TapConfig.slot(button, modifiers)]
             guard index >= 0 else { return .pass }

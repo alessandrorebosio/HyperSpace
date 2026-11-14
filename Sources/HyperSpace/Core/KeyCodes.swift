@@ -39,6 +39,15 @@ enum KeyCodes {
     private static func keyboard(_ usage: UInt64) -> UInt64 { 0x07 << 32 | usage }
     private static func consumer(_ usage: UInt64) -> UInt64 { 0x0C << 32 | usage }
 
+    /// Titles of groups other code reads (`KeyboardLayout`).
+    static let punctuationGroup = "Punctuation"
+    static let keypadGroup = "Keypad"
+
+    /// The keys of the group titled `title`.
+    static func keys(inGroup title: String) -> [KeyInfo] {
+        groups.first { $0.title == title }?.keys ?? []
+    }
+
     /// Every named key, grouped for menus. The first name of a key is its canonical name.
     static let groups: [(title: String, keys: [KeyInfo])] = [
         ("Letters & Digits", [
@@ -66,7 +75,7 @@ enum KeyCodes {
             KeyInfo(["insert", "help"], 0x72, keyboard(0x49)),
             KeyInfo(["application", "menu"], 0x6E, keyboard(0x65)),
         ]),
-        ("Punctuation", [
+        (punctuationGroup, [
             KeyInfo(["minus", "-"], 0x1B, keyboard(0x2D)),
             KeyInfo(["equal", "="], 0x18, keyboard(0x2E)),
             KeyInfo(["left_bracket", "["], 0x21, keyboard(0x2F)),
@@ -119,7 +128,7 @@ enum KeyCodes {
             KeyInfo(["right_command", "right_cmd"], 0x36, keyboard(0xE7)),
             KeyInfo(["fn", "globe"], 0x3F, 0xFF << 32 | 0x03),
         ]),
-        ("Keypad", [
+        (keypadGroup, [
             KeyInfo(["keypad_0"], 0x52, keyboard(0x62)), KeyInfo(["keypad_1"], 0x53, keyboard(0x59)),
             KeyInfo(["keypad_2"], 0x54, keyboard(0x5A)), KeyInfo(["keypad_3"], 0x55, keyboard(0x5B)),
             KeyInfo(["keypad_4"], 0x56, keyboard(0x5C)), KeyInfo(["keypad_5"], 0x57, keyboard(0x5D)),

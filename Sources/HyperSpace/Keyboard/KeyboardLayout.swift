@@ -5,19 +5,25 @@ import Carbon.HIToolbox
 /// ⌘- on an Italian keyboard is the key in the ANSI "/" position. Translation happens on
 /// the main thread only (`EventTap` translates the keys of combinations when it applies a config).
 enum KeyboardLayout {
-    /// ANSI symbol keys and the character a shortcut on them means.
-    private static let symbols: [UInt16: Character] = [
-        0x1B: "-", 0x18: "=", 0x21: "[", 0x1E: "]", 0x2A: "\\", 0x29: ";",
-        0x27: "'", 0x32: "`", 0x2B: ",", 0x2F: ".", 0x2C: "/",
-    ]
+    /// ANSI symbol keys and the character a shortcut on them means: the punctuation keys of
+    /// `KeyCodes` named by their ASCII symbol ("minus" is also "-").
+    static let symbols: [UInt16: Character] = {
+        var result: [UInt16: Character] = [:]
+        for key in KeyCodes.keys(inGroup: KeyCodes.punctuationGroup) {
+            guard let code = key.keyCode,
+                  let symbol = key.names.first(where: { $0.count == 1 && $0.allSatisfy(\.isASCII) }) else { continue }
+            result[code] = Character(symbol)
+        }
+        return result
+    }()
     /// When a layout cannot type a symbol without modifiers, the equivalent apps accept.
     private static let alternatives: [Character: Character] = ["=": "+"]
 
-    private static let keypad: Set<UInt16> = [0x41, 0x43, 0x45, 0x47, 0x4B, 0x4C, 0x4E, 0x51,
-                                              0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5B, 0x5C]
+    /// Keypad keys type the same symbols but many apps don't treat them as shortcuts.
+    static let keypad = Set(KeyCodes.keys(inGroup: KeyCodes.keypadGroup).compactMap(\.keyCode))
 
     /// Posted on the main thread when the keyboard input source changes.
-    static let didChange = Notification.Name("HyperSpaceKeyboardLayoutDidChange")
+    static let didChange = Notification.Name("HyperSpace.keyboardLayoutDidChange")
 
     private static var layoutID: String?
     private static var keyCodes: [Character: UInt16] = [:]
@@ -62,14 +68,14 @@ enum KeyboardLayout {
         guard let bytes = CFDataGetBytePtr(data) else { return }
         bytes.withMemoryRebound(to: UCKeyboardLayout.self, capacity: 1) { layout in
             var chars = [UniChar](repeating: 0, count: 4)
-            for code in UInt16(0)..<128 {
+            for code in UInt16(0)..<UInt16(TapConfig.keyCodeCount) {
                 var deadKeys: UInt32 = 0
                 var length = 0
                 let status = UCKeyTranslate(
                     layout, code, UInt16(kUCKeyActionDown), 0, UInt32(LMGetKbdType()),
-                    OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, chars.count, &length, &chars
+                    // The mask, not the bit number: a dead key gives its own symbol.
+                    OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeys, chars.count, &length, &chars
                 )
-                // Keypad keys type the same symbols but many apps don't treat them as shortcuts.
                 guard status == noErr, length == 1, !keypad.contains(code), let scalar = Unicode.Scalar(chars[0]) else { continue }
                 let character = Character(scalar)
                 if keyCodes[character] == nil { keyCodes[character] = code }

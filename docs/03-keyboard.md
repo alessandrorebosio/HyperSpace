@@ -21,6 +21,8 @@ The keyboard side has three independent parts:
 - Matching is **exact on modifiers**: `hyper+h` does not fire while another modifier is also held. Only cmd/alt/ctrl/shift are considered (not fn or caps lock).
 - The key must have a keycode: media keys and `f21`–`f24` can be remapped but not used in a binding (error `'…' can be remapped but not used in a shortcut`).
 - When a binding fires, the key-down is **swallowed**, and so is the matching key-up: the frontmost app sees nothing.
+- **Holding the key**: its autorepeat belongs to the binding that the press fired, even after a modifier is released (letting go of caps lock/hyper before `h` neither types "hhh" nor fires another binding).
+  The repeats run the action again only for actions that move in steps ([Actions](05-actions.md)); otherwise they are swallowed. The repeats of a key the app got (pressed without the binding's modifiers) stay with the app.
 - Keycodes are physical ANSI positions; see [Keyboard layouts and symbols](#keyboard-layouts-and-symbols).
 - Several bindings with the same combination: the last wins (see [Configuration](02-configuration.md#errors)).
 
@@ -102,7 +104,7 @@ Behaviour:
 - The **same combination shares a single carrier**. At most **8 different combinations**; the ninth gives `too many different combinations (at most 8)`.
 - Needs Accessibility (the tap is required).
 - A key already used elsewhere is avoided as carrier, so binding F13–F20 yourself reduces the carriers available.
-- **Names that share a key code.** The tap tells keys apart by key code only, and macOS gives `print_screen`, `scroll_lock` and `pause` the key codes of F13, F14 and F15 (and `non_us_pound` that of `backslash`): in `bindings` those names are indistinguishable (the last one wins). For the same reason a remap that uses one of them (as source or target) also takes its twin out of the carrier pool: with `print_screen` in a remap, F13 is never a carrier.
+- **Names that share a key code.** The tap tells keys apart by key code only, and macOS gives `print_screen`, `scroll_lock` and `pause` the key codes of F13, F14 and F15 (and `non_us_pound` that of `backslash`): in `bindings` those names are indistinguishable (the last one wins). For the same reason a remap that uses one of them (as source or target) also takes its twin out of the carrier pool: with `print_screen` in a remap, F13 is never a carrier. A hex code counts as the key with that usage: `"from": "0x46"` is `print_screen` and keeps F13 out too.
 - With a key (`right_command → cmd+-`), the key is posted on the key that types the symbol in the active layout: the translation is done on the main thread when the config is applied (`TapConfig.translated`) and again whenever the input source changes (`KeyboardLayout.didChange`); the tap thread posts a ready key code.
 
 ### Remapped caps lock
@@ -119,7 +121,7 @@ or modifiers only (hold ⇧⌃⌥ together and release → `shift+ctrl+alt`); a 
 ## Keyboard layouts and symbols
 
 Keycodes are physical positions, but apps match shortcuts by character. For the `key <combo>` action and for combinations with a key, `KeyboardLayout` maps ANSI symbol keys (`- = [ ] \ ; ' \` , . /`)
-to the key that types that symbol in the active layout (table rebuilt using `UCKeyTranslate` after the system reports an input-source change — `kTISNotifySelectedKeyboardInputSourceChanged` — not on every use; keypad keys are excluded). For `=`, `+` is accepted as an alternative.
+to the key that types that symbol in the active layout (table rebuilt using `UCKeyTranslate` after the system reports an input-source change — `kTISNotifySelectedKeyboardInputSourceChanged` — not on every use; keypad keys are excluded). The symbol keys and the keypad keys are those of the Punctuation and Keypad groups of the key-name table (`KeyCodes`). A symbol on a dead key (`` ` `` on many European layouts) counts: the table is built with dead keys off, so the key gives its symbol. For `=`, `+` is accepted as an alternative.
 If the layout cannot type the symbol without modifiers (e.g. `[` on the Italian keyboard, which needs ⌥) the lookup fails and the original keycode is used: **not reliable as a shortcut**.
 This applies to keys *sent*; incoming *bindings* always use the physical keycode.
 
@@ -129,7 +131,7 @@ To clean the keyboard without typing. From *Settings → Keyboard → Keyboard L
 
 - Every `keyDown`, `keyUp` and `flagsChanged` event is dropped, and so are system keys (media, volume, brightness: `NX_SYSDEFINED` subtype 8); other subtypes (coming from the mouse) pass, and so do the media keys HyperSpace posts itself (a mouse button or the trackpad edges set to volume still work). Touch ID and the power button cannot be locked.
 - Unlock **with the mouse**: *Unlock* on the page or **Unlock Keyboard** in the menu (same spot as Lock).
-- **Automatic unlock** after 1, 3, 5, 10 minutes or never (picker next to the button, default 3), with a countdown on the page and in the menu. The picker is disabled while locked.
+- **Automatic unlock** after 1, 3, 5, 10 minutes or never (picker next to the button, default 3), with a countdown on the page and in the menu. The picker is disabled while locked. The timer also fires while a menu is open (it runs in the run loop's common modes).
 - While locked the menu bar icon shows a lock (and the icon is shown even if tiling is off).
 - The lock is **not saved**: quitting HyperSpace re-enables the keyboard. It needs the tap, hence Accessibility: without the permission *Lock Keyboard* is disabled (and the menu item only beeps).
 - On lock/unlock, the modifiers held by carriers and the swallowed-key state are cleared.
