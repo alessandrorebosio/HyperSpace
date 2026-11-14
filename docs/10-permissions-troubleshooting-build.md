@@ -63,19 +63,20 @@ log stream --predicate 'subsystem == "com.alessandrorebosio.HyperSpace"' --level
 ## Build
 
 Only the Command Line Tools are needed (not Xcode). SwiftPM, no dependencies; platform macOS 13+, `swift-tools-version:5.10`.
+The build is for the architecture of the Mac it runs on: **arm64 only** on Apple silicon (no universal binary, so no Intel build).
 
 ```bash
 make build      # swift build -c release (CONFIG=release by default)
 make app        # build/HyperSpace.app: release build, Info.plist, icon, stripped, codesigned
 make run        # make app + open the bundle
-make install    # make app + copy to /Applications (replaces the existing copy)
+make install    # make app + quit the running HyperSpace + copy to /Applications (replaces the existing copy)
 make test       # run the tests
-make clean      # remove .build and build/
+make clean      # remove .build, .build-clt (CI's Command Line Tools build), .swiftpm and build/
 ```
 
 - `make app` copies the binary, `Resources/Info.plist` and `Resources/AppIcon.icns` into the bundle, strips the binary, and codesigns it with hardened runtime (`--options runtime`)
   using `HyperSpace Dev` if that identity exists, otherwise ad-hoc with the designated requirement pinned to the bundle id.
-  Override with `SIGN_IDENTITY=… make app`, or `CONFIG=debug`.
+  Override with `SIGN_IDENTITY=… make app`, or `CONFIG=debug`. The identity, the SDK version and the test plugin path are looked up only by the targets that need them, once per `make`.
 - `make app` also rewrites the binary's build version with `vtool` (minimum macOS 13.0, SDK = `xcrun --show-sdk-version`). SwiftPM records the deployment target as the SDK version, and AppKit would then run the app in compatibility mode, with the pre-Liquid Glass look on macOS 26 and later.
 - `Resources/AppIcon.icns` is drawn by `scripts/make-icon.py` (needs Pillow): run `python3 scripts/make-icon.py` after changing the icon. The 16 and 32 px sizes leave out the glyphs: only the tiles stay.
 - There is no `scripts/bundle.sh`; the bundle is built by the Makefile.
@@ -90,9 +91,17 @@ make test
 Tests use **Swift Testing** (`Tests/HyperSpaceTests/`, one file per area, shared helpers in `TestHelpers.swift`). **Use `make test`, not plain `swift test`**: with only the Command Line Tools, SwiftPM does not always hand the Swift Testing macro plugin
 to the compiler and fails with `plugin for module 'TestingMacros' not found`. The Makefile passes it explicitly (`-Xswiftc -load-plugin-library … libTestingMacros.dylib`, found next to the active `swift`) when it exists.
 
-What is covered: config parsing (default config, workspace shortcuts and rules, rule for an unknown workspace, title rules), carriers and combinations (avoiding bound keys, sharing, invalid combinations), key labels/text, mouse presets parsing, column
-operations (stack/unstack), layout frames and weights, workspace homes and display sync (each display shows one of its own, moved workspaces, what a display shows after losing a workspace), new-window workspace choice, launch tracking and timeout,
-frame steps (only what changed, shrink before moving, across displays), saved state round trip and restorer matching, scratchpad frame/centring and the "window missing the size stays centred" logic, scratchpad actions and size config.
+What is covered:
+
+- **Config**: the default config, workspace shortcuts, rules and pins, last binding wins, clamped spacing, rules for an unknown workspace, title rules, error messages (wrong type, missing key, broken JSON, the menu's short title), action parsing and its error messages, which actions repeat, the tap's event mask, key table consistency.
+- **Config file**: `ConfigWriter` (round trip, key order, layout of the JSON, escaping; editing only the touched key, refusing a file with a syntax error, writing through a symbolic link) and the `ConfigStore` watcher (an edit, a deleted file that comes back, a broken file and its fix) on a temporary file.
+- **Keyboard**: carriers and combinations (avoiding bound keys and twins, sharing, the active layout, invalid and too many), modifier names and messages, per-keyboard remap precedence, shortcut labels and text, mouse presets, the keyboard lock's remaining time.
+- **Event tap decisions** (`TapState`): bound presses and their swallowed key-ups, autorepeat, the overview key, suspension, modifier-only and key carriers, mouse buttons, a new config.
+- **Trackpad**: edge sliders on all four edges (direction, a second finger, a press, the first notch in a corner, edges set to nothing), corner double taps (timing, movement, zones, holding the pointer) and their config.
+- **Layouts**: `tall`/`wide`/`columns`/`monocle`/`accordion` frames and weights, column operations (stack/unstack, swap, accordion), neighbours across displays, frame steps (only what changed, shrink before moving, across displays), parking, centring.
+- **Workspaces**: homes, pinned displays and display sync (each display shows one of its own, moved workspaces, what a display shows after losing a workspace), new-window workspace choice, launch tracking and timeout, saved state round trip, saved columns and restorer matching, menu summaries.
+- **Scratchpad**: frame and centring, the remembered size, actions and size config.
+- **Settings models' pure parts**: tiling bindings and scratchpad apps, workspace names and the rules that follow them, comparing shortcuts and actions by meaning, `SyncedSlice` and `Optional.assignChange` (`FileSync.swift`).
 
 The UI is not unit-tested; to check a settings layout, render the pages to PNG files (below).
 

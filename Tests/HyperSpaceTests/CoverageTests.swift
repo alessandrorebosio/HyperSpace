@@ -79,10 +79,31 @@ import Testing
         #expect(try Action.parse("key cmd+[") == .sendKey(try KeyCombo.parse("cmd+left_bracket")))
     }
 
+    /// The messages listed under "Typical error messages" in docs/05.
     @Test func errorsAreReported() {
-        for text in ["focus sideways", "layout spiral", "ratio more", "workspace 0", "workspace x", "resize depth 5",
-                     "launch", "shell ", "navigate up", "system nothing", "media louder", "fly"] {
-            #expect(throws: ConfigError.self, "\(text)") { try Action.parse(text) }
+        let cases = [
+            ("focus sideways", "expected left/right/up/down in 'focus sideways'"),
+            ("layout spiral", "unknown layout in 'layout spiral'"),
+            ("ratio more", "expected a number in 'ratio more'"),
+            ("workspace 0", "expected a workspace number in 'workspace 0'"),
+            ("workspace x", "expected a workspace number in 'workspace x'"),
+            ("resize depth 5", "expected 'resize width|height <points>' in 'resize depth 5'"),
+            ("launch", "missing argument in 'launch'"),
+            ("shell ", "missing argument in 'shell '"),
+            ("navigate up", "expected back/forward in 'navigate up'"),
+            ("system nothing", "unknown system action in 'system nothing'"),
+            ("media louder", "unknown media key in 'media louder'"),
+            ("fly", "unknown action 'fly'"),
+        ]
+        for (text, message) in cases {
+            do {
+                _ = try Action.parse(text)
+                Issue.record("'\(text)' parsed")
+            } catch let error as ConfigError {
+                #expect(error.message == message)
+            } catch {
+                Issue.record("'\(text)': \(error)")
+            }
         }
     }
 
