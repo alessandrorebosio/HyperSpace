@@ -3,13 +3,13 @@ import Foundation
 
 /// Notices displays that are still connected but show nothing: asleep (standby) or switched
 /// to another input, which macOS keeps listing. After `grace` of that, the display counts as
-/// unplugged (`ScreenInfo.current()` leaves it out): its workspaces move to the displays that
-/// are left, and come back as soon as it wakes. Polls every few seconds while tiling runs; with a
-/// single display a poll is one cheap call and changes nothing. It never takes away every display
-/// (the whole Mac asleep is not a display gone).
+/// unplugged (`ScreenInfo.current(leavingOut:)` leaves it out): its workspaces move to the
+/// displays that are left, and come back as soon as it wakes. Polls every few seconds while
+/// tiling runs; with a single display a poll is one cheap call and changes nothing. It never
+/// takes away every display (the whole Mac asleep is not a display gone).
 final class DisplayMonitor {
     /// Displays left out of the layout. Main thread only.
-    private(set) static var absent: Set<CGDirectDisplayID> = []
+    private(set) var absent: Set<CGDirectDisplayID> = []
 
     static let grace: TimeInterval = 60
     static let interval: TimeInterval = 5
@@ -33,8 +33,8 @@ final class DisplayMonitor {
         timer?.invalidate()
         timer = nil
         darkSince.removeAll()
-        if !Self.absent.isEmpty {
-            Self.absent.removeAll()
+        if !absent.isEmpty {
+            absent.removeAll()
             onChange?()
         }
     }
@@ -44,17 +44,27 @@ final class DisplayMonitor {
         let dark = Set(displays.filter(Self.showsNothing))
         darkSince = darkSince.filter { dark.contains($0.key) }
         for id in dark where darkSince[id] == nil { darkSince[id] = now }
-
-        var absent = Self.absent.intersection(displays)
-        absent.subtract(displays.filter { !dark.contains($0) })
-        // With every display dark the Mac itself sleeps: nothing to move anywhere.
-        if dark.count < displays.count {
-            for (id, since) in darkSince where now.timeIntervalSince(since) >= Self.grace { absent.insert(id) }
-        }
-        guard absent != Self.absent else { return }
+        let absent = Self.absentDisplays(previous: absent, displays: displays, darkSince: darkSince, now: now)
+        guard absent != self.absent else { return }
         log.info("displays left out: \(absent.sorted(), privacy: .public)")
-        Self.absent = absent
+        self.absent = absent
         onChange?()
+    }
+
+    /// The displays to leave out, given those left out so far (`previous`) and since when each
+    /// dark display (asleep or inactive) of `displays` has been dark (`darkSince`):
+    /// - a display awake again is back at once;
+    /// - one dark for `grace` is left out, unless every display is dark (the Mac itself
+    ///   sleeps: nothing is to move anywhere), which leaves the choice as it was.
+    static func absentDisplays(previous: Set<CGDirectDisplayID>, displays: [CGDirectDisplayID],
+                               darkSince: [CGDirectDisplayID: Date], now: Date,
+                               grace: TimeInterval = grace) -> Set<CGDirectDisplayID> {
+        let dark = Set(displays.filter { darkSince[$0] != nil })
+        var absent = previous.intersection(dark)
+        if dark.count < displays.count {
+            absent.formUnion(dark.filter { id in darkSince[id].map { now.timeIntervalSince($0) >= grace } ?? false })
+        }
+        return absent
     }
 
     private static func showsNothing(_ id: CGDirectDisplayID) -> Bool {

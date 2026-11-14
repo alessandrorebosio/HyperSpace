@@ -4,7 +4,19 @@ import AppKit
 extension WindowManager {
     // MARK: - Commands
 
+    /// The window commands act on: the focused one, except while the focus is held on an
+    /// empty display (`heldDisplay`) and macOS still reports the window left behind on another
+    /// display as focused. That window is not where you are: nil then.
     func focused() -> ManagedWindow? {
+        guard let window = reportedFocused() else { return nil }
+        guard let held = heldDisplay else { return window }
+        guard let frame = currentBounds()[window.id], currentScreens().screen(for: frame)?.id == held else { return nil }
+        return window
+    }
+
+    /// The focused window as macOS reports it (see `readFocused`), even while the focus is held
+    /// on an empty display: to tell when the user focuses a window again.
+    func reportedFocused() -> ManagedWindow? {
         if let scope, scope.focusedRead { return scope.focused }
         let window = readFocused()
         if scope != nil {
@@ -67,13 +79,13 @@ extension WindowManager {
         return screens.first { $0.frame.contains(pointer) } ?? screens.first
     }
 
-    /// Windows of the displayed workspaces that are on screen, with their frames; `tiledOnly`
-    /// leaves out floating and scratchpad windows.
+    /// Windows in view, with their frames: those of the displayed workspaces and the shown
+    /// scratchpad windows (parked ones never); `tiledOnly` keeps only the tiled ones.
     func visible(_ bounds: [CGWindowID: CGRect], tiledOnly: Bool = false) -> [(ManagedWindow, CGRect)] {
         let shown = Set(displayed.values)
         return windows.values.compactMap { window in
-            guard shown.contains(window.workspace), window.hiddenFrame == nil,
-                  !(tiledOnly && (window.isFloating || window.scratchpad)) else { return nil }
+            guard window.hiddenFrame == nil, belongsOnScreen(window, shown: shown),
+                  !tiledOnly || takesTile(window) else { return nil }
             return bounds[window.id].map { (window, $0) }
         }
     }
@@ -81,8 +93,9 @@ extension WindowManager {
     func focus(_ direction: Direction) {
         scoped {
             let bounds = currentBounds()
-            // On an empty workspace holding the focus, the window left behind is not where you are.
-            if heldDisplay == nil, let current = focused(), let origin = bounds[current.id] {
+            // On an empty workspace holding the focus, the window left behind is not where you
+            // are (`focused` is nil then): the move starts from the display.
+            if let current = focused(), let origin = bounds[current.id] {
                 // Accordion: left and right go through the stack in order (the windows overlap, so
                 // their centers say little); past either end, on to the next display.
                 if let next = accordionNeighbor(of: current, direction, bounds) {
@@ -102,8 +115,13 @@ extension WindowManager {
     /// No window that way: the focus goes to the display there, empty or not.
     private func focusDisplay(_ direction: Direction) {
         let screens = currentScreens()
-        guard screens.count > 1, let current = focusedScreen(), let next = screens.neighbor(of: current.id, direction),
-              let workspace = displayed[next.id] else { return }
+        guard screens.count > 1, let current = focusedScreen(), let next = screens.neighbor(of: current.id, direction) else { return }
+        focusShownWorkspace(on: next)
+    }
+
+    /// Focuses what a display shows (its workspace's last focused window, else the display).
+    private func focusShownWorkspace(on screen: ScreenInfo) {
+        guard let workspace = displayed[screen.id] else { return notifyWorkspace() }
         let window = focusWindow(in: workspace)
         notifyWorkspace(focused: .some(window))
     }
@@ -111,7 +129,7 @@ extension WindowManager {
     /// The previous or next tiled window of an accordion, for left and right.
     private func accordionNeighbor(of window: ManagedWindow, _ direction: Direction, _ bounds: [CGWindowID: CGRect]) -> ManagedWindow? {
         let kind = layout(of: window.workspace)
-        guard direction == .left || direction == .right, !window.isFloating, !window.scratchpad,
+        guard direction == .left || direction == .right, takesTile(window),
               inAccordion(window, layout: kind) else { return nil }
         if kind == .columns {
             return columns[window.workspace]?.accordionNeighbor(of: window.id, direction == .right ? 1 : -1)
@@ -140,7 +158,7 @@ extension WindowManager {
     func toggleAccordion() {
         scoped {
             let bounds = currentBounds()
-            guard running, let window = focused(), !window.isFloating, !window.scratchpad, bounds[window.id] != nil else { return }
+            guard running, let window = focused(), isTiled(window, bounds: bounds) else { return }
             let workspace = window.workspace
             lastFocused[workspace] = window.id
             switch layout(of: workspace) {
@@ -148,7 +166,8 @@ extension WindowManager {
                 return
             case .columns:
                 var layout = columns[workspace] ?? ColumnLayout()
-                layout.sync(with: tiledWindows(in: workspace, bounds: bounds).map(\.id))
+                // Its windows out of sight (minimized, hidden) keep their place too.
+                layout.sync(with: tileMembers(of: workspace).map(\.id))
                 let on = layout.toggleAccordion(around: window.id)
                 columns[workspace] = layout
                 log.debug("accordion \(on ? "on" : "off") in workspace \(workspace)")
@@ -168,7 +187,7 @@ extension WindowManager {
     func swap(_ direction: Direction) {
         scoped {
             let bounds = currentBounds()
-            guard let current = focused(), !current.isFloating, let origin = bounds[current.id] else { return }
+            guard let current = focused(), takesTile(current), let origin = bounds[current.id] else { return }
             if layout(of: current.workspace) == .columns, columns[current.workspace]?.locate(current.id) != nil {
                 // Columns: stack, unstack and reorder (see ColumnLayout.move); new arrangement, even shares.
                 columns[current.workspace]?.move(current.id, direction)
@@ -183,14 +202,13 @@ extension WindowManager {
                 return
             }
             if let neighbor = accordionNeighbor(of: current, direction, bounds) {
-                exchangePlaces(current, neighbor)
+                exchange(current, neighbor)
                 retile()
                 return
             }
             let candidates = visible(bounds, tiledOnly: true).filter { $0.0.id != current.id }
             guard let target = Layout.neighbor(of: origin, direction, among: candidates), let targetFrame = bounds[target.id] else { return }
-            exchangePlaces(current, target)
-            Swift.swap(&current.workspace, &target.workspace)
+            exchange(current, target)
             // Exchanging frames also carries the windows across displays.
             setFrame(current, targetFrame, from: origin)
             setFrame(target, origin, from: targetFrame)
@@ -201,17 +219,28 @@ extension WindowManager {
     func swapMaster() {
         scoped {
             let bounds = currentBounds()
-            guard let current = focused(), !current.isFloating, bounds[current.id] != nil,
+            guard let current = focused(), isTiled(current, bounds: bounds),
                   let master = tiledWindows(in: current.workspace, bounds: bounds).first, master !== current else { return }
             swapOrder(current.id, master.id)
             scheduleRetile()
         }
     }
 
-    /// Two windows trade their place in the tiling order and their share of the split.
-    private func exchangePlaces(_ a: ManagedWindow, _ b: ManagedWindow) {
+    /// Two tiled windows trade places (`swap`, and a drag dropping one on the other): their
+    /// place in the tiling order, their share of the split, their column slot and their
+    /// workspace (with their dialogs), so either can cross to another display.
+    func exchange(_ a: ManagedWindow, _ b: ManagedWindow) {
         swapOrder(a.id, b.id)
         Swift.swap(&a.weight, &b.weight)
+        let (workspaceA, workspaceB) = (a.workspace, b.workspace)
+        if workspaceA == workspaceB {
+            columns[workspaceA]?.swap(a.id, b.id)
+        } else {
+            columns[workspaceA]?.replace(a.id, with: b.id)
+            columns[workspaceB]?.replace(b.id, with: a.id)
+            setWorkspace(workspaceB, of: a)
+            setWorkspace(workspaceA, of: b)
+        }
     }
 
     func swapOrder(_ a: CGWindowID, _ b: CGWindowID) {
@@ -241,7 +270,7 @@ extension WindowManager {
                 } else {
                     resized.size.height = max(Self.minimumWindowSize.height, frame.height + delta)
                 }
-                setFrame(window, resized)
+                setFrame(window, resized, from: frame)
                 return
             }
             guard let screen = currentScreens().screen(for: frame) else { return }
@@ -266,16 +295,19 @@ extension WindowManager {
                                                 length: splitIsHorizontal ? area.height : area.width, gap: config.gap)
                 }
             case .columns:
-                guard var layout = columns[window.workspace], let (c, r) = layout.locate(window.id) else { return }
+                // Sized among the windows on screen, as the retile lays them out.
+                guard var layout = columns[window.workspace], let (c, _) = layout.locate(window.id) else { return }
+                let shown = layout.restricted(to: Set(tiled.map(\.id)))
+                guard let (shownColumn, row) = shown.locate(window.id) else { return }
                 if isWidth {
-                    let weights = layout.columns.map(\.weight)
+                    let weights = shown.columns.map(\.weight)
                     guard weights.count > 1 else { return }
-                    layout.setColumnWeight(c, Self.weight(at: c, of: weights, growingBy: delta, length: area.width, gap: config.gap))
+                    layout.setColumnWeight(c, Self.weight(at: shownColumn, of: weights, growingBy: delta, length: area.width, gap: config.gap))
                     columns[window.workspace] = layout
                 } else {
-                    let stack = layout.columns[c].windows.compactMap { windows[$0] }
+                    let stack = shown.columns[shownColumn].windows.compactMap { windows[$0] }
                     guard stack.count > 1 else { return }
-                    window.weight = Self.weight(at: r, of: stack.map(\.weight), growingBy: delta, length: area.height, gap: config.gap)
+                    window.weight = Self.weight(at: row, of: stack.map(\.weight), growingBy: delta, length: area.height, gap: config.gap)
                 }
             case .monocle, .accordion:
                 return
@@ -359,9 +391,7 @@ extension WindowManager {
         scoped {
             let screens = currentScreens()
             guard screens.count > 1, let current = focusedScreen(), let next = screens.next(after: current.id) else { return }
-            guard let workspace = displayed[next.id] else { return notifyWorkspace() }
-            let window = focusWindow(in: workspace)
-            notifyWorkspace(focused: .some(window))
+            focusShownWorkspace(on: next)
         }
     }
 }

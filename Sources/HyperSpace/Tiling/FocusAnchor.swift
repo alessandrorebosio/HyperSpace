@@ -45,13 +45,6 @@ final class FocusAnchor {
 
     /// The app of an ordinary window (layer 0) on screen at `point`, if any; the desktop is not one.
     static func windowOwner(at point: CGPoint) -> String? {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] else { return nil }
-        return list.first { info in
-            guard info[kCGWindowLayer as String] as? Int == 0,
-                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-                  let rect = CGRect(dictionaryRepresentation: bounds) else { return false }
-            return rect.contains(point)
-        }.map { $0[kCGWindowOwnerName as String] as? String ?? "?" }
+        WindowList.onScreen().first { $0.bounds.contains(point) }.map { $0.owner ?? "?" }
     }
 }

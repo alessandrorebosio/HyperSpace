@@ -22,7 +22,8 @@ struct ColumnLayout {
             .map { Column(windows: $0.element, accordion: accordions.contains($0.offset) && $0.element.count > 1) }
     }
 
-    /// Keeps the arrangement of windows still tiled, drops the others, and gives each
+    /// Keeps the arrangement of the windows still in the workspace (on screen or not: see
+    /// `restricted` for laying out those on screen), drops the others, and gives each
     /// new window its own column on the right; while `focused` is in an accordion, new
     /// windows join that accordion instead (right after it, in front).
     mutating func sync(with ids: [CGWindowID], focused: CGWindowID? = nil) {
@@ -126,11 +127,72 @@ struct ColumnLayout {
         }
     }
 
-    /// Exchanges two windows' places (drag and drop).
+    /// Exchanges two windows' places (drag and drop, `swap` in an accordion).
     mutating func swap(_ a: CGWindowID, _ b: CGWindowID) {
         guard let pa = locate(a), let pb = locate(b) else { return }
         columns[pa.column].windows[pa.row] = b
         columns[pb.column].windows[pb.row] = a
+    }
+
+    /// `new` takes the place of `old` (a window exchanged with one of another workspace).
+    mutating func replace(_ old: CGWindowID, with new: CGWindowID) {
+        guard locate(old) != nil else { return }
+        remove(new)
+        // Located again: taking `new` out may have shifted `old`.
+        guard let (c, r) = locate(old) else { return }
+        columns[c].windows[r] = new
+        if columns[c].front == old { columns[c].front = new }
+    }
+
+    /// The arrangement with only `ids` (the windows on screen): the others' columns close up,
+    /// and an accordion left with one window is a plain column, as long as they are away.
+    func restricted(to ids: Set<CGWindowID>) -> ColumnLayout {
+        var layout = self
+        layout.columns = columns.compactMap { column in
+            var column = column
+            column.windows = column.windows.filter(ids.contains)
+            guard !column.windows.isEmpty else { return nil }
+            if column.windows.count < 2 { column.accordion = false }
+            if let front = column.front, !column.windows.contains(front) { column.front = nil }
+            return column
+        }
+        return layout
+    }
+
+    /// Puts `id` back where it was in `saved` (a saved arrangement), among the windows of that
+    /// arrangement already here: next to the nearest of its saved column-mates, else in a
+    /// column of its own beside the columns of its saved neighbours, else on the right.
+    mutating func insert(_ id: CGWindowID, saved: [[CGWindowID]]) {
+        remove(id)
+        guard let sc = saved.firstIndex(where: { $0.contains(id) }), let sr = saved[sc].firstIndex(of: id) else {
+            return columns.append(Column(windows: [id]))
+        }
+        let mates = saved[sc]
+        for above in mates[..<sr].reversed() {
+            if let (c, r) = locate(above) { return columns[c].windows.insert(id, at: r + 1) }
+        }
+        for below in mates[(sr + 1)...] {
+            if let (c, r) = locate(below) { return columns[c].windows.insert(id, at: r) }
+        }
+        for left in saved[..<sc].reversed() {
+            if let c = left.compactMap({ locate($0)?.column }).max() { return columns.insert(Column(windows: [id]), at: c + 1) }
+        }
+        for right in saved[(sc + 1)...] {
+            if let c = right.compactMap({ locate($0)?.column }).min() { return columns.insert(Column(windows: [id]), at: c) }
+        }
+        columns.append(Column(windows: [id]))
+    }
+
+    /// Takes a window out; a column left empty closes.
+    private mutating func remove(_ id: CGWindowID) {
+        guard let (c, r) = locate(id) else { return }
+        columns[c].windows.remove(at: r)
+        if columns[c].windows.isEmpty {
+            columns.remove(at: c)
+            return
+        }
+        if columns[c].windows.count < 2 { columns[c].accordion = false }
+        if columns[c].front == id { columns[c].front = columns[c].windows[max(0, r - 1)] }
     }
 
     mutating func setColumnWeight(_ column: Int, _ weight: CGFloat) {

@@ -22,7 +22,14 @@ extension WindowManager {
             if let kind = LayoutKind(rawValue: saved.layout) { screenStates[uuid] = ScreenState(layout: kind, ratio: CGFloat(saved.ratio)) }
         }
         restoredState = state
-        restorer = WorkspaceRestorer(state)
+        // Apps that have been running for a while (HyperSpace restarted, not the Mac) may open
+        // new windows meanwhile: those do not take a saved window of their app by default.
+        let now = Date()
+        let established = NSWorkspace.shared.runningApplications.filter { app in
+            app.isFinishedLaunching && (app.launchDate.map { now.timeIntervalSince($0) > 30 } ?? true)
+        }
+        restorer = WorkspaceRestorer(state, windowsAtStart: WindowList.allIDs(),
+                                     appsAtStart: Set(established.map(\.processIdentifier)))
         log.debug("restoring \(state.windows.count) window(s) saved \(state.savedAt, privacy: .public)")
         restoreGeneration += 1
         let generation = restoreGeneration
@@ -31,32 +38,62 @@ extension WindowManager {
             restorer = nil
             restoredState = nil
             restoredIndex = [:]
+            restoredApplied = []
             scheduleSave()
         }
     }
 
-    /// Restored windows take their saved order and columns.
+    /// Restored windows take their saved order and columns, each once: a later look for
+    /// windows (a Space change) applies only the windows found since, so what you arranged
+    /// meanwhile is kept.
     func applyRestoredLayout() {
-        guard let state = restoredState, !restoredIndex.isEmpty else { return }
-        let restoredIDs = restoredIndex.filter { windows[$0.key] != nil }.sorted { $0.value < $1.value }.map(\.key)
-        order = restoredIDs + order.filter { restoredIndex[$0] == nil }
+        guard let state = restoredState else { return }
+        let fresh = Set(restoredIndex.keys.filter { windows[$0] != nil && !restoredApplied.contains($0) })
+        guard !fresh.isEmpty else { return }
+        order = Self.restoredOrder(order, savedIndex: restoredIndex, placing: fresh)
         let idByIndex = Dictionary(restoredIndex.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
         for (key, saved) in state.columns {
             guard let workspace = Int(key) else { continue }
-            columns[workspace] = ColumnLayout(columns: saved.map { $0.compactMap { idByIndex[$0] } },
-                                              accordions: Set(state.accordions?[key] ?? []))
+            let arrangement = saved.map { $0.compactMap { idByIndex[$0] } }
+            let ids = Set(arrangement.joined())
+            guard !ids.isDisjoint(with: fresh) else { continue }
+            if ids.isDisjoint(with: restoredApplied) {
+                // The first windows of this workspace found again: its saved arrangement.
+                columns[workspace] = ColumnLayout(columns: arrangement, accordions: Set(state.accordions?[key] ?? []))
+            } else {
+                // An app reopening later: its windows go back to their places among what is there.
+                var layout = columns[workspace] ?? ColumnLayout()
+                for id in arrangement.joined() where fresh.contains(id) { layout.insert(id, saved: arrangement) }
+                columns[workspace] = layout
+            }
         }
+        restoredApplied.formUnion(fresh)
+    }
+
+    /// `order` with the `fresh` restored windows moved to their saved places: before the first
+    /// restored window saved after them, else after the last restored one, else first.
+    /// (With every restored window fresh: restored ones first, in saved order, then the rest.)
+    static func restoredOrder(_ order: [CGWindowID], savedIndex: [CGWindowID: Int], placing fresh: Set<CGWindowID>) -> [CGWindowID] {
+        var result = order.filter { !fresh.contains($0) }
+        for id in fresh.sorted(by: { savedIndex[$0, default: .max] < savedIndex[$1, default: .max] }) {
+            let index = savedIndex[id, default: .max]
+            let position = result.firstIndex { savedIndex[$0].map { $0 > index } ?? false }
+                ?? result.lastIndex { savedIndex[$0] != nil }.map { $0 + 1 }
+                ?? 0
+            result.insert(id, at: position)
+        }
+        return result
     }
 
     /// The state to save. Titles are the cached ones (kept up to date by the title
     /// notifications): no AX round trip, on the main thread or off it.
     private func currentState() -> WorkspaceState {
-        let list = orderedWindows.filter { $0.bundleID != nil }
         var index: [CGWindowID: Int] = [:]
         var state = WorkspaceState(savedAt: .distantPast)
-        for (i, window) in list.enumerated() {
-            index[window.id] = i
-            state.windows.append(.init(app: window.bundleID!, title: window.title ?? "", workspace: window.workspace,
+        for window in orderedWindows {
+            guard let app = window.bundleID else { continue }
+            index[window.id] = state.windows.count
+            state.windows.append(.init(app: app, title: window.title ?? "", workspace: window.workspace,
                                        floating: window.userOverride ? window.isFloating : nil,
                                        scratchpad: window.scratchpad ? true : nil))
         }
@@ -80,14 +117,15 @@ extension WindowManager {
         return state
     }
 
-    /// Saves a moment after a change, when something really changed. Not while windows are
-    /// still being matched to the saved state, which would lose the apps not reopened yet.
+    /// Saves a moment after a change, when something besides titles really changed. Not while
+    /// windows are still being matched to the saved state, which would lose the apps not
+    /// reopened yet.
     func scheduleSave() {
         guard running, restorer == nil else { return }
         saveCoalescer.schedule { [weak self] in
             guard let self, running, restorer == nil else { return }
             var state = currentState()
-            guard state != lastSaved else { return }
+            guard state.withoutTitles != lastSaved?.withoutTitles else { return }
             lastSaved = state
             state.savedAt = Date()
             saveQueue.async { state.save() }

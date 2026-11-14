@@ -32,8 +32,8 @@ extension WindowManager {
                     "\(name(of: workspace)) → \(pin) (\(pinnedDisplay(of: workspace, screens).map { "display \($0.id)" } ?? "not connected"))"
                 }.joined(separator: ", "))
             }
-            if !DisplayMonitor.absent.isEmpty {
-                lines.append("Displays left out (asleep or on another input): " + DisplayMonitor.absent.sorted().map(String.init).joined(separator: ", "))
+            if !displayMonitor.absent.isEmpty {
+                lines.append("Displays left out (asleep or on another input): " + displayMonitor.absent.sorted().map(String.init).joined(separator: ", "))
             }
             let bounds = currentBounds()
             let byWorkspace = Dictionary(grouping: orderedWindows, by: \.workspace)

@@ -88,6 +88,9 @@ enum Layout {
 extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
 
+    /// Width × height; 0 for the null rect (an empty intersection).
+    var area: CGFloat { isNull ? 0 : width * height }
+
     /// A rect of `size` with the same center as this one; `rounded` puts its origin on whole points.
     func centered(_ size: CGSize, rounded: Bool = false) -> CGRect {
         let x = midX - size.width / 2

@@ -32,6 +32,14 @@ struct WorkspaceState: Codable, Equatable {
     /// Workspaces stacked as an accordion over a tall, wide or monocle layout.
     var accordionWorkspaces: [Int]?
 
+    /// The state with every title left out: a title changing alone (a browser tab, a
+    /// terminal's command) is no reason to write the file again.
+    var withoutTitles: WorkspaceState {
+        var state = self
+        for index in state.windows.indices { state.windows[index].title = "" }
+        return state
+    }
+
     struct DisplayLayout: Codable, Equatable {
         var layout: String
         var ratio: Double
@@ -83,15 +91,26 @@ struct WorkspaceState: Codable, Equatable {
 struct WorkspaceRestorer {
     private let windows: [WorkspaceState.Window]
     private var claimed: Set<Int> = []
+    /// The windows that existed when the restore started, and the apps already running then
+    /// (done launching): a window that is neither one of those nor of an app opened since is
+    /// a new one (⌘N), which only a saved window with its very title can claim.
+    private let windowsAtStart: Set<UInt32>
+    private let appsAtStart: Set<Int32>
 
-    init(_ state: WorkspaceState) {
+    init(_ state: WorkspaceState, windowsAtStart: Set<UInt32> = [], appsAtStart: Set<Int32> = []) {
         windows = state.windows
+        self.windowsAtStart = windowsAtStart
+        self.appsAtStart = appsAtStart
     }
 
-    /// The saved window this one was: same app and title, else the first unclaimed of its app.
-    mutating func claim(app: String, title: String?) -> Int? {
+    /// The saved window this one (`window`, of the app with process `pid`) was: same app and
+    /// title, else the first unclaimed of its app (titles change: a browser tab), but that only
+    /// for a window there at the start or of an app opened since.
+    mutating func claim(app: String, title: String?, window: UInt32, pid: Int32) -> Int? {
         let candidates = windows.indices.filter { windows[$0].app == app && !claimed.contains($0) }
-        guard let index = candidates.first(where: { windows[$0].title == title }) ?? candidates.first else { return nil }
+        let anyOfItsApp = windowsAtStart.contains(window) || !appsAtStart.contains(pid)
+        guard let index = candidates.first(where: { windows[$0].title == title }) ?? (anyOfItsApp ? candidates.first : nil)
+        else { return nil }
         claimed.insert(index)
         return index
     }

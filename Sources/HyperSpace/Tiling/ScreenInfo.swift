@@ -11,9 +11,9 @@ struct ScreenInfo {
     /// Screens in a stable order: the main display (with the menu bar) first, then the
     /// others left to right. NSScreen uses bottom-left coordinates; AX and CGWindowList top-left,
     /// with the origin at the top-left of the main display, so every frame is flipped against it.
-    /// Displays asleep or showing another input for a while (`DisplayMonitor`) are left out,
-    /// as if unplugged, as long as one display remains.
-    static func current() -> [ScreenInfo] {
+    /// Displays in `absent` (asleep or showing another input for a while: the window manager's
+    /// `DisplayMonitor`) are left out, as if unplugged, as long as one display remains.
+    static func current(leavingOut absent: Set<CGDirectDisplayID> = []) -> [ScreenInfo] {
         let screens = NSScreen.screens
         guard let primary = screens.first else { return [] }
         let height = primary.frame.height
@@ -22,7 +22,7 @@ struct ScreenInfo {
             return ScreenInfo(id: id, frame: flipped(screen.frame, height: height),
                               visible: flipped(screen.visibleFrame, height: height), name: screen.localizedName)
         }
-        let present = all.filter { !DisplayMonitor.absent.contains($0.id) }
+        let present = all.filter { !absent.contains($0.id) }
         return (present.isEmpty ? all : present)
         .enumerated()
         .sorted { a, b in

@@ -113,12 +113,13 @@ import Testing
             .init(app: "com.apple.Safari", title: "Mail", workspace: 2),
             .init(app: "com.spotify.client", title: "Spotify", workspace: 7, floating: true),
         ])
-        var restorer = WorkspaceRestorer(state)
-        #expect(restorer.claim(app: "com.apple.Safari", title: "Mail") == 1)
+        // Every window there at the start.
+        var restorer = WorkspaceRestorer(state, windowsAtStart: [1, 2, 3, 4], appsAtStart: [7])
+        #expect(restorer.claim(app: "com.apple.Safari", title: "Mail", window: 1, pid: 7) == 1)
         // The tab changed: the next saved Safari window.
-        #expect(restorer.claim(app: "com.apple.Safari", title: "Apple") == 0)
-        #expect(restorer.claim(app: "com.apple.Safari", title: "GitHub") == nil)
-        #expect(restorer.claim(app: "com.microsoft.VSCode", title: nil) == nil)
+        #expect(restorer.claim(app: "com.apple.Safari", title: "Apple", window: 2, pid: 7) == 0)
+        #expect(restorer.claim(app: "com.apple.Safari", title: "GitHub", window: 3, pid: 7) == nil)
+        #expect(restorer.claim(app: "com.microsoft.VSCode", title: nil, window: 4, pid: 7) == nil)
         #expect(restorer.unclaimed == [state.windows[2]])
         #expect(restorer.window(1).workspace == 2)
     }
