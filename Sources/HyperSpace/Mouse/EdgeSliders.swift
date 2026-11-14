@@ -1,27 +1,32 @@
 import AppKit
 import os
 
-/// The trackpad edge sliders: one finger slid up or down along the left or right edge changes
-/// the volume or the display brightness (see `EdgeSliderTracker`).
+/// The trackpad edge sliders and corners: one finger slid along an edge changes the volume or
+/// the display brightness, or seeks (see `EdgeSliderTracker`); a double tap in a corner runs
+/// its action (see `CornerTapTracker`).
 ///
 /// macOS offers no public API for the fingers on a trackpad outside an app's own windows, so the
 /// touches come from the private MultitouchSupport framework (as in BetterTouchTool and
 /// MiddleClick), loaded at run time: if it is missing or changed, the sliders just do nothing.
 /// Its callbacks arrive on a thread of its own; the notches are posted on the main thread as the
 /// system's own volume and brightness keys, so macOS shows its usual indicator.
-/// While a slider is in progress the pointer is held still by the event tap (`onHoldChange`).
-/// Trackpads are only watched while a slider is on; ones connected later are picked up from
-/// IOKit match notifications and on wake.
+/// While a slider or a corner tap is in progress the pointer is held still by the event tap
+/// (`onHoldChange`), which also drops the clicks a corner tap makes (`onCornerClicksHeld`).
+/// Trackpads are only watched while a slider or a corner is on; ones connected later are picked
+/// up from IOKit match notifications and on wake.
 final class EdgeSliders {
     /// The one instance the C callback reaches.
     fileprivate static var shared: EdgeSliders?
 
     private struct State {
-        var left = TrackpadConfig.defaultLeftEdge
-        var right = TrackpadConfig.defaultRightEdge
+        /// The edges' actions (all `none` with the sliders off) and the corners'.
+        var sliders = EdgeSliderTracker(left: .none, right: .none)
+        var corners: [TrackpadCorner: Action] = [:]
         /// By device address.
         var trackers: [Int: EdgeSliderTracker] = [:]
+        var cornerTrackers: [Int: CornerTapTracker] = [:]
         var holding = false
+        var holdingClicks = false
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -37,9 +42,17 @@ final class EdgeSliders {
     /// Called when a slider starts or ends, to hold the pointer still meanwhile; on the
     /// multitouch thread (or the main thread when the sliders stop), so it must be thread-safe.
     private let onHoldChange: (Bool) -> Void
+    /// Called when a finger goes down in a corner with an action (true) or leaves it (false;
+    /// `grace` when lifted from what may be a tap); thread-safe like `onHoldChange`.
+    private let onCornerClicksHeld: (_ held: Bool, _ grace: Bool) -> Void
+    /// A corner's action, on the main thread.
+    private let onAction: (Action) -> Void
 
-    init(onHoldChange: @escaping (Bool) -> Void) {
+    init(onHoldChange: @escaping (Bool) -> Void, onCornerClicksHeld: @escaping (Bool, Bool) -> Void,
+         onAction: @escaping (Action) -> Void) {
         self.onHoldChange = onHoldChange
+        self.onCornerClicksHeld = onCornerClicksHeld
+        self.onAction = onAction
         Self.shared = self
     }
 
@@ -49,12 +62,20 @@ final class EdgeSliders {
 
     func apply(_ newConfig: TrackpadConfig) {
         config = newConfig
+        let on = newConfig.edgeSliders
+        let sliders = EdgeSliderTracker(left: on ? newConfig.leftEdge : .none, right: on ? newConfig.rightEdge : .none,
+                                        top: on ? newConfig.topEdge : .none, bottom: on ? newConfig.bottomEdge : .none)
         state.withLock { state in
-            state.left = newConfig.leftEdge
-            state.right = newConfig.rightEdge
+            state.sliders = sliders
+            state.corners = newConfig.corners
             for key in state.trackers.keys {
-                state.trackers[key]?.left = newConfig.leftEdge
-                state.trackers[key]?.right = newConfig.rightEdge
+                state.trackers[key]?.left = sliders.left
+                state.trackers[key]?.right = sliders.right
+                state.trackers[key]?.top = sliders.top
+                state.trackers[key]?.bottom = sliders.bottom
+            }
+            for key in state.cornerTrackers.keys {
+                state.cornerTrackers[key]?.corners = Set(newConfig.corners.keys)
             }
         }
         if newConfig.isActive {
@@ -79,8 +100,9 @@ final class EdgeSliders {
         }
         devices = []
         deviceList = nil
-        state.withLock { $0.trackers = [:]; $0.holding = false }
+        state.withLock { $0.trackers = [:]; $0.cornerTrackers = [:]; $0.holding = false; $0.holdingClicks = false }
         onHoldChange(false)
+        onCornerClicksHeld(false, false)
     }
 
     private func start() {
@@ -100,7 +122,7 @@ final class EdgeSliders {
             _ = api.start(device, 0)
             devices.append(device)
         }
-        log.info("edge sliders: \(self.devices.count) trackpad(s)")
+        log.info("trackpad edges and corners: \(self.devices.count) trackpad(s)")
     }
 
     /// A trackpad connected (Bluetooth, USB) or the Mac woke: listen again, all of them.
@@ -112,30 +134,52 @@ final class EdgeSliders {
         }
     }
 
-    /// Multitouch thread: one frame of one trackpad. The main thread is only bothered when a
-    /// notch is crossed (frames come about 100 times a second).
-    fileprivate func frame(_ device: UnsafeMutableRawPointer, first: EdgeTouch?, count: Int) {
+    /// Multitouch thread: one frame of one trackpad at `time` (seconds). The main thread is
+    /// only bothered when a notch is crossed or a corner double-tapped (frames come about 100
+    /// times a second).
+    fileprivate func frame(_ device: UnsafeMutableRawPointer, first: EdgeTouch?, count: Int, time: Double) {
         let key = Int(bitPattern: device)
-        let (steps, holdChange) = state.withLock { state -> ([EdgeStep], Bool?) in
-            var tracker = state.trackers[key] ?? EdgeSliderTracker(left: state.left, right: state.right)
-            let steps = tracker.update(first: first, count: count)
+        // A finger pressing the trackpad is a click or a click-drag, not a slide or a tap.
+        let pressed = count > 0 && NSEvent.pressedMouseButtons != 0
+        typealias Result = (steps: [EdgeStep], action: Action?, hold: Bool?, clicks: Bool?)
+        let result = state.withLock { state -> Result in
+            var tracker = state.trackers[key] ?? state.sliders
+            let steps = tracker.update(first: first, count: count, pressed: pressed)
             state.trackers[key] = tracker
-            let holding = state.trackers.values.contains { $0.holding }
-            defer { state.holding = holding }
-            return (steps, holding != state.holding ? holding : nil)
+            var corners = state.cornerTrackers[key] ?? CornerTapTracker(corners: Set(state.corners.keys))
+            let corner = corners.update(first: first, count: count, pressed: pressed, time: time)
+            state.cornerTrackers[key] = corners
+            let holdingClicks = state.cornerTrackers.values.contains { $0.holding }
+            let holding = holdingClicks || state.trackers.values.contains { $0.holding }
+            defer { state.holding = holding; state.holdingClicks = holdingClicks }
+            return (steps, corner.flatMap { state.corners[$0] },
+                    holding != state.holding ? holding : nil,
+                    holdingClicks != state.holdingClicks ? holdingClicks : nil)
         }
         // Straight to the event tap: the sooner the hold starts, the less the pointer moves.
-        if let holdChange { onHoldChange(holdChange) }
-        guard !steps.isEmpty else { return }
+        if let hold = result.hold { onHoldChange(hold) }
+        // Lifted (no finger left): what may be a tap clicks now with tap to click.
+        if let clicks = result.clicks { onCornerClicksHeld(clicks, !clicks && count == 0) }
+        guard !result.steps.isEmpty || result.action != nil else { return }
+        let onAction = onAction
         DispatchQueue.main.async {
-            for step in steps { Self.post(step) }
+            for step in result.steps { Self.post(step) }
+            if let action = result.action { onAction(action) }
         }
     }
+
+    /// The arrows a seek posts.
+    private static let rightArrow: UInt16 = 0x7C
+    private static let leftArrow: UInt16 = 0x7B
 
     private static func post(_ step: EdgeStep) {
         switch step.action {
         case .volume: (step.up ? MediaKey.volumeUp : .volumeDown).post()
         case .brightness: (step.up ? MediaKey.brightnessUp : .brightnessDown).post()
+        case .seek:
+            let key = step.up ? rightArrow : leftArrow
+            KeyEmitter.post(keyCode: key, flags: [], down: true)
+            KeyEmitter.post(keyCode: key, flags: [], down: false)
         case .none: break
         }
     }
@@ -185,7 +229,7 @@ private enum TouchLayout {
     static let onSurface: ClosedRange<Int32> = 3...4
 }
 
-private let contactCallback: MultitouchAPI.Callback = { device, touches, count, _, _ in
+private let contactCallback: MultitouchAPI.Callback = { device, touches, count, time, _ in
     guard let device, let sliders = EdgeSliders.shared else { return 0 }
     // Only the number of fingers on the surface and the first of them: nothing is allocated
     // per frame (about 100 a second).
@@ -204,6 +248,6 @@ private let contactCallback: MultitouchAPI.Callback = { device, touches, count, 
             }
         }
     }
-    sliders.frame(device, first: first, count: fingers)
+    sliders.frame(device, first: first, count: fingers, time: time)
     return 0
 }

@@ -38,7 +38,9 @@
   "trackpad": {
     "edgeSliders": true,
     "leftEdge": "brightness",
-    "rightEdge": "volume"
+    "rightEdge": "volume",
+    "bottomEdge": "seek",
+    "corners": { "topRight": "media mute" }
   },
   "tiling": {
     "enabled": true,
@@ -84,8 +86,10 @@ Every section and key is optional.
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `edgeSliders` | bool | `false` | One finger slid along the left or right edge of the trackpad ([details](04-mouse.md#trackpad-edge-sliders-trackpad)). |
-| `leftEdge` | string | `brightness` | `volume`, `brightness` or `none`; anything else is a config error. |
+| `leftEdge` | string | `brightness` | `volume`, `brightness`, `seek` (the arrow keys) or `none`; anything else is a config error. |
 | `rightEdge` | string | `volume` | The same. |
+| `topEdge`, `bottomEdge` | string | `none` | The same, slid sideways. |
+| `corners` | object | none | `topLeft`, `topRight`, `bottomLeft`, `bottomRight` → [action](05-actions.md), run by a double tap there ([details](04-mouse.md#trackpad-corners)); `none` or `""` leaves a corner out, another key is a config error. Independent of `edgeSliders`. |
 
 ### `tiling`
 

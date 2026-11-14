@@ -4,8 +4,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ConfigStore()
     private let remapper = KeyboardRemapper()
     private let windowManager = WindowManager()
-    /// The tap is captured here, on the main thread: the hold is set from the multitouch thread.
-    private lazy var edgeSliders = EdgeSliders { [eventTap] held in eventTap.setPointerHeld(held) }
+    /// The tap is captured here, on the main thread: the holds are set from the multitouch thread.
+    private lazy var edgeSliders = EdgeSliders(
+        onHoldChange: { [eventTap] held in eventTap.setPointerHeld(held) },
+        onCornerClicksHeld: { [eventTap] held, grace in eventTap.setCornerClicksHeld(held, grace: grace) },
+        onAction: { [weak self] action in self?.runner.run(action) }
+    )
     private lazy var overview = WorkspaceOverview(host: WorkspaceOverview.Host(
         workspaces: { [unowned self] in windowManager.summaries() },
         focused: { [unowned self] in windowManager.focusedWorkspace },
@@ -125,10 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
         ]
         let trackpad = config?.trackpad ?? TrackpadConfig()
-        lines.append(trackpad.edgeSliders
-            ? "Trackpad edge sliders: left \(trackpad.leftEdge.rawValue), right \(trackpad.rightEdge.rawValue); "
-                + (edgeSliders.isAvailable ? "\(edgeSliders.deviceCount) trackpad(s)" : "MultitouchSupport not available")
-            : "Trackpad edge sliders: off")
+        let corners = TrackpadCorner.allCases.compactMap { corner in trackpad.corners[corner].map { _ in corner.rawValue } }
+        lines.append("Trackpad edge sliders: " + (trackpad.edgeSliders
+            ? "left \(trackpad.leftEdge.rawValue), right \(trackpad.rightEdge.rawValue), top \(trackpad.topEdge.rawValue), bottom \(trackpad.bottomEdge.rawValue)"
+            : "off")
+            + "; corners: " + (corners.isEmpty ? "none" : corners.joined(separator: ", "))
+            + (trackpad.isActive
+                ? "; " + (edgeSliders.isAvailable ? "\(edgeSliders.deviceCount) trackpad(s)" : "MultitouchSupport not available")
+                : ""))
         if let problem = statusMenu.problem { lines.append("Problem: \(problem.text)") }
         lines.append(windowManager.debugReport())
         return lines.joined(separator: "\n")

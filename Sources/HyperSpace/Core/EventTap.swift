@@ -42,6 +42,15 @@ final class EventTap {
     private var keyboardLocked = false
     /// Where the pointer is held while a trackpad edge slider is in progress.
     private var heldPointer: CGPoint?
+    /// A finger is down in a trackpad corner with an action: clicks are dropped (the ones tap
+    /// to click makes for a tap there), and until `cornerClicksUntil` (uptime nanoseconds) after.
+    private var cornerClicksHeld = false
+    private var cornerClicksUntil: UInt64 = 0
+    /// The left (0) and right (1) button downs dropped that way: their ups are dropped too.
+    private var droppedClicks = (false, false)
+    /// How long clicks are still dropped after a corner tap's finger is lifted: tap to click
+    /// posts the click on the lift, as a double click on the second tap.
+    private static let cornerClickGrace: UInt64 = 400_000_000
 
     init(drag: DragController, onAction: @escaping (Action) -> Void, onOverview: @escaping (Bool) -> Void) {
         self.drag = drag
@@ -93,6 +102,8 @@ final class EventTap {
             if state.setConfig(translated) { closeOverview() }
             cancelDrag()
             heldPointer = nil
+            cornerClicksHeld = false
+            cornerClicksUntil = 0
             updateMask()
         }
     }
@@ -159,6 +170,22 @@ final class EventTap {
             guard config.holdsPointer || !held else { return }
             heldPointer = held ? (heldPointer ?? Pointer.eventLocation) : nil
         }
+    }
+
+    /// Drops clicks while a finger is down in a trackpad corner with an action (`held`), and
+    /// for a moment after it is lifted from a tap (`grace`). Safe to call from any thread.
+    func setCornerClicksHeld(_ held: Bool, grace: Bool) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        onTapThread { [self] in
+            guard config.holdsCornerClicks || !held else { return }
+            cornerClicksHeld = held
+            cornerClicksUntil = !held && grace ? now + Self.cornerClickGrace : 0
+        }
+    }
+
+    /// Tap thread: whether a click now comes from a tap in a trackpad corner.
+    private var droppingCornerClicks: Bool {
+        cornerClicksHeld || (cornerClicksUntil != 0 && DispatchTime.now().uptimeNanoseconds < cornerClicksUntil)
     }
 
     func setButtonsSuspended(_ suspended: Bool) {
@@ -251,12 +278,20 @@ final class EventTap {
             if !event.location.isClose(to: held, tolerance: 0.5) { Pointer.warp(to: held) }
             return nil
         case .leftMouseDown, .rightMouseDown:
+            if config.holdsCornerClicks, droppingCornerClicks {
+                if type == .leftMouseDown { droppedClicks.0 = true } else { droppedClicks.1 = true }
+                return nil
+            }
             return beginDrag(event, mode: type == .leftMouseDown ? .move : .resize) ? nil : pass
         case .leftMouseDragged, .rightMouseDragged:
             guard dragMode != nil else { return pass }
             drag.update(event.location)
             return nil
         case .leftMouseUp, .rightMouseUp:
+            if type == .leftMouseUp ? droppedClicks.0 : droppedClicks.1 {
+                if type == .leftMouseUp { droppedClicks.0 = false } else { droppedClicks.1 = false }
+                return nil
+            }
             guard dragMode != nil else { return pass }
             dragMode = nil
             drag.end(event.location)

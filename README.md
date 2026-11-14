@@ -157,8 +157,9 @@ they can be remapped but not used in `bindings`.
 ### Mouse
 
 From **Settings… → Mouse**: a switch to reverse the scroll wheel and the button mapping.
-From **Settings… → Trackpad**: with **Edge sliders** on, one finger slid up or down along the left or right edge of the trackpad changes the display
-brightness or the volume (each edge can be set to either, or nothing); the pointer stays still meanwhile.
+From **Settings… → Trackpad**: with **Edge sliders** on, one finger slid along an edge of the trackpad (up and down on the sides, sideways on the top and bottom)
+changes the display brightness or the volume, or seeks with the arrow keys (each edge can be set to any of them, or nothing); the pointer stays still meanwhile.
+**Corners**: a double tap with one finger in a corner runs its action (e.g. top right → mute).
 **Add Button**, click the mouse button over the window (holding modifiers if you want the
 mapping to apply only with them), then press the combination it should send, pick a ready-made action
 or **Disable Button**. Ready-made actions:
@@ -179,7 +180,7 @@ or **Disable Button**. Ready-made actions:
 | `dragModifier` | Modifiers + left drag = move window; + right drag = resize. On a tiled window: dropping it on another swaps them; resizing moves the master/stack split in `tall` and `wide` (in the other layouts the window goes back to its tile). |
 | `buttons` | Mouse button (2 = middle, 3 = back, 4 = forward, …) with optional `modifiers` → action (`none` disables it). |
 
-`trackpad`: `edgeSliders` (off by default), `leftEdge` and `rightEdge` (`volume`, `brightness` or `none`).
+`trackpad`: `edgeSliders` (off by default), `leftEdge`, `rightEdge`, `topEdge` and `bottomEdge` (`volume`, `brightness`, `seek` or `none`), `corners` (`topRight` etc. → action, run by a double tap there).
 
 ### Tiling
 

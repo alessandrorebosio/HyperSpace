@@ -8,7 +8,7 @@ Sources/HyperSpace/
 ├── App/                AppDelegate, StatusMenu (menu bar), MainMenu (app menu), WorkspaceOverview
 ├── Core/               config, actions, event tap, key codes, permissions
 ├── Keyboard/           HID remaps, keyboard lock, caps lock, synthetic keys, layout
-├── Mouse/              DragController (bridge between tap and window manager), EdgeSliders + EdgeSliderTracker (trackpad edges)
+├── Mouse/              DragController (bridge between tap and window manager), EdgeSliders + EdgeSliderTracker/CornerTapTracker (trackpad edges and corners)
 ├── Settings/           SwiftUI settings window (models + views)
 └── Tiling/             WindowManager, layouts, workspaces, AX, scratchpad
 Tests/HyperSpaceTests/  Swift Testing tests, one file per area
@@ -59,7 +59,7 @@ SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`
 | Thread / queue | What it does |
 |---|---|
 | **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. The hot path reads plain arrays and takes no locks of its own; the only allocation is the `CGEvent` a carrier posts (`DragController` does take a short lock to hand over the drag point). |
-| **MultitouchSupport thread** (only with the edge sliders on) | Trackpad frames: `EdgeSliderTracker` runs there behind a lock; only notches and the start or end of a hold go to the main thread. |
+| **MultitouchSupport thread** (only with the edge sliders or a corner on) | Trackpad frames: `EdgeSliderTracker` and `CornerTapTracker` run there behind a lock; only notches, corner actions and the start or end of a hold go to the main thread (the holds go straight to the tap thread). |
 | **Main thread** | Everything else: window state, actions, AX reads, `NSWorkspace`/AX notifications, UI. |
 | **`AXQueues` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
 | **`HyperSpace.state` queue** (QoS `utility`) | Writes `workspaces.json` off the main thread (the state, titles included, is built on the main thread from the titles cached on the windows). |

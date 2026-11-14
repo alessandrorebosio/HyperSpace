@@ -55,7 +55,7 @@ final class SettingsNavigation: ObservableObject {
             switch self {
             case .keyboard: return "Remap keys, on every keyboard or just one, and lock the keyboard to clean it."
             case .mouse: return "Give extra mouse buttons an action and choose the scroll direction."
-            case .trackpad: return "Use the left and right edges as sliders for the volume and the brightness."
+            case .trackpad: return "Slide along the edges for the volume, the brightness or seeking; double-tap a corner to run an action."
             case .tiling: return "How windows are arranged on each display."
             case .workspaces: return "Virtual workspaces, their shortcuts and the apps that open in each."
             case .windowRules: return "Windows that float and apps kept in the scratchpad."

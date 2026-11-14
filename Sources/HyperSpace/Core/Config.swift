@@ -29,11 +29,15 @@ struct RawConfig: Decodable {
         var dragModifier: String?
         var buttons: [Button]?
     }
-    /// Sliders along the left and right edges of the trackpad.
+    /// Sliders along the left and right edges of the trackpad, and actions on its corners.
     struct Trackpad: Decodable {
         var edgeSliders: Bool?
         var leftEdge: String?
         var rightEdge: String?
+        var topEdge: String?
+        var bottomEdge: String?
+        /// Corner name (`topLeft`, …) → action, run by a double tap there.
+        var corners: [String: String]?
     }
     struct Button: Decodable {
         var button: Int
@@ -108,9 +112,12 @@ struct TapConfig: Equatable {
     var dragModifier: Modifiers?
     /// Caps lock is remapped: keep the caps lock state off (see `CapsLock`).
     var suppressCapsLock = false
-    /// The trackpad edge sliders are on: pointer moves are watched, to hold the pointer still
-    /// while a slider is in progress (`EventTap.setPointerHeld`).
+    /// The trackpad edge sliders or corners are on: pointer moves are watched, to hold the
+    /// pointer still while a slider or a corner tap is in progress (`EventTap.setPointerHeld`).
     var holdsPointer = false
+    /// A trackpad corner has an action: clicks are watched, to drop the ones a tap there
+    /// makes with tap to click (`EventTap.setClicksHeld`).
+    var holdsCornerClicks = false
 
     static func slot(_ code: Int, _ mods: Modifiers) -> Int {
         code << 4 | Int(mods.rawValue)
@@ -179,6 +186,9 @@ struct TapConfig: Equatable {
         }
         if holdsPointer {
             add(.mouseMoved)
+        }
+        if holdsCornerClicks {
+            add(.leftMouseDown); add(.leftMouseUp); add(.rightMouseDown); add(.rightMouseUp)
         }
         if dragModifier != nil {
             add(.leftMouseDown); add(.leftMouseDragged); add(.leftMouseUp)
@@ -276,24 +286,40 @@ extension TilingConfig {
 enum EdgeAction: String, CaseIterable {
     case volume
     case brightness
+    /// The right and left arrow keys: seeks a video forward or back, moves an editor's playhead.
+    case seek
     case none
 
     /// A name as written in the config, in any case.
     init?(configText text: String) { self.init(rawValue: text.lowercased()) }
 }
 
-/// The edge sliders of the trackpad: one finger slid up or down along the left or right edge.
+/// A corner of the trackpad, as written in the config.
+enum TrackpadCorner: String, CaseIterable {
+    case topLeft, topRight, bottomLeft, bottomRight
+}
+
+/// The edge sliders of the trackpad (one finger slid up or down along the left or right edge)
+/// and its corners (an action run by a double tap with one finger).
 struct TrackpadConfig: Equatable {
     static let defaultEdgeSliders = false
     static let defaultLeftEdge = EdgeAction.brightness
     static let defaultRightEdge = EdgeAction.volume
+    static let defaultTopEdge = EdgeAction.none
+    static let defaultBottomEdge = EdgeAction.none
 
     var edgeSliders = TrackpadConfig.defaultEdgeSliders
     var leftEdge = TrackpadConfig.defaultLeftEdge
     var rightEdge = TrackpadConfig.defaultRightEdge
+    var topEdge = TrackpadConfig.defaultTopEdge
+    var bottomEdge = TrackpadConfig.defaultBottomEdge
+    /// Only corners with an action (`none` leaves a corner out).
+    var corners: [TrackpadCorner: Action] = [:]
 
-    /// Whether any edge does something: with nothing to do the trackpads are not watched.
-    var isActive: Bool { edgeSliders && (leftEdge != .none || rightEdge != .none) }
+    /// Whether any edge does something.
+    var slidersActive: Bool { edgeSliders && [leftEdge, rightEdge, topEdge, bottomEdge].contains { $0 != .none } }
+    /// Whether the sliders or a corner do something: with nothing to do the trackpads are not watched.
+    var isActive: Bool { slidersActive || !corners.isEmpty }
 
     /// An edge as written in the file: `fallback` when missing or empty, nil when unknown.
     static func edge(_ text: String?, default fallback: EdgeAction) -> EdgeAction? {
@@ -395,6 +421,7 @@ struct Config {
             try parseTrackpad(trackpad)
         }
         tap.holdsPointer = self.trackpad.isActive
+        tap.holdsCornerClicks = !self.trackpad.corners.isEmpty
 
         let rawRemaps = RawConfig.Remap.withHyperKey(keyboard?.remap ?? [], hyperKey: keyboard?.hyperKey)
         let parsed = try rawRemaps.map { remap -> (from: KeyInfo, to: RemapTarget, target: KeyboardTarget) in
@@ -433,13 +460,23 @@ struct Config {
     private mutating func parseTrackpad(_ raw: RawConfig.Trackpad) throws {
         func edge(_ text: String?, _ fallback: EdgeAction, _ key: String) throws -> EdgeAction {
             guard let action = TrackpadConfig.edge(text, default: fallback) else {
-                throw ConfigError("\(key) must be volume, brightness or none (got '\(text ?? "")')")
+                throw ConfigError("\(key) must be volume, brightness, seek or none (got '\(text ?? "")')")
             }
             return action
         }
         trackpad.edgeSliders = raw.edgeSliders ?? TrackpadConfig.defaultEdgeSliders
         trackpad.leftEdge = try edge(raw.leftEdge, TrackpadConfig.defaultLeftEdge, "leftEdge")
         trackpad.rightEdge = try edge(raw.rightEdge, TrackpadConfig.defaultRightEdge, "rightEdge")
+        trackpad.topEdge = try edge(raw.topEdge, TrackpadConfig.defaultTopEdge, "topEdge")
+        trackpad.bottomEdge = try edge(raw.bottomEdge, TrackpadConfig.defaultBottomEdge, "bottomEdge")
+        for (name, text) in raw.corners ?? [:] {
+            guard let corner = TrackpadCorner(rawValue: name) else {
+                throw ConfigError("unknown trackpad corner '\(name)' (topLeft, topRight, bottomLeft or bottomRight)")
+            }
+            guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            let action = try Action.parse(text)
+            if action != .none { trackpad.corners[corner] = action }
+        }
     }
 
     private mutating func parseMouse(_ mouse: RawConfig.Mouse) throws {

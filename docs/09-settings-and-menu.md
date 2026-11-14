@@ -70,7 +70,8 @@ At the bottom of the sidebar a **status bar** is always in sight: app icon, name
 - **Buttons** (*+ Add Button*): mouse button (with modifiers, recorded by clicking it over the window) → action (keys to send, a ready-made action from ▾, or *Disable Button*). A new mapping goes straight from the button to its action. Recording the action: Esc cancels, Delete disables the button; key bindings are suspended meanwhile. ([details](04-mouse.md))
 
 ### Trackpad
-- **Edge sliders**: the switch and, for the *Left edge* and *Right edge*, Volume, Display brightness or Nothing (dimmed while the switch is off). The sliders start without waiting for the permission, but holding the pointer still needs the event tap: an Accessibility notice says so while it is missing. ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
+- **Edges**: the *Edge sliders* switch and, for each edge (left, right, top, bottom), Volume, Display brightness, Seek or Nothing (dimmed while the switch is off). The sliders start without waiting for the permission, but holding the pointer still needs the event tap: an Accessibility notice says so while it is missing. ([details](04-mouse.md#trackpad-edge-sliders-trackpad))
+- **Corners**: per corner, the action of a double tap there: a ready-made action (the Mouse page's list) or Nothing. ([details](04-mouse.md#trackpad-corners))
 
 ### Tiling
 - **Hero switch**: tiling on or off (`tiling.enabled`). Off: the other sections are dimmed and kept.
