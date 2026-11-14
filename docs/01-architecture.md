@@ -6,10 +6,10 @@
 Sources/HyperSpace/
 ├── main.swift          entry point: NSApplication + AppDelegate (or the `--render-settings` screenshots, no AppDelegate)
 ├── App/                AppDelegate, StatusMenu (menu bar), MainMenu (app menu), WorkspaceOverview
-├── Core/               config, actions, event tap, key codes, permissions
+├── Core/               config, actions, event tap and its decisions (TapState), key codes, permissions
 ├── Keyboard/           HID remaps, keyboard lock, caps lock, synthetic keys, layout
 ├── Mouse/              DragController (bridge between tap and window manager), EdgeSliders + EdgeSliderTracker/CornerTapTracker (trackpad edges and corners)
-├── Settings/           SwiftUI settings window (models + views)
+├── Settings/           SwiftUI settings window (models + views, FileSync)
 └── Tiling/             WindowManager, layouts, workspaces, AX, scratchpad
 Tests/HyperSpaceTests/  Swift Testing tests, one file per area
 Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
@@ -17,9 +17,9 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 ```
 
 ### `App/`
-- **`AppDelegate`** wires everything: owns `ConfigStore`, `KeyboardRemapper`, `WindowManager`, `ActionRunner`, `EventTap`,
-  `SettingsWindowController`, `StatusMenu`. Requests Accessibility at launch, applies configs, builds the *Copy Debug Info* report, and on quit
-  resets the keyboards, saves state and brings parked windows back. It detects a login launch (`launchedAtLogin`) so apps macOS reopens by itself
+- **`AppDelegate`** wires everything: owns `ConfigStore`, `KeyboardRemapper`, `WindowManager`, `ActionRunner`, `EventTap` (with its
+  `DragController`), `EdgeSliders`, `WorkspaceOverview`, `SettingsWindowController`, `StatusMenu`. Requests Accessibility at launch, applies configs, builds the *Copy Debug Info* report, and on quit
+  resets the keyboards, stops the trackpad sliders, saves state and brings parked windows back. It detects a login launch (`launchedAtLogin`) so apps macOS reopens by itself
   do not make you jump between workspaces.
 - **`StatusMenu`**: menu bar icon and menu (rebuilt only when opened).
 - **`MainMenu`**: the app's menu bar while the Settings window is open (⌘W, ⌘Q, ⌘, copy/paste).
@@ -31,6 +31,7 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 - **`Action.swift`** (text → `Action`), **`ActionRunner.swift`** (runs on the main thread), **`SystemActions.swift`** (`Navigation`, `SystemAction`, `MediaKey`), **`Pointer.swift`** (pointer location, warp, synthetic clicks), **`AppLauncher.swift`**, **`Peripherals.swift`** (battery of wireless keyboards, mice, trackpads).
 - **`Log.swift`** (`log`, `AppInfo`), **`Extensions.swift`** (`nilIfEmpty`, `clamped`), **`Scheduling.swift`** (`asyncAfter(delays:)`, `Debouncer` for "last one wins after a pause", `Coalescer` for "one run per burst").
 - **`EventTap.swift`**: the single active `CGEventTap`, shared by keyboard and mouse.
+- **`TapState.swift`**: what the tap decides about each key and button event (pass, swallow, run an action, show or hide the overview, post a carrier's combination), the modifiers held, the swallowed key-ups and button-ups, and suspension while Settings records. A pure value owned by the tap thread, so every decision is tested without a tap.
 - **`KeyCodes.swift`**: key table (name ↔ virtual keycode ↔ HID usage; the modifier key codes come from it). **`Modifiers.swift`**: `Modifiers` and `KeyCombo` with the one parser for modifier lists (also used by `RemapTarget`), and the conversions from `CGEventFlags` and `NSEvent.ModifierFlags`.
 - **`RemapTarget.swift`**: remap destination (single key or combination) and `CarrierPool`.
 - **`Permissions.swift`**: Accessibility check, opening the settings pane, and the words for a missing permission.
@@ -42,7 +43,7 @@ Resources/              Info.plist, AppIcon.icns (drawn by scripts/make-icon.py)
 
 ### `Mouse/`
 `DragController`: carries modifier+drag from the tap thread to the main thread, keeping only the latest position.
-`EdgeSliders`: the trackpad edge sliders, from MultitouchSupport's frames (on its own thread) through `EdgeSliderTracker` to volume and brightness keys posted on the main thread ([details](04-mouse.md#trackpad-edge-sliders-trackpad)).
+`EdgeSliders`: the trackpad edge sliders and corners, from MultitouchSupport's frames (on its own thread) through `EdgeSliderTracker` (a slide along the left, right, top or bottom edge) to volume and brightness keys or seek arrows posted on the main thread, and through `CornerTapTracker` (a double tap in a corner) to the corner's action ([details](04-mouse.md#trackpad-edge-sliders-trackpad)).
 
 ### `Tiling/`
 - **`WindowManager`** (class, stored state, command scope, lifecycle, layout) with its extensions in separate files: **`WindowManager+Workspaces`** (displays, switching, focus following, menu summaries), **`+Commands`** (focus, swap, resize, float, accordion, displays), **`+Tracking`** (finding, adopting and forgetting windows), **`+MouseDrag`** (modifier-drag to move and resize), **`+Scratchpad`**, **`+SavedState`**, **`+Debug`** (the report). **`ManagedWindow`** holds `ManagedWindow`; **`WorkspaceSummary`** holds `WorkspaceSummary` (with its per-app list) and `WorkspaceBar`.
@@ -58,7 +59,7 @@ SwiftUI window with a sidebar: `SettingsWindowController`, one model per area (`
 
 | Thread / queue | What it does |
 |---|---|
-| **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. The hot path reads plain arrays and takes no locks of its own; the only allocation is the `CGEvent` a carrier posts (`DragController` does take a short lock to hand over the drag point). |
+| **Event tap thread** (`HyperSpace.EventTap`, QoS `userInteractive`) | Runs the single `CGEventTap`. Owns all tap state. The hot path reads plain arrays (`TapState`) and takes no locks of its own; it allocates only the `CGEvent` a carrier posts and the block that hands an action to the main thread (`DragController` does take a short lock to hand over the drag point). |
 | **MultitouchSupport thread** (only with the edge sliders or a corner on) | Trackpad frames: `EdgeSliderTracker` and `CornerTapTracker` run there behind a lock; only notches, corner actions and the start or end of a hold go to the main thread (the holds go straight to the tap thread). |
 | **Main thread** | Everything else: window state, actions, AX reads, `NSWorkspace`/AX notifications, UI. |
 | **`AXQueues` queues** (one per app, `HyperSpace.AX.<pid>`, QoS `userInteractive`) | AX writes (move, resize, park, focus) and the batched reads that tracking windows needs (`AX.probe` of every window of an app). A slow app only makes itself wait. |
@@ -104,15 +105,16 @@ AppDelegate.apply
 | `otherMouseDown/Up` | at least one button is mapped |
 | `scrollWheel` | `reverseScroll` is on |
 | `left/rightMouseDown/Dragged/Up` | `dragModifier` is set |
+| `left/rightMouseDown/Up` | a trackpad corner has an action (to drop the click a tap there makes) |
 | all keys + `NX_SYSDEFINED` | only while the keyboard is locked |
 
-Mouse movement is intercepted only with the trackpad edge sliders on: every move is let through untouched except while a slider holds the pointer.
+Mouse movement is intercepted only with the trackpad edge sliders or corners on: every move is let through untouched except while a slider or a corner tap holds the pointer.
 
 ## Window manager: how it reacts
 
-- **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. The only polling is `DisplayMonitor` (every 5 s while tiling runs; with one display each poll is a single cheap call).
+- **Event-driven**: one `AXObserver` per app (`windowCreated`, `windowMiniaturized`/`Deminiaturized`, `focusedWindowChanged`, and per window `UIElementDestroyed`, `moved`, `resized`, `titleChanged`) plus `NSWorkspace` notifications (launch, terminate, activate, hide/unhide, Space change) and screen-parameter changes. The only steady polling is `DisplayMonitor` (every 5 s while tiling runs; with one display each poll is a single cheap call).
 - Bursts of events are coalesced into one retile (30 ms delay).
-- Visibility and position of windows come from `CGWindowListCopyWindowInfo` without titles (so no Screen Recording). **A command reads the window list, the displays (`NSScreen`) and the focused window (a synchronous AX call) once**: the first read is kept for the whole command (`WindowManager.enterScope`/`leaveScope`, nested commands share it) and every function it calls reuses it, so a workspace switch costs one `CGWindowList` call, one display read and one AX read. Outside a command every read is fresh; a newly tracked window drops the cached window list.
+- Visibility and position of windows come from `CGWindowListCopyWindowInfo` without titles (so no Screen Recording). **A command reads the window list, the displays (`NSScreen`) and the focused window (a synchronous AX call) once**: the first read is kept for the whole command (`WindowManager.scoped {}` or, for a body that returns a value, `scopedValue {}`; nested scopes share it) and every function it calls reuses it, so a workspace switch costs one `CGWindowList` call, one display read and one AX read. Outside a command every read is fresh; a newly tracked window drops the cached window list.
 - A window is moved only if its position really differs from the target (1 pt tolerance).
 - See [Tiling](06-tiling.md), [Workspaces and displays](07-workspaces-and-displays.md) and [Scratchpad](08-scratchpad.md).
 
@@ -121,6 +123,6 @@ Mouse movement is intercepted only with the trackpad edge sliders on: every move
 1. `applicationWillFinishLaunching`: reads from the Apple Event whether the app was launched at login.
 2. `applicationDidFinishLaunching`: menus, status item, observers; requests Accessibility (with prompt); `ConfigStore.start()` (writes the default config if missing, loads it, watches it).
 3. After a login launch, `revealAfter` (90 s) stops apps with a rule from taking you to their workspace.
-4. On quit (`applicationWillTerminate`): `remapper.reset()` (removes HID remaps), `windowManager.saveState()`, `restoreHiddenWindows()`.
+4. On quit (`applicationWillTerminate`): `remapper.reset()` (removes HID remaps), `edgeSliders.stop()` (stops the trackpad frames), `windowManager.saveState()`, `restoreHiddenWindows()`.
 
 Double-clicking the already-running app opens the settings (`applicationShouldHandleReopen`).
