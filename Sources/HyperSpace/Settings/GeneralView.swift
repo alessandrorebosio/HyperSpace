@@ -19,6 +19,10 @@ struct GeneralView: View {
                           isOn: model.launchAtLogin, set: model.setLaunchAtLogin)
             } header: {
                 Text("Startup")
+            } footer: {
+                if let error = model.loginError {
+                    SectionFooter(error: error)
+                }
             }
 
             Section {
@@ -32,7 +36,7 @@ struct GeneralView: View {
                 } label: {
                     RowLabel("Config file")
                 }
-                if let problem = model.problem {
+                if let problem = model.configProblem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)

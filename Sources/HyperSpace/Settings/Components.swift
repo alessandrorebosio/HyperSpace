@@ -9,24 +9,6 @@ import SwiftUI
 // with a PageHero; lists put their add button in the section header (SectionHeader); keys and
 // shortcuts are KeyCaps; anything that needs attention is a NoticeRow at the top.
 
-/// An NSEvent local monitor for key or button capture. The handler returns true when
-/// it consumed the event; the monitor is removed on `stop` or when released.
-final class LocalEventMonitor {
-    private var token: Any?
-
-    func start(_ mask: NSEvent.EventTypeMask, _ handler: @escaping (NSEvent) -> Bool) {
-        stop()
-        token = NSEvent.addLocalMonitorForEvents(matching: mask) { handler($0) ? nil : $0 }
-    }
-
-    func stop() {
-        if let token { NSEvent.removeMonitor(token) }
-        token = nil
-    }
-
-    deinit { stop() }
-}
-
 extension Array where Element: Identifiable {
     /// Changes the element with `id`; false when there is none.
     @discardableResult
@@ -212,14 +194,19 @@ struct EmptyRow: View {
     }
 }
 
-/// A caption under a section, styled the same on every page; the last save error, when
-/// there is one, takes its place.
+/// A caption under a section, styled the same on every page; or, in red, an error about that
+/// section alone (Launch at login). Save errors are a notice at the top of the page instead.
 struct SectionFooter: View {
-    let text: String
-    let error: String?
+    private let text: String
+    private let error: String?
 
-    init(_ text: String, error: String? = nil) {
+    init(_ text: String) {
         self.text = text
+        error = nil
+    }
+
+    init(error: String) {
+        text = ""
         self.error = error
     }
 
@@ -241,27 +228,6 @@ struct SectionFooter: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-
-// MARK: - Recording a shortcut
-
-/// A settings model that records the next key or click for one field at a time.
-protocol CaptureModel: AnyObject {
-    associatedtype Field: Equatable
-    var capturing: Field? { get }
-    func startCapture(_ field: Field)
-    func stopCapture()
-}
-
-extension CaptureModel {
-    /// A click on a key cap: stops recording that field when it is the one recording, else starts.
-    func toggleCapture(_ field: Field) {
-        capturing == field ? stopCapture() : startCapture(field)
-    }
-}
-
-extension KeyboardModel: CaptureModel {}
-extension MouseModel: CaptureModel {}
-extension TilingModel: CaptureModel {}
 
 // MARK: - Rule rows
 
@@ -316,6 +282,28 @@ struct RuleRowLayout<First: View, Second: View, Trailing: View>: View {
     }
 }
 
+/// A rule about an app: its icon and name (or *Any app*), what the rule does on the right,
+/// and the remove button. The rows of App Rules and Floating.
+struct AppRuleRow<Detail: View>: View {
+    /// nil: the rule is for any app.
+    let app: String?
+    let remove: () -> Void
+    @ViewBuilder let detail: Detail
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let app {
+                AppLabel(bundleID: app)
+            } else {
+                Label("Any app", systemImage: "square.grid.2x2").foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            detail
+            RemoveButton(action: remove)
+        }
+    }
+}
+
 // MARK: - Notices
 
 /// A notice at the top of a page: what is wrong and the one button that fixes it.
@@ -364,6 +352,22 @@ struct PermissionNotice: View {
             Section {
                 NoticeRow(symbol: "lock.shield.fill", color: .orange, title: Permissions.missingTitle,
                           detail: detail, button: "Open System Settings…") { Permissions.openSettings() }
+            }
+        }
+    }
+}
+
+/// Shown under the hero while the page's last change could not be saved (a syntax error in the
+/// file, which the writer refuses to touch). It observes the model's save status alone, so an
+/// error coming or going redraws this notice, not the page.
+struct SaveErrorNotice: View {
+    @ObservedObject var status: SaveStatus
+
+    var body: some View {
+        if let error = status.error {
+            Section {
+                NoticeRow(symbol: "exclamationmark.triangle.fill", color: .red, title: "Changes not saved",
+                          detail: error, button: "Edit Config…") { NSWorkspace.shared.open(ConfigStore.url) }
             }
         }
     }
@@ -461,23 +465,8 @@ struct AddButton: View {
     }
 }
 
-/// The same as AddButton, for lists whose new item is picked from a menu (an app).
-struct AddMenu<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        Menu {
-            content
-        } label: {
-            AddLabel(title: title)
-        }
-        .modifier(BorderedMenu())
-        .controlSize(.small)
-    }
-}
-
-/// "+ Add App" menu: the candidate apps, then a last entry that asks for any other app.
+/// "+ Add App", drawn like AddButton: a menu of the candidate apps, then a last entry that
+/// asks for any other app.
 struct AddAppMenu: View {
     let candidates: [(name: String, bundleID: String)]
     let chooseTitle: String
@@ -485,13 +474,17 @@ struct AddAppMenu: View {
     let choose: () -> Void
 
     var body: some View {
-        AddMenu(title: "Add App") {
+        Menu {
             ForEach(candidates, id: \.bundleID) { app in
                 Button(app.name) { add(app.bundleID) }
             }
             Divider()
             Button(chooseTitle, action: choose)
+        } label: {
+            AddLabel(title: "Add App")
         }
+        .modifier(BorderedMenu())
+        .controlSize(.small)
     }
 }
 
@@ -522,6 +515,43 @@ struct ChoiceMenu<Content: View>: View {
         .controlSize(.small)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+/// A named choice of a `GroupedChoiceMenu`, under its group's title.
+struct ChoiceGroup {
+    let title: String
+    let items: [(label: String, value: String)]
+}
+
+/// A ▾ next to a key cap with a long, fixed list in submenus (every key, the ready-made
+/// actions), and an optional last item after a divider. The list never changes, so the menu
+/// is only built again for another rule (`==` compares the rule): a key press while recording
+/// redraws every row, not this.
+struct GroupedChoiceMenu: View, Equatable {
+    let ruleID: UUID
+    let help: String
+    let groups: [ChoiceGroup]
+    var last: (label: String, value: String)?
+    /// Called with the chosen value; the same for a given rule.
+    let choose: (String) -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.ruleID == b.ruleID }
+
+    var body: some View {
+        ChoiceMenu(help: help) {
+            ForEach(groups, id: \.title) { group in
+                Menu(group.title) {
+                    ForEach(group.items, id: \.value) { item in
+                        Button(item.label) { choose(item.value) }
+                    }
+                }
+            }
+            if let last {
+                Divider()
+                Button(last.label) { choose(last.value) }
+            }
+        }
     }
 }
 
@@ -589,22 +619,21 @@ struct SliderRow: View {
     let value: Int
     let range: ClosedRange<Int>
     let step: Int
-    /// The value while the slider is dragged; not saved yet.
+    /// A new value: shown at once, saved by the model once the slider is released, or shortly
+    /// after a change made with the keyboard or VoiceOver (which never "release" it).
     let onChange: (Int) -> Void
-    /// The slider was released: save the value.
-    let onCommit: () -> Void
+    /// The slider is grabbed (true) or released (false).
+    let onEditingChanged: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Text(title).layoutPriority(1)
             Spacer(minLength: 12)
-            // Continuous (no tick marks), rounded to `step`. Saved only on release: every save
+            // Continuous (no tick marks), rounded to `step`. Not saved while dragged: every save
             // reloads the config and retiles the windows.
             Slider(value: Binding(get: { Double(value) },
                                   set: { onChange(Int(($0 / Double(step)).rounded()) * step) }),
-                   in: Double(range.lowerBound)...Double(range.upperBound)) { editing in
-                if !editing { onCommit() }
-            }
+                   in: Double(range.lowerBound)...Double(range.upperBound), onEditingChanged: onEditingChanged)
             .labelsHidden()
             .frame(minWidth: 120, maxWidth: 200)
             Text("\(value) pt")

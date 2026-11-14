@@ -4,15 +4,18 @@ import Foundation
 /// change, and the file stays hand-readable (stable key order, one line per
 /// binding/remap). The ConfigStore watcher picks the write up and applies it.
 enum ConfigWriter {
-    static func read() -> [String: Any] {
-        parse(try? Data(contentsOf: ConfigStore.url))
+    /// The file, `[:]` when it is missing or blank, or nil when it does not parse (the settings
+    /// keep what they show).
+    static func readIfValid() -> [String: Any]? {
+        parseFile(ConfigStore.url).root
     }
 
-    /// The file, or nil when it exists but does not parse (the settings keep what they show).
-    static func readIfValid() -> [String: Any]? {
-        guard let data = try? Data(contentsOf: ConfigStore.url),
-              !String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [:] }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    /// The file's bytes and what they hold: `[:]` when it is missing or blank, nil when it is
+    /// not a JSON object. The one place the file is read and parsed for the settings.
+    static func parseFile(_ url: URL) -> (data: Data?, root: [String: Any]?) {
+        guard let data = try? Data(contentsOf: url) else { return (nil, [:]) }
+        if String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return (data, [:]) }
+        return (data, try? JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
     /// One top-level object of `root` ("keyboard", "mouse"…), empty when missing.
@@ -32,15 +35,11 @@ enum ConfigWriter {
         save { edit(&$0, section: key, change) }
     }
 
-    private static func parse(_ data: Data?) -> [String: Any] {
-        guard let data, let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
-        return root
-    }
-
     /// Refusal to edit a file that exists but is not a JSON object: starting from an empty
     /// one would replace everything the user wrote with the one change.
     struct SyntaxError: LocalizedError {
-        var errorDescription: String? { "config.json has a syntax error: fix it before changing settings" }
+        static let message = "config.json has a syntax error: fix it before changing settings"
+        var errorDescription: String? { Self.message }
     }
 
     /// Reads `url`, applies `change` and writes the result, unless nothing changed.
@@ -50,14 +49,8 @@ enum ConfigWriter {
         // itself would replace it with a regular file.
         let url = url.resolvingSymlinksInPath()
         // Read once: parsed to edit, and compared with what would be written.
-        let current = try? Data(contentsOf: url)
-        var root: [String: Any] = [:]
-        if let current, !String(decoding: current, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            guard let parsed = try? JSONSerialization.jsonObject(with: current) as? [String: Any] else {
-                throw SyntaxError()
-            }
-            root = parsed
-        }
+        let (current, parsed) = parseFile(url)
+        guard var root = parsed else { throw SyntaxError() }
         change(&root)
         let text = text(for: root)
         // Nothing changed: no write, so no reload of the whole config.

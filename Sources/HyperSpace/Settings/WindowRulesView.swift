@@ -8,43 +8,34 @@ struct WindowRulesView: View {
         Form {
             PageHero(page: .windowRules)
             PermissionNotice()
+            SaveErrorNotice(status: model.saveStatus)
             TilingOffNotice(model: model)
 
             Section {
                 if model.floating.isEmpty && model.floatingWindows.isEmpty {
-                    EmptyRow(symbol: "macwindow", text: "Every window is tiled")
+                    EmptyRow(symbol: "macwindow", text: "No floating rules: every window is tiled")
                 }
                 ForEach(model.floating, id: \.self) { bundleID in
-                    HStack(spacing: 10) {
-                        AppLabel(bundleID: bundleID)
-                        Spacer(minLength: 12)
+                    AppRuleRow(app: bundleID, remove: { model.removeFloating(bundleID) }) {
                         Text("All windows").foregroundStyle(.secondary)
-                        RemoveButton { model.removeFloating(bundleID) }
                     }
                 }
                 ForEach(model.floatingWindows, id: \.self) { rule in
-                    HStack(spacing: 10) {
-                        if let app = rule.app {
-                            AppLabel(bundleID: app)
-                        } else {
-                            Label("Any app", systemImage: "square.grid.2x2").foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 12)
+                    AppRuleRow(app: rule.app, remove: { model.removeFloatingWindow(rule) }) {
                         Text("Title contains “\(rule.title)”").foregroundStyle(.secondary).lineLimit(1)
-                        RemoveButton { model.removeFloatingWindow(rule) }
                     }
                 }
-                NewFloatingRule(model: model, draft: model.floatingDraft)
+                NewFloatingRule(model: model, draft: model.floatingDraft, apps: model.runningApps,
+                                floating: model.floating, floatingWindows: model.floatingWindows)
             } header: {
                 Text("Floating")
             } footer: {
-                SectionFooter("Floating windows keep their own size and position. Pick an app to float all its windows, or add a title to float only some, such as its settings.",
-                              error: model.saveError)
+                SectionFooter("Floating windows keep their own size and position. Pick an app to float all its windows, or add a title to float only some, such as its settings.")
             }
 
             Section {
                 if model.scratchpadApps.isEmpty {
-                    EmptyRow(symbol: "rectangle.on.rectangle", text: "No scratchpad apps yet")
+                    EmptyRow(symbol: "rectangle.on.rectangle", text: "No scratchpad apps: add one to show and hide it with a shortcut")
                 } else {
                     ShortcutGrid(columns: ["Show / hide", "To tiling and back"], leading: "App", trailing: RemoveButton.width) {
                         ForEach(model.scratchpadApps) { pad in
@@ -67,7 +58,7 @@ struct WindowRulesView: View {
                                add: model.addScratchpadApp, choose: model.chooseAppForScratchpad)
                 }
             } footer: {
-                SectionFooter("Show / hide puts the app centered above the other windows, and hides it again. To tiling and back moves its window into the current workspace, and back into the scratchpad. Click a shortcut and press the keys: Esc cancels, Delete clears it.")
+                SectionFooter("Show / hide puts the app centered above the other windows, and hides it again. To tiling and back moves its window into the current workspace, and back into the scratchpad. " + ShortcutRecorder.hint)
             }
         }
         .formStyle(.grouped)
@@ -75,21 +66,28 @@ struct WindowRulesView: View {
 }
 
 /// The last row of the floating rules: the rule being written. It observes the draft alone, so
-/// a keystroke in the title redraws this row, not the page.
+/// a keystroke in the title redraws this row, not the page. A rule already listed cannot be
+/// added again, and says so.
 private struct NewFloatingRule: View {
     let model: TilingModel
     @ObservedObject var draft: FloatingRuleDraft
+    let apps: [(name: String, bundleID: String)]
+    let floating: [String]
+    let floatingWindows: [FloatingWindowRule]
 
     var body: some View {
+        let exists = TilingModel.floatingRuleExists(app: draft.app, title: draft.title,
+                                                    floating: floating, floatingWindows: floatingWindows)
         HStack(spacing: 8) {
-            FloatingAppPicker(app: draft.app, apps: AppLauncher.runningApps) { draft.app = $0 }
+            FloatingAppPicker(app: draft.app, apps: apps) { draft.app = $0 }
                 .equatable()
             TextField("Title", text: $draft.title, prompt: Text("Title contains… (optional)"))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { model.addFloatingRule() }
+            WarningBadge(text: exists ? "This rule is already in the list" : nil)
             AddButton(title: "Add") { model.addFloatingRule() }
-                .disabled(!draft.canAdd)
+                .disabled(!draft.canAdd || exists)
         }
     }
 }

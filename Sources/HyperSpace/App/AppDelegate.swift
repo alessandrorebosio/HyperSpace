@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         actions: GeneralModel.Actions(
             openConfig: { [unowned self] in store.openInEditor() },
             // The permission has its own row and notice there.
-            configProblem: { [unowned self] in statusMenu.problem.flatMap { $0.isConfig ? $0.text : nil } }
+            configProblem: { [unowned self] in statusMenu.configError.map { StatusMenu.Problem.config($0).text } }
         )
     )
     private var statusMenu: StatusMenu!
@@ -108,7 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setTilingEnabled(_ on: Bool) {
         if let error = ConfigWriter.save(section: "tiling", { $0["enabled"] = on }) {
             // The file cannot be written (a syntax error): tiling still follows, until a reload.
-            statusMenu.problem = .config(error)
+            // The parse error already shown (with its line and column) says more than this one.
+            if statusMenu.configError == nil { statusMenu.configError = error }
             windowManager.setEnabled(on)
             return
         }
@@ -137,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             + (trackpad.isActive
                 ? "; " + (edgeSliders.isAvailable ? "\(edgeSliders.deviceCount) trackpad(s)" : "MultitouchSupport not available")
                 : ""))
-        if let problem = statusMenu.problem { lines.append("Problem: \(problem.text)") }
+        for problem in statusMenu.problems { lines.append("Problem: \(problem.text)") }
         lines.append(windowManager.debugReport())
         return lines.joined(separator: "\n")
     }
@@ -151,13 +152,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Accessibility is granted outside the app; poll cheaply until it shows up.
     private func waitForPermission() {
-        statusMenu.problem = .permission
+        statusMenu.permissionMissing = true
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
             guard let self, Permissions.isTrusted(prompt: false) else { return }
             timer.invalidate()
             permissionTimer = nil
             trusted = true
-            statusMenu.problem = nil
+            // A config error, if any, stays reported: only the permission is fixed.
+            statusMenu.permissionMissing = false
             if let config { applyTrusted(config) }
         }
     }
@@ -171,11 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             edgeSliders.apply(config.trackpad)
             if config.tap.suppressCapsLock { CapsLock.turnOff() }
             if trusted { applyTrusted(config) }
-            // A missing permission stays reported until it is granted.
-            if trusted || statusMenu.problem?.isConfig == true { statusMenu.problem = nil }
+            // Ends a config error only: a missing permission stays reported until it is granted.
+            statusMenu.configError = nil
             log.info("config applied")
         case .failure(let error):
-            statusMenu.problem = .config(error.localizedDescription)
+            statusMenu.configError = error.localizedDescription
             log.error("config error: \(error.localizedDescription, privacy: .public)")
         }
     }

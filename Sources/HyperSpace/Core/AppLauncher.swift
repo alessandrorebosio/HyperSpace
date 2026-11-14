@@ -50,6 +50,10 @@ enum AppLauncher {
 
     // MARK: - For the settings pages (main thread)
 
+    /// Posted on the main thread when an app launches or quits, once `runningApps` has been
+    /// asked for: the settings models publish the new list, so their app menus follow.
+    static let runningAppsDidChange = Notification.Name("HyperSpaceRunningAppsDidChange")
+
     /// The regular apps running, by name. The pages ask on every redraw (a keystroke in a
     /// text field), so the list is kept until an app launches or quits.
     static var runningApps: [(name: String, bundleID: String)] {
@@ -72,6 +76,7 @@ enum AppLauncher {
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             appObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
                 AppLauncher.cachedApps = nil
+                NotificationCenter.default.post(name: runningAppsDidChange, object: nil)
             })
         }
     }

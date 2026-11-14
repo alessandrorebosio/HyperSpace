@@ -43,7 +43,6 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
     @Published private(set) var edges: [Edge: EdgeAction] = TrackpadModel.defaultEdges
     /// Each corner's action as written in the file (no entry: nothing).
     @Published private(set) var corners: [TrackpadCorner: String] = [:]
-    @Published private(set) var saveError: String?
 
     private static let defaultEdges = Dictionary(uniqueKeysWithValues: Edge.allCases.map { ($0, $0.defaultAction) })
 
@@ -53,17 +52,18 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
         var corners: [TrackpadCorner: String]
     }
 
-    private var synced = SyncedSlice(sections: "trackpad")
-    /// The values as loaded: only what changed since is written.
-    private var loaded: Snapshot?
+    /// The section, and the values as loaded: only what changed since is written.
+    private var sync = FileSync<Snapshot>(SyncedSlice(sections: "trackpad"))
+    var saveStatus: SaveStatus { sync.status }
 
-    /// `config`: the file as `ConfigWriter.read()` returns it.
+    /// `config`: the file as `ConfigWriter.readIfValid()` returns it.
     init(config: [String: Any]) {
         load(config)
     }
 
+    /// Nothing here is edited over time (no recording, no typing): the file always shows at once.
     func reload(from root: [String: Any]) {
-        if synced.changed(in: root) { load(root) }
+        if sync.shouldReload(root, editing: false) { load(root) }
     }
 
     func edge(_ edge: Edge) -> EdgeAction {
@@ -137,28 +137,27 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
         }
         let on = trackpad["edgeSliders"] as? Bool ?? TrackpadConfig.defaultEdgeSliders
         let newCorners = Self.corners(in: trackpad)
-        if edgeSliders != on { edgeSliders = on }
-        if edges != newEdges { edges = newEdges }
-        if corners != newCorners { corners = newCorners }
-        loaded = Snapshot(edgeSliders: on, edges: newEdges, corners: newCorners)
-        synced.record(config)
+        assignIfChanged(on, to: &edgeSliders)
+        assignIfChanged(newEdges, to: &edges)
+        assignIfChanged(newCorners, to: &corners)
+        sync.didLoad(config, Snapshot(edgeSliders: on, edges: newEdges, corners: newCorners))
     }
 
     /// Writes the values changed since the load (a key the user never set stays out of the file).
     private func save() {
-        let error = ConfigWriter.save(recording: &synced) { root in
+        let loaded = sync.loaded
+        let current = Snapshot(edgeSliders: edgeSliders, edges: edges, corners: corners)
+        sync.save(current) { root in
             ConfigWriter.edit(&root, section: "trackpad") { trackpad in
-                if edgeSliders != loaded?.edgeSliders { trackpad["edgeSliders"] = edgeSliders }
+                if current.edgeSliders != loaded?.edgeSliders { trackpad["edgeSliders"] = current.edgeSliders }
                 for edge in Edge.allCases where self.edge(edge) != loaded?.edges[edge] {
                     trackpad[edge.key] = self.edge(edge).rawValue
                 }
-                if corners != loaded?.corners {
-                    trackpad["corners"] = corners.isEmpty
-                        ? nil : Dictionary(uniqueKeysWithValues: corners.map { ($0.key.rawValue, $0.value) })
+                if current.corners != loaded?.corners {
+                    trackpad["corners"] = current.corners.isEmpty
+                        ? nil : Dictionary(uniqueKeysWithValues: current.corners.map { ($0.key.rawValue, $0.value) })
                 }
             }
         }
-        if error == nil { loaded = Snapshot(edgeSliders: edgeSliders, edges: edges, corners: corners) }
-        Optional.assignChange(error, to: &saveError)
     }
 }

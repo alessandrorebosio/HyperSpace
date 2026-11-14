@@ -13,9 +13,11 @@ final class GeneralModel: ObservableObject {
 
     @Published private(set) var launchAtLogin = false
     @Published private(set) var accessibilityGranted = false
-    /// What needs attention apart from the permission: the config error shown in the menu bar,
-    /// or the last action that failed here.
-    @Published private(set) var problem: String?
+    /// The config error shown in the menu bar, if any.
+    @Published private(set) var configProblem: String?
+    /// Why Launch at login could not be changed: shown under its switch only, not part of the
+    /// app's health (the app itself works).
+    @Published private(set) var loginError: String?
 
     let actions: Actions
     private var activation: Any?
@@ -23,8 +25,8 @@ final class GeneralModel: ObservableObject {
     init(actions: Actions) {
         self.actions = actions
         refresh()
-        // Back from System Settings: the permission may have just been granted (and the
-        // config fixed in an editor).
+        // Back from System Settings: the permission may have just been granted, or Launch at
+        // login changed there.
         activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                                             object: nil, queue: .main) { [weak self] _ in
             self?.refresh()
@@ -35,19 +37,17 @@ final class GeneralModel: ObservableObject {
         if let activation { NotificationCenter.default.removeObserver(activation) }
     }
 
-    /// Each `@Published` assignment redraws the pages that show it, equal or not: only
-    /// changes are assigned.
+    /// Everything the page shows from outside the file: on opening and on activation only, since
+    /// the login item and the permission are system calls.
     func refresh() {
-        let login = SMAppService.mainApp.status == .enabled
-        if launchAtLogin != login { launchAtLogin = login }
-        refreshPermission()
-        let current = actions.configProblem()
-        if problem != current { problem = current }
+        assignIfChanged(SMAppService.mainApp.status == .enabled, to: &launchAtLogin)
+        assignIfChanged(Permissions.isTrusted(prompt: false), to: &accessibilityGranted)
+        refreshConfigProblem()
     }
 
-    private func refreshPermission() {
-        let granted = Permissions.isTrusted(prompt: false)
-        if accessibilityGranted != granted { accessibilityGranted = granted }
+    /// The config was loaded (a cheap closure): its error, or none.
+    func refreshConfigProblem() {
+        assignIfChanged(actions.configProblem(), to: &configProblem)
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -57,10 +57,11 @@ final class GeneralModel: ObservableObject {
             } else {
                 try SMAppService.mainApp.unregister()
             }
+            assignIfChanged(nil, to: &loginError)
         } catch {
-            problem = "Launch at login: \(error.localizedDescription)"
+            loginError = "Launch at login could not be changed: \(error.localizedDescription)"
         }
-        launchAtLogin = SMAppService.mainApp.status == .enabled
+        assignIfChanged(SMAppService.mainApp.status == .enabled, to: &launchAtLogin)
     }
 
     var configPath: String {
@@ -69,8 +70,12 @@ final class GeneralModel: ObservableObject {
 
     /// How the app is doing, in a few words with a color: on the sidebar and the General page.
     var health: (text: String, color: Color) {
+        Self.health(accessibilityGranted: accessibilityGranted, configProblem: configProblem != nil)
+    }
+
+    static func health(accessibilityGranted: Bool, configProblem: Bool) -> (text: String, color: Color) {
         if !accessibilityGranted { return (Permissions.missingShort, .orange) }
-        if problem != nil { return ("Needs attention", .red) }
+        if configProblem { return ("Needs attention", .red) }
         return ("Running", .green)
     }
 }

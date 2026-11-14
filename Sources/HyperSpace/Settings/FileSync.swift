@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The part of config.json a settings model shows, as it was when the model last read or wrote
@@ -39,15 +40,118 @@ extension ConfigWriter {
     }
 }
 
+/// The last save of a model that failed, shown as a notice at the top of its pages. Its own
+/// object, so an error that comes or goes redraws the notice only.
+final class SaveStatus: ObservableObject {
+    @Published private(set) var error: String?
+
+    func set(_ error: String?) {
+        assignIfChanged(error, to: &self.error)
+    }
+
+    /// The file parses again: a syntax error reported earlier no longer holds.
+    func fileIsValid() {
+        if error == ConfigWriter.SyntaxError.message { error = nil }
+    }
+}
+
+/// How a settings model follows the file: the part of it the model shows (`SyncedSlice`), the
+/// values as last loaded or saved (only what changed since is written), the last save error,
+/// and a reload skipped while the user was editing, which is done when the edit ends and
+/// always before the next save, so that save never writes back a stale list.
+struct FileSync<Snapshot> {
+    private var slice: SyncedSlice
+    /// The values as last loaded or saved: a value never changed here is not written.
+    private(set) var loaded: Snapshot?
+    /// The file changed while the user was editing (recording a shortcut, typing a name).
+    private(set) var reloadDeferred = false
+    let status = SaveStatus()
+
+    init(_ slice: SyncedSlice) {
+        self.slice = slice
+    }
+
+    /// The model showed `root`, its values being `snapshot`.
+    mutating func didLoad(_ root: [String: Any], _ snapshot: Snapshot) {
+        slice.record(root)
+        loaded = snapshot
+        reloadDeferred = false
+    }
+
+    /// The app loaded the file: whether the model should show it. Not while `editing`: the
+    /// reload then waits for `takeDeferredReload`.
+    mutating func shouldReload(_ root: [String: Any], editing: Bool) -> Bool {
+        status.fileIsValid()
+        guard slice.changed(in: root) else {
+            reloadDeferred = false
+            return false
+        }
+        if editing {
+            reloadDeferred = true
+            return false
+        }
+        return true
+    }
+
+    /// An edit ends, or a save is about to start: the file to show first, if a reload was
+    /// skipped meanwhile and the model's part still differs from it.
+    mutating func takeDeferredReload() -> [String: Any]? {
+        guard reloadDeferred else { return nil }
+        reloadDeferred = false
+        guard let root = ConfigWriter.readIfValid(), slice.changed(in: root) else { return nil }
+        return root
+    }
+
+    /// Applies `change` to the file; once written, `snapshot` is what was saved. The error
+    /// goes to `status`, and is returned.
+    @discardableResult
+    mutating func save(_ snapshot: Snapshot, _ change: (inout [String: Any]) -> Void) -> String? {
+        let error = ConfigWriter.save(recording: &slice, change)
+        if error == nil { loaded = snapshot }
+        status.set(error)
+        return error
+    }
+}
+
+extension FileSync where Snapshot == Void {
+    mutating func didLoad(_ root: [String: Any]) { didLoad(root, ()) }
+
+    @discardableResult
+    mutating func save(_ change: (inout [String: Any]) -> Void) -> String? { save((), change) }
+}
+
 /// A settings model that follows the file: `ConfigStore.didLoad` makes it reload when the part
 /// of the file it shows changed, unless the user is in the middle of an edit.
 protocol FileBackedModel: AnyObject {
     func reload(from root: [String: Any])
+    /// The last save error, for the page's notice.
+    var saveStatus: SaveStatus { get }
+    /// A key press or click being recorded ends (another page is shown).
+    func stopCapture()
+    /// The window closes: captures end, pending edits are saved, nothing stays suspended.
+    func close()
 }
 
-extension Optional where Wrapped: Equatable {
-    /// Assigns only a change: every `@Published` assignment redraws the views that read it.
-    static func assignChange(_ value: Wrapped?, to property: inout Wrapped?) {
-        if property != value { property = value }
+extension FileBackedModel {
+    func stopCapture() {}
+    func close() { stopCapture() }
+}
+
+/// Assigns only a change: every `@Published` assignment redraws the views that read it, equal or not.
+func assignIfChanged<Value: Equatable>(_ value: Value, to property: inout Value) {
+    if property != value { property = value }
+}
+
+/// Row ids across a reload: each new row takes the id of an old row with the same `key`
+/// (each old id used once, in order), else a new one. SwiftUI then keeps the rows that did
+/// not change, and a focused text field its focus.
+func reusedIDs<Key: Hashable>(for keys: [Key], from old: [(key: Key, id: UUID)]) -> [UUID] {
+    var available: [Key: [UUID]] = [:]
+    for row in old { available[row.key, default: []].append(row.id) }
+    return keys.map { key in
+        guard var ids = available[key], !ids.isEmpty else { return UUID() }
+        let id = ids.removeFirst()
+        available[key] = ids
+        return id
     }
 }

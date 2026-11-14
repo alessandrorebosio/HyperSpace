@@ -6,12 +6,10 @@ import Combine
 /// to config.json; the config watcher applies it.
 final class TilingModel: ObservableObject, FileBackedModel {
     struct Workspace: Identifiable, Equatable {
-        let id = UUID()
-        /// The name as typed.
+        var id = UUID()
+        /// The name saved: never empty, never another workspace's. What is being typed lives
+        /// in the row's `NameDraft` until it is valid and saved.
         var name: String
-        /// The last valid name (not empty, not another workspace's): the one saved, so a name
-        /// half-typed or taken never reaches the file.
-        var savedName: String
         /// Shortcut that shows the workspace.
         var switchKeys: String
         /// Shortcut that moves the focused window there.
@@ -27,10 +25,9 @@ final class TilingModel: ObservableObject, FileBackedModel {
     }
 
     /// A window-management action with an editable shortcut (stored in keyboard.bindings).
-    struct Shortcut: Identifiable, Equatable {
+    struct Shortcut: Equatable {
         let action: String
         var keys: String
-        var id: String { action }
     }
 
     enum Field: Equatable {
@@ -98,7 +95,7 @@ final class TilingModel: ObservableObject, FileBackedModel {
     @Published private(set) var padding = Int(Defaults.defaultPadding)
     @Published private(set) var mouseFollowsFocus = Defaults.defaultMouseFollowsFocus
     @Published private(set) var accordionPadding = Int(Defaults.defaultAccordionPadding)
-    @Published var workspaces: [Workspace] = [] { didSet { duplicateCache = nil } }
+    @Published private(set) var workspaces: [Workspace] = [] { didSet { duplicateCache = nil } }
     /// Bundle identifiers of apps whose windows are never tiled.
     @Published private(set) var floating: [String] = []
     @Published private(set) var floatingWindows: [FloatingWindowRule] = []
@@ -106,11 +103,13 @@ final class TilingModel: ObservableObject, FileBackedModel {
     let floatingDraft = FloatingRuleDraft()
     /// Apps whose windows open in a given workspace.
     @Published private(set) var assignments: [Assignment] = []
+    /// The regular apps running, for the app menus: follows apps launching and quitting.
+    @Published private(set) var runningApps = AppLauncher.runningApps
 
     /// An app rule. It follows its workspace by identity, so renaming the workspace (or typing
     /// a name another one has on the way) never moves it to another.
     struct Assignment: Identifiable, Equatable {
-        let id = UUID()
+        var id = UUID()
         var app: String
         /// The workspace's `id`; nil when the file names none that exists (kept as written).
         var workspace: UUID?
@@ -118,8 +117,12 @@ final class TilingModel: ObservableObject, FileBackedModel {
         var text: String
     }
     @Published private(set) var shortcuts: [Shortcut] = [] { didSet { duplicateCache = nil } }
-    /// The shortcuts used more than once, kept until the workspaces, shortcuts or scratchpad apps change.
+    /// The shortcuts used more than once, kept until the workspaces, shortcuts, scratchpad apps
+    /// or other bindings change.
     private var duplicateCache: Set<String>?
+    /// The keys of the bindings no page shows (launching an app, a second binding of an
+    /// action): they count when shortcuts are checked for duplicates.
+    private var otherBindingKeys: [String] = [] { didSet { duplicateCache = nil } }
     /// An app with its own scratchpad shortcuts: show/hide ("scratchpad <bundle id>") and
     /// into the tiling and back ("move-to-scratchpad <bundle id>").
     struct ScratchpadApp: Identifiable, Equatable {
@@ -129,23 +132,38 @@ final class TilingModel: ObservableObject, FileBackedModel {
         var id: String { bundleID }
         var toggleAction: String { TilingModel.togglePrefix + bundleID }
         var tileAction: String { TilingModel.tilePrefix + bundleID }
+        var hasShortcut: Bool { !toggleKeys.isEmpty || !tileKeys.isEmpty }
     }
     @Published private(set) var scratchpadApps: [ScratchpadApp] = [] { didSet { duplicateCache = nil } }
     @Published private(set) var capturing: Field?
-    @Published private(set) var saveError: String?
 
-    private let eventTap: EventTap
-    private let monitor = LocalEventMonitor()
+    /// A workspace about to be removed with what goes with it, while the page asks to confirm.
+    struct Removal: Equatable {
+        let id: UUID
+        let name: String
+        /// What goes with it, one line each: its shortcuts, its app rules, its display pin.
+        let losses: [String]
+    }
+    @Published private(set) var removal: Removal?
+
+    private let recorder: ShortcutRecorder
     /// A workspace name is saved shortly after the last keystroke.
     private let renameSave = Debouncer(delay: 0.5)
-    /// The tiling section and the bindings, as last read or written.
-    private var synced = SyncedSlice { root in
+    /// What is typed in each workspace's name field: one object per row, so a keystroke redraws
+    /// that row only, not the page.
+    private var nameDrafts: [UUID: NameDraft] = [:]
+    /// A slider value changed without a drag (arrow keys, VoiceOver) is saved shortly after.
+    private let spacingSave = Debouncer(delay: 0.6)
+    /// A slider is being dragged: saved on release.
+    private var sliderHeld = false
+    /// The tiling section and the bindings, and the options as loaded: only those changed since
+    /// are written, so a key the user never set stays out of the file and a value the page
+    /// rounds ("gap": 7.5) stays as written.
+    private var sync = FileSync<Options>(SyncedSlice { root in
         ["tiling": ConfigWriter.section("tiling", of: root),
          "bindings": ConfigWriter.section("keyboard", of: root)["bindings"] ?? []]
-    }
-    /// The options as loaded: only those changed since are written, so a key the user never set
-    /// stays out of the file and a value the page rounds ("gap": 7.5) stays as written.
-    private var loaded: Options?
+    })
+    var saveStatus: SaveStatus { sync.status }
 
     private struct Options: Equatable {
         var enabled: Bool
@@ -162,63 +180,99 @@ final class TilingModel: ObservableObject, FileBackedModel {
     }
 
     /// The connected displays, for the workspaces' display menus: read when the window opens
-    /// and when displays change, not on every redraw (each keystroke in a name).
+    /// and when displays change, not on every redraw.
     @Published private(set) var screens = ScreenInfo.current()
-    private var screenObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
 
-    /// `config`: the file as `ConfigWriter.read()` returns it.
+    /// `config`: the file as `ConfigWriter.readIfValid()` returns it.
     init(eventTap: EventTap, config: [String: Any]) {
-        self.eventTap = eventTap
+        recorder = ShortcutRecorder(eventTap: eventTap)
         load(config)
-        screenObserver = NotificationCenter.default.addObserver(
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.screens = ScreenInfo.current() }
+        ) { [weak self] _ in self?.screens = ScreenInfo.current() })
+        observers.append(center.addObserver(forName: AppLauncher.runningAppsDidChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            let apps = AppLauncher.runningApps
+            if !apps.elementsEqual(runningApps, by: { $0 == $1 }) { runningApps = apps }
+        })
     }
 
-    /// Follows the file, unless a shortcut is being recorded or a name typed.
+    /// Something is being edited: a reload now would undo it, so it waits for the edit to end.
+    private var isEditing: Bool {
+        capturing != nil || renameSave.isPending || spacingSave.isPending || sliderHeld
+    }
+
+    /// Follows the file, unless a shortcut is being recorded, a name typed or a slider moved.
     func reload(from root: [String: Any]) {
-        guard capturing == nil, !renameSave.isPending, synced.changed(in: root) else { return }
-        load(root)
+        if sync.shouldReload(root, editing: isEditing) { load(root) }
     }
 
-    /// The window closes: nothing stays suspended, and a rename typed just before is saved.
+    /// The window closes: nothing stays suspended, and a rename or slider change made just before is saved.
     func close() {
         stopCapture()
-        if renameSave.isPending { save() }
+        if renameSave.isPending || spacingSave.isPending || sliderHeld {
+            sliderHeld = false
+            edit {}
+        }
     }
 
     deinit {
-        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
     // MARK: - Editing
 
-    func setEnabled(_ on: Bool) { guard enabled != on else { return }; enabled = on; save() }
-    func setLayout(_ kind: LayoutKind) { guard layout != kind else { return }; layout = kind; save() }
-    /// The slider setters only update the shown value; `commitSpacing` writes them.
-    /// A drag sends the same rounded value many times: only a change is published (each
-    /// `@Published` assignment redraws the page, equal or not).
-    func setGap(_ value: Int) { Self.assign(value.clamped(to: Self.spacingRange), to: &gap) }
-    func setPadding(_ value: Int) { Self.assign(value.clamped(to: Self.spacingRange), to: &padding) }
-    func setAccordionPadding(_ value: Int) { Self.assign(value.clamped(to: Self.accordionRange), to: &accordionPadding) }
+    func setEnabled(_ on: Bool) { guard enabled != on else { return }; edit { enabled = on } }
+    func setLayout(_ kind: LayoutKind) { guard layout != kind else { return }; edit { layout = kind } }
+    func setMouseFollowsFocus(_ on: Bool) { guard mouseFollowsFocus != on else { return }; edit { mouseFollowsFocus = on } }
 
-    private static func assign(_ value: Int, to property: inout Int) {
-        if property != value { property = value }
+    /// The slider setters show the value at once; it is saved when the slider is released, or
+    /// shortly after a change made without dragging. A drag sends the same rounded value many
+    /// times: only a change is published.
+    func setGap(_ value: Int) { setSpacing(value.clamped(to: Self.spacingRange), \.gap) }
+    func setPadding(_ value: Int) { setSpacing(value.clamped(to: Self.spacingRange), \.padding) }
+    func setAccordionPadding(_ value: Int) { setSpacing(value.clamped(to: Self.accordionRange), \.accordionPadding) }
+
+    private func setSpacing(_ value: Int, _ property: ReferenceWritableKeyPath<TilingModel, Int>) {
+        guard self[keyPath: property] != value else { return }
+        self[keyPath: property] = value
+        if !sliderHeld { spacingSave.schedule { [weak self] in self?.commitSpacing() } }
     }
-    /// Writes the current slider values (the config reload retiles once, on release).
-    func commitSpacing() { save() }
-    func setMouseFollowsFocus(_ on: Bool) { guard mouseFollowsFocus != on else { return }; mouseFollowsFocus = on; save() }
+
+    /// A slider is grabbed or released: released, its value is saved (the config reload
+    /// retiles once).
+    func sliderEditing(_ editing: Bool) {
+        sliderHeld = editing
+        if editing {
+            spacingSave.cancel()
+        } else {
+            commitSpacing()
+        }
+    }
+
+    private func commitSpacing() {
+        // The values shown, put back after a reload that was waiting for the slider.
+        let shown = (gap: self.gap, padding: self.padding, accordion: self.accordionPadding)
+        edit {
+            gap = shown.gap
+            padding = shown.padding
+            accordionPadding = shown.accordion
+        }
+    }
 
     func addWorkspace() {
-        // Its number, or the next free one should a workspace already be called that.
-        let taken = Set(workspaces.map(\.savedName))
-        let name = (workspaces.count...).lazy.map { TilingConfig.workspaceName(nil, at: $0) }.first { !taken.contains($0) }!
-        workspaces.append(Workspace(name: name, savedName: name, switchKeys: "", moveKeys: ""))
-        save()
+        edit {
+            // Its number, or the next free one should a workspace already be called that.
+            let taken = Set(workspaces.map(\.name))
+            let name = (workspaces.count...).lazy.map { TilingConfig.workspaceName(nil, at: $0) }.first { !taken.contains($0) }!
+            workspaces.append(Workspace(name: name, switchKeys: "", moveKeys: ""))
+        }
     }
 
     func setDisplay(_ display: String, for id: UUID) {
-        if workspaces.update(id: id, { $0.display = display }) { save() }
+        edit { workspaces.update(id: id) { $0.display = display } }
     }
 
     /// The display choices for a workspace: automatic, the main display, every connected
@@ -239,50 +293,102 @@ final class TilingModel: ObservableObject, FileBackedModel {
         return options
     }
 
-    func removeWorkspace(_ id: UUID) {
-        stopCapture()
-        workspaces.removeAll { $0.id == id }
-        save()
+    /// The remove button of a workspace: a workspace with shortcuts, app rules or a display pin
+    /// is removed once confirmed (they all go with it), an empty one at once.
+    func askToRemoveWorkspace(_ id: UUID) {
+        guard let workspace = workspaces.first(where: { $0.id == id }) else { return }
+        let losses = Self.removalLosses(of: workspace, assignments: assignments, appName: AppLauncher.name)
+        if losses.isEmpty {
+            removeWorkspace(id)
+        } else {
+            removal = Removal(id: id, name: workspace.name, losses: losses)
+        }
     }
 
-    private func addFloating(_ bundleID: String) {
-        guard !floating.contains(bundleID) else { return }
-        floating.append(bundleID)
-        save()
+    func confirmRemoval() {
+        guard let removal else { return }
+        self.removal = nil
+        removeWorkspace(removal.id)
+    }
+
+    func cancelRemoval() {
+        assignIfChanged(nil, to: &removal)
+    }
+
+    private func removeWorkspace(_ id: UUID) {
+        stopCapture()
+        edit {
+            (workspaces, assignments) = Self.removing(id, from: workspaces, assignments: assignments)
+            nameDrafts[id] = nil
+        }
+    }
+
+    /// The workspaces and app rules once workspace `id` is removed: its rules go with it (the
+    /// file loses them too), rules naming no workspace stay as they were.
+    static func removing(_ id: UUID, from workspaces: [Workspace], assignments: [Assignment])
+        -> (workspaces: [Workspace], assignments: [Assignment]) {
+        (workspaces.filter { $0.id != id }, assignments.filter { $0.workspace != id })
+    }
+
+    /// What goes when `workspace` is removed, one line each, for the confirmation.
+    static func removalLosses(of workspace: Workspace, assignments: [Assignment], appName: (String) -> String) -> [String] {
+        var losses: [String] = []
+        let keys = [workspace.switchKeys, workspace.moveKeys].filter { !$0.isEmpty }
+        if !keys.isEmpty {
+            losses.append((keys.count == 1 ? "Its shortcut " : "Its shortcuts ") + keys.map(RemapTarget.label).joined(separator: " and "))
+        }
+        let apps = assignments.filter { $0.workspace == workspace.id }.map { appName($0.app) }
+        if !apps.isEmpty {
+            losses.append((apps.count == 1 ? "The app rule of " : "The app rules of ") + apps.joined(separator: ", "))
+        }
+        if !workspace.display.isEmpty { losses.append("Its display pin") }
+        return losses
     }
 
     func removeFloating(_ bundleID: String) {
-        floating.removeAll { $0 == bundleID }
-        save()
-    }
-
-    private func addFloatingWindow() {
-        guard let rule = TilingConfig.floatingRule(app: floatingDraft.app, title: floatingDraft.trimmedTitle),
-              !floatingWindows.contains(rule) else { return }
-        floatingWindows.append(rule)
-        floatingDraft.title = ""
-        save()
+        edit { floating.removeAll { $0 == bundleID } }
     }
 
     func removeFloatingWindow(_ rule: FloatingWindowRule) {
-        floatingWindows.removeAll { $0 == rule }
-        save()
+        edit { floatingWindows.removeAll { $0 == rule } }
     }
 
-    /// Adds the rule being written: an app without a title floats all its windows.
+    /// Adds the rule being written: an app without a title floats all its windows. A rule that
+    /// already exists is not added (the page disables Add and says so).
     func addFloatingRule() {
-        guard floatingDraft.trimmedTitle.isEmpty else { return addFloatingWindow() }
-        guard let app = floatingDraft.app else { return }
-        addFloating(app)
-        floatingDraft.app = nil
+        let app = floatingDraft.app, title = floatingDraft.trimmedTitle
+        guard floatingDraft.canAdd,
+              !Self.floatingRuleExists(app: app, title: title, floating: floating, floatingWindows: floatingWindows) else { return }
+        if title.isEmpty {
+            guard let app else { return }
+            edit { floating.append(app) }
+            floatingDraft.app = nil
+        } else {
+            guard let rule = TilingConfig.floatingRule(app: app, title: title) else { return }
+            edit { floatingWindows.append(rule) }
+            floatingDraft.title = ""
+        }
+    }
+
+    /// Whether the rule for `app` (nil: any) and `title` (empty: every window) is already listed.
+    static func floatingRuleExists(app: String?, title: String, floating: [String], floatingWindows: [FloatingWindowRule]) -> Bool {
+        let title = title.trimmingCharacters(in: .whitespaces)
+        if title.isEmpty { return app.map(floating.contains) ?? false }
+        guard let rule = TilingConfig.floatingRule(app: app, title: title) else { return false }
+        return floatingWindows.contains(rule)
+    }
+
+    /// The running apps that are not in `taken` yet: what an Add App menu offers.
+    static func candidates(_ apps: [(name: String, bundleID: String)], excluding taken: Set<String>) -> [(name: String, bundleID: String)] {
+        apps.filter { !taken.contains($0.bundleID) }
     }
 
     var assignmentCandidates: [(name: String, bundleID: String)] {
-        AppLauncher.runningApps.filter { app in !assignments.contains { $0.app == app.bundleID } }
+        Self.candidates(runningApps, excluding: Set(assignments.map(\.app)))
     }
 
     var scratchpadCandidates: [(name: String, bundleID: String)] {
-        AppLauncher.runningApps.filter { app in !scratchpadApps.contains { $0.bundleID == app.bundleID } }
+        Self.candidates(runningApps, excluding: Set(scratchpadApps.map(\.bundleID)))
     }
 
     static let togglePrefix = "scratchpad "
@@ -312,14 +418,12 @@ final class TilingModel: ObservableObject, FileBackedModel {
 
     func removeScratchpadApp(_ bundleID: String) {
         stopCapture()
-        scratchpadApps.removeAll { $0.bundleID == bundleID }
-        save()
+        edit { scratchpadApps.removeAll { $0.bundleID == bundleID } }
     }
 
     func addAssignment(_ bundleID: String) {
         guard !assignments.contains(where: { $0.app == bundleID }), let first = workspaces.first else { return }
-        assignments.append(Assignment(app: bundleID, workspace: first.id, text: first.savedName))
-        save()
+        edit { assignments.append(Assignment(app: bundleID, workspace: first.id, text: first.name)) }
     }
 
     func chooseAppForAssignment() {
@@ -327,47 +431,81 @@ final class TilingModel: ObservableObject, FileBackedModel {
     }
 
     func setAssignment(_ id: UUID, workspace: UUID) {
-        if assignments.update(id: id, { $0.workspace = workspace }) { save() }
+        edit { assignments.update(id: id) { $0.workspace = workspace } }
     }
 
     func removeAssignment(_ id: UUID) {
-        assignments.removeAll { $0.id == id }
-        save()
+        edit { assignments.removeAll { $0.id == id } }
     }
 
-    /// Typing a name saves shortly after the last keystroke; a name that is empty or another
+    // MARK: - Names
+
+    /// The name field of a workspace: what is typed there, kept per row.
+    func nameDraft(for workspace: Workspace) -> NameDraft {
+        if let draft = nameDrafts[workspace.id] { return draft }
+        let draft = NameDraft(text: workspace.name)
+        nameDrafts[workspace.id] = draft
+        return draft
+    }
+
+    /// A keystroke in a name: saved shortly after the last one. A name that is empty or another
     /// workspace's is shown but not saved (see `nameWarning`). App rules follow by identity.
-    func rename(_ id: UUID, to name: String) {
-        let others = Set(workspaces.filter { $0.id != id }.map(\.savedName))
-        let valid = Self.isValidName(name, others: others)
-        guard workspaces.update(id: id, { $0.name = name; if valid { $0.savedName = name } }) else { return }
-        renameSave.schedule { [weak self] in self?.save() }
+    func nameTyped() {
+        renameSave.schedule { [weak self] in self?.edit {} }
     }
 
     /// Why a typed name is not saved, if it is not.
-    func nameWarning(for workspace: Workspace) -> String? {
-        guard workspace.name != workspace.savedName else { return nil }
-        return workspace.name.trimmingCharacters(in: .whitespaces).isEmpty
-            ? "A workspace needs a name: \"\(workspace.savedName)\" is kept"
-            : "Another workspace has this name: \"\(workspace.savedName)\" is kept"
+    static func nameWarning(typed: String, saved: String, others: Set<String>) -> String? {
+        guard typed != saved, !isValidName(typed, others: others) else { return nil }
+        return typed.trimmingCharacters(in: .whitespaces).isEmpty
+            ? "A workspace needs a name: \"\(saved)\" is kept"
+            : "Another workspace has this name: \"\(saved)\" is kept"
     }
 
     static func isValidName(_ name: String, others: Set<String>) -> Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && !others.contains(name)
     }
 
+    /// The names typed and not saved yet, by workspace.
+    private func typedNames() -> [UUID: String] {
+        var typed: [UUID: String] = [:]
+        for workspace in workspaces {
+            if let text = nameDrafts[workspace.id]?.text, text != workspace.name { typed[workspace.id] = text }
+        }
+        return typed
+    }
+
+    /// The typed names that are valid become the workspaces' names, for the save.
+    private func foldTypedNames() {
+        var spaces = workspaces
+        for index in spaces.indices {
+            guard let text = nameDrafts[spaces[index].id]?.text, text != spaces[index].name else { continue }
+            let others = Set(spaces.indices.filter { $0 != index }.map { spaces[$0].name })
+            if Self.isValidName(text, others: others) { spaces[index].name = text }
+        }
+        assignIfChanged(spaces, to: &workspaces)
+    }
+
+    // MARK: - Shortcuts
+
     /// Shortcuts used more than once, which only the last one would get. Compared by meaning:
-    /// "hyper+h" is "cmd+alt+ctrl+shift+h", "esc" is "escape".
+    /// "hyper+h" is "cmd+alt+ctrl+shift+h", "esc" is "escape". Bindings the pages do not
+    /// show count too.
     func isDuplicate(_ keys: String) -> Bool {
         guard !keys.isEmpty else { return false }
         if duplicateCache == nil {
-            var counts: [String: Int] = [:]
             let all = workspaces.flatMap { [$0.switchKeys, $0.moveKeys] } + shortcuts.map(\.keys)
-                + scratchpadApps.flatMap { [$0.toggleKeys, $0.tileKeys] }
-            for keys in all where !keys.isEmpty { counts[Self.comboKey(keys), default: 0] += 1 }
-            duplicateCache = Set(counts.filter { $0.value > 1 }.keys)
+                + scratchpadApps.flatMap { [$0.toggleKeys, $0.tileKeys] } + otherBindingKeys
+            duplicateCache = Self.duplicates(all)
         }
         return duplicateCache?.contains(Self.comboKey(keys)) ?? false
+    }
+
+    /// The shortcuts (as `comboKey`) found more than once in `keys`; empty keys do not count.
+    static func duplicates(_ keys: [String]) -> Set<String> {
+        var counts: [String: Int] = [:]
+        for keys in keys where !keys.isEmpty { counts[comboKey(keys), default: 0] += 1 }
+        return Set(counts.filter { $0.value > 1 }.keys)
     }
 
     /// What a shortcut means, to compare two: its key code and modifiers, or the text itself
@@ -385,63 +523,101 @@ final class TilingModel: ObservableObject, FileBackedModel {
         return x == y
     }
 
+    /// The keys of the bindings no page shows: all but the last binding of each window
+    /// shortcut and of each scratchpad action (the ones the pages show and edit).
+    static func otherBindingKeys(_ bindings: [[String: Any]]) -> [String] {
+        func action(_ binding: [String: Any]) -> String { binding["action"] as? String ?? "" }
+        var shown = Set<Int>()
+        for shortcut in shortcutActions {
+            if let index = bindings.lastIndex(where: { sameAction(action($0), shortcut) }) { shown.insert(index) }
+        }
+        var lastScratchpad: [String: Int] = [:]
+        for (index, binding) in bindings.enumerated() {
+            let text = action(binding)
+            if text.hasPrefix(togglePrefix) || text.hasPrefix(tilePrefix) { lastScratchpad[text] = index }
+        }
+        shown.formUnion(lastScratchpad.values)
+        return bindings.indices.filter { !shown.contains($0) }.compactMap { bindings[$0]["keys"] as? String }
+    }
+
     // MARK: - Capture
 
     /// Records the next shortcut pressed. Key bindings are paused so an existing
     /// shortcut reaches the window, but key remaps stay on, so caps lock → ⌃⌥⇧ counts.
     /// Escape alone cancels, Delete alone clears the shortcut.
     func startCapture(_ field: Field) {
-        stopCapture()
+        stopCapture(keeping: field)
         capturing = field
-        eventTap.setKeyBindingsSuspended(true)
-        monitor.start(.keyDown) { [weak self] event in
-            guard let self, let name = KeyCodes.name(forKeyCode: event.keyCode) else { return true }
-            let mods = Modifiers(event.modifierFlags)
-            switch (name, mods.isEmpty) {
-            case ("escape", true): cancelCapture()
-            case ("delete", true): finishCapture("")
-            default: finishCapture(mods.text(key: name))
+        recorder.startShortcut { [weak self] input in
+            switch input {
+            case .cancel: self?.stopCapture()
+            case .clear: self?.finishCapture("")
+            case .keys(let keys): self?.finishCapture(keys)
             }
-            return true
         }
     }
 
+    /// Recording ends with nothing recorded (Esc, the cap clicked again, another page, the
+    /// window closed). A scratchpad app with no shortcut yet goes, since an app without
+    /// shortcuts is not saved: the same rule as the incomplete rows of the other pages.
     func stopCapture() {
-        monitor.stop()
-        guard capturing != nil else { return }
-        capturing = nil
-        eventTap.setKeyBindingsSuspended(false)
+        stopCapture(keeping: nil)
     }
 
-    /// Escape: nothing recorded. A scratchpad app just added with no shortcut yet goes again,
-    /// since an app without shortcuts is not saved.
-    private func cancelCapture() {
-        if case .shortcut(let action) = capturing,
-           let pad = scratchpadApps.first(where: { $0.toggleAction == action }),
-           pad.toggleKeys.isEmpty, pad.tileKeys.isEmpty {
-            scratchpadApps.removeAll { $0.bundleID == pad.bundleID }
+    /// `stopCapture`, keeping the scratchpad app of `next` (its other shortcut is recorded next).
+    private func stopCapture(keeping next: Field?) {
+        guard endCapture() else { return }
+        scratchpadApps.removeAll { pad in
+            !pad.hasShortcut && next != .shortcut(pad.toggleAction) && next != .shortcut(pad.tileAction)
         }
-        stopCapture()
+        applyDeferredReload()
+    }
+
+    /// Stops listening; false when nothing was being recorded.
+    @discardableResult
+    private func endCapture() -> Bool {
+        recorder.stop()
+        guard capturing != nil else { return false }
+        capturing = nil
+        return true
     }
 
     private func finishCapture(_ keys: String) {
-        switch capturing {
-        case .switchKeys(let id):
-            workspaces.update(id: id) { $0.switchKeys = keys }
-        case .moveKeys(let id):
-            workspaces.update(id: id) { $0.moveKeys = keys }
-        case .shortcut(let action):
-            if let index = shortcuts.firstIndex(where: { $0.action == action }) { shortcuts[index].keys = keys }
-            if let index = scratchpadApps.firstIndex(where: { $0.toggleAction == action }) { scratchpadApps[index].toggleKeys = keys }
-            if let index = scratchpadApps.firstIndex(where: { $0.tileAction == action }) { scratchpadApps[index].tileKeys = keys }
-        case nil:
-            break
+        guard let field = capturing else { return }
+        endCapture()
+        edit {
+            switch field {
+            case .switchKeys(let id):
+                workspaces.update(id: id) { $0.switchKeys = keys }
+            case .moveKeys(let id):
+                workspaces.update(id: id) { $0.moveKeys = keys }
+            case .shortcut(let action):
+                if let index = shortcuts.firstIndex(where: { $0.action == action }) { shortcuts[index].keys = keys }
+                if let index = scratchpadApps.firstIndex(where: { $0.toggleAction == action }) { scratchpadApps[index].toggleKeys = keys }
+                if let index = scratchpadApps.firstIndex(where: { $0.tileAction == action }) { scratchpadApps[index].tileKeys = keys }
+                // Cleared both shortcuts, or never got one: not saved, so not listed either.
+                scratchpadApps.removeAll { !$0.hasShortcut }
+            }
         }
-        stopCapture()
-        save()
     }
 
     // MARK: - Persistence
+
+    /// A reload skipped while editing, done now: names being typed stay as typed.
+    private func applyDeferredReload() {
+        guard let root = sync.takeDeferredReload() else { return }
+        let typed = typedNames()
+        load(root)
+        for (id, text) in typed { nameDrafts[id]?.text = text }
+    }
+
+    /// A change made here: a reload skipped while editing comes first, so the save that
+    /// follows writes the file's latest lists with the change.
+    private func edit(_ change: () -> Void) {
+        applyDeferredReload()
+        change()
+        save()
+    }
 
     private func load(_ root: [String: Any]) {
         let tiling = ConfigWriter.section("tiling", of: root)
@@ -467,40 +643,61 @@ final class TilingModel: ObservableObject, FileBackedModel {
             accordionPadding: number("accordionPadding", Defaults.accordionPaddingRange, Defaults.defaultAccordionPadding),
             mouseFollowsFocus: tiling["mouseFollowsFocus"] as? Bool ?? Defaults.defaultMouseFollowsFocus,
             floating: floating, floatingWindows: rules)
-        if self.options != options {
-            enabled = options.enabled
-            layout = options.layout
-            gap = options.gap
-            padding = options.padding
-            accordionPadding = options.accordionPadding
-            mouseFollowsFocus = options.mouseFollowsFocus
-            self.floating = options.floating
-            floatingWindows = options.floatingWindows
-        }
-        loaded = options
+        assignIfChanged(options.enabled, to: &enabled)
+        assignIfChanged(options.layout, to: &layout)
+        assignIfChanged(options.gap, to: &gap)
+        assignIfChanged(options.padding, to: &padding)
+        assignIfChanged(options.accordionPadding, to: &accordionPadding)
+        assignIfChanged(options.mouseFollowsFocus, to: &mouseFollowsFocus)
+        assignIfChanged(options.floating, to: &self.floating)
+        assignIfChanged(options.floatingWindows, to: &floatingWindows)
 
-        workspaces = (tiling["workspaces"] as? [[String: Any]] ?? []).enumerated().map { index, entry in
-            let name = TilingConfig.workspaceName(entry["name"] as? String, at: index)
-            return Workspace(name: name, savedName: name,
-                             switchKeys: entry["switch"] as? String ?? "",
-                             moveKeys: entry["move"] as? String ?? "",
-                             display: entry["display"] as? String ?? "")
+        // Rows keep their ids while they mean the same (P8): SwiftUI keeps them, and a focused
+        // name field its focus.
+        var spaces = (tiling["workspaces"] as? [[String: Any]] ?? []).enumerated().map { index, entry in
+            Workspace(name: TilingConfig.workspaceName(entry["name"] as? String, at: index),
+                      switchKeys: entry["switch"] as? String ?? "",
+                      moveKeys: entry["move"] as? String ?? "",
+                      display: entry["display"] as? String ?? "")
         }
-        assignments = Self.assignments(from: tiling["assign"] as? [[String: Any]] ?? [], workspaces: workspaces)
+        let spaceIDs = reusedIDs(for: spaces.map(\.name), from: workspaces.map { ($0.name, $0.id) })
+        for index in spaces.indices { spaces[index].id = spaceIDs[index] }
+        assignIfChanged(spaces, to: &workspaces)
+        syncNameDrafts()
+
+        var assigned = Self.assignments(from: tiling["assign"] as? [[String: Any]] ?? [], workspaces: workspaces)
+        let ruleIDs = reusedIDs(for: assigned.map { [$0.app, $0.text] }, from: assignments.map { ([$0.app, $0.text], $0.id) })
+        for index in assigned.indices { assigned[index].id = ruleIDs[index] }
+        assignIfChanged(assigned, to: &assignments)
 
         let bindings = ConfigWriter.section("keyboard", of: root)["bindings"] as? [[String: Any]] ?? []
-        shortcuts = Self.shortcutActions.map { action in
+        assignIfChanged(Self.shortcutActions.map { action in
             let keys = bindings.last { Self.sameAction($0["action"] as? String ?? "", action) }?["keys"] as? String
             return Shortcut(action: action, keys: keys ?? "")
+        }, to: &shortcuts)
+        // A scratchpad app being recorded has no binding yet: it stays.
+        let pads = Self.scratchpadApps(from: bindings)
+        let recording = scratchpadApps.filter { pad in !pad.hasShortcut && !pads.contains { $0.bundleID == pad.bundleID } }
+        assignIfChanged(pads + recording, to: &scratchpadApps)
+        assignIfChanged(Self.otherBindingKeys(bindings), to: &otherBindingKeys)
+        sync.didLoad(root, options)
+    }
+
+    /// The name fields show the names loaded; the rows of removed workspaces lose theirs.
+    private func syncNameDrafts() {
+        for (id, draft) in nameDrafts {
+            if let workspace = workspaces.first(where: { $0.id == id }) {
+                assignIfChanged(workspace.name, to: &draft.text)
+            } else {
+                nameDrafts[id] = nil
+            }
         }
-        scratchpadApps = Self.scratchpadApps(from: bindings)
-        synced.record(root)
     }
 
     /// The app rules of the file, each pointing at its workspace the way the config resolves it
     /// (by name, else by number).
     static func assignments(from entries: [[String: Any]], workspaces: [Workspace]) -> [Assignment] {
-        let names = workspaces.map(\.savedName)
+        let names = workspaces.map(\.name)
         return entries.compactMap { entry in
             guard let app = entry["app"] as? String, let text = entry["workspace"] as? String else { return nil }
             let index = TilingConfig.workspaceIndex(text, names: names)
@@ -512,7 +709,7 @@ final class TilingModel: ObservableObject, FileBackedModel {
     /// ("2" stays "2"), else gets the workspace's name. Rules of a removed workspace go; a rule
     /// that named no workspace to begin with stays as it was (the config reports it).
     static func assignEntries(_ assignments: [Assignment], workspaces: [Workspace]) -> [[String: Any]] {
-        let names = workspaces.map(\.savedName)
+        let names = workspaces.map(\.name)
         return assignments.compactMap { rule in
             guard let id = rule.workspace else { return ["app": rule.app, "workspace": rule.text] }
             guard let index = workspaces.firstIndex(where: { $0.id == id }) else { return nil }
@@ -541,17 +738,18 @@ final class TilingModel: ObservableObject, FileBackedModel {
 
     private func save() {
         renameSave.cancel()
-        let error = ConfigWriter.save(recording: &synced) { root in
-            ConfigWriter.edit(&root, section: "tiling", saveTiling)
+        spacingSave.cancel()
+        foldTypedNames()
+        let old = sync.loaded
+        sync.save(options) { root in
+            ConfigWriter.edit(&root, section: "tiling") { saveTiling(&$0, old: old) }
             ConfigWriter.edit(&root, section: "keyboard", saveBindings)
         }
-        if error == nil { loaded = options }
-        Optional.assignChange(error, to: &saveError)
     }
 
-    /// The options changed since the load, the workspaces, floating and app rules.
-    private func saveTiling(_ tiling: inout [String: Any]) {
-        let old = loaded
+    /// The options changed since the load (`old`), the workspaces, floating and app rules.
+    /// Empty lists are left out, like every list the pages write.
+    private func saveTiling(_ tiling: inout [String: Any], old: Options?) {
         if enabled != old?.enabled { tiling["enabled"] = enabled }
         if layout != old?.layout { tiling["layout"] = layout.rawValue }
         if gap != old?.gap { tiling["gap"] = gap }
@@ -569,7 +767,7 @@ final class TilingModel: ObservableObject, FileBackedModel {
         let rules = Self.assignEntries(assignments, workspaces: workspaces)
         tiling["assign"] = rules.isEmpty ? nil : rules
         tiling["workspaces"] = workspaces.isEmpty ? nil : workspaces.map { workspace -> [String: Any] in
-            var entry: [String: Any] = ["name": workspace.savedName]
+            var entry: [String: Any] = ["name": workspace.name]
             if !workspace.switchKeys.isEmpty { entry["switch"] = workspace.switchKeys }
             if !workspace.moveKeys.isEmpty { entry["move"] = workspace.moveKeys }
             if !workspace.display.isEmpty { entry["display"] = workspace.display }
@@ -584,8 +782,9 @@ final class TilingModel: ObservableObject, FileBackedModel {
             desired.append((action: pad.toggleAction, keys: pad.toggleKeys))
             desired.append((action: pad.tileAction, keys: pad.tileKeys))
         }
-        keyboard["bindings"] = Self.mergedBindings(keyboard["bindings"] as? [[String: Any]] ?? [], desired: desired,
-                                                   scratchpadActions: Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] }))
+        let bindings = Self.mergedBindings(keyboard["bindings"] as? [[String: Any]] ?? [], desired: desired,
+                                           scratchpadActions: Set(scratchpadApps.flatMap { [$0.toggleAction, $0.tileAction] }))
+        keyboard["bindings"] = bindings.isEmpty ? nil : bindings
     }
 
     /// `bindings` with the `desired` keys of each action. Each action's last binding (the one
@@ -618,6 +817,8 @@ final class TilingModel: ObservableObject, FileBackedModel {
     }
 }
 
+extension TilingModel: CaptureModel {}
+
 /// The floating rule being written on the Window Rules page: app (nil for any) and title text.
 final class FloatingRuleDraft: ObservableObject {
     @Published var app: String?
@@ -627,4 +828,14 @@ final class FloatingRuleDraft: ObservableObject {
 
     /// A rule needs an app, a title, or both.
     var canAdd: Bool { app != nil || !trimmedTitle.isEmpty }
+}
+
+/// A workspace's name as typed in its field: its own object, so a keystroke redraws that row
+/// (the field and its warning), not the whole Workspaces page.
+final class NameDraft: ObservableObject {
+    @Published var text: String
+
+    init(text: String) {
+        self.text = text
+    }
 }

@@ -14,7 +14,7 @@ import SwiftUI
 enum SettingsSnapshot {
     private static let flag = "--render-settings"
     private static let useScreencapture = ProcessInfo.processInfo.environment["HYPERSPACE_SNAPSHOT_SCREENCAPTURE"] == "1"
-    private static let sizes = [SettingsWindowController.minimumSize, NSSize(width: 900, height: 640)]
+    private static let sizes = [SettingsWindowController.minimumSize, SettingsWindowController.defaultSize]
     private static let scale = 2
 
     /// The folder given after the flag, when the app was started to render the pages.
