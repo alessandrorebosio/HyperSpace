@@ -99,14 +99,19 @@ struct RawConfig: Decodable {
 /// so matching an event is a single array read with no hashing or allocation.
 struct TapConfig: Equatable {
     static let defaultReverseScroll = false
-    static let keySlots = 128 << 4
-    static let buttonSlots = 32 << 4
+    /// Virtual key codes are below 128, mouse button numbers below 32.
+    static let keyCodeCount = 128
+    static let buttonCount = 32
+    /// `Modifiers` fits in 4 bits: a slot is the code shifted left by them, plus the modifiers.
+    private static let modifierBits = 4
+    static let keySlots = keyCodeCount << modifierBits
+    static let buttonSlots = buttonCount << modifierBits
 
     var keyTable = [Int16](repeating: -1, count: keySlots)
     var buttonTable = [Int16](repeating: -1, count: buttonSlots)
     var actions: [Action] = []
     /// Carrier key code → index in `carriers` (-1 when the key is not a carrier).
-    var carrierTable = [Int8](repeating: -1, count: 128)
+    var carrierTable = [Int8](repeating: -1, count: keyCodeCount)
     var carriers: [Carrier] = []
     var reverseScroll = TapConfig.defaultReverseScroll
     var dragModifier: Modifiers?
@@ -116,11 +121,11 @@ struct TapConfig: Equatable {
     /// pointer still while a slider or a corner tap is in progress (`EventTap.setPointerHeld`).
     var holdsPointer = false
     /// A trackpad corner has an action: clicks are watched, to drop the ones a tap there
-    /// makes with tap to click (`EventTap.setClicksHeld`).
+    /// makes with tap to click (`EventTap.setCornerClicksHeld`).
     var holdsCornerClicks = false
 
     static func slot(_ code: Int, _ mods: Modifiers) -> Int {
-        code << 4 | Int(mods.rawValue)
+        code << modifierBits | Int(mods.rawValue)
     }
 
     mutating func bindKey(_ combo: KeyCombo, _ action: Action) {
@@ -223,7 +228,8 @@ struct TilingConfig: Equatable {
     var masterRatio = TilingConfig.defaultMasterRatio
     var floating: Set<String> = []
     var floatingWindows: [FloatingWindowRule] = []
-    /// Workspace names; empty means a single implicit workspace.
+    /// Workspace names. The window manager adds unnamed ones so that every display has one:
+    /// empty means one implicit workspace per display.
     var workspaces: [String] = []
     /// Bundle id → workspace index for windows to open in.
     var assignments: [String: Int] = [:]
@@ -436,7 +442,8 @@ struct Config {
         var usedCodes = boundKeyCodes
         for item in parsed {
             usedHID.insert(item.from.hidUsage)
-            if let code = item.from.keyCode { usedCodes.insert(code) }
+            // A hex source ("0x46") has no key code of its own: the one of the key with its usage.
+            if let code = item.from.keyCode ?? KeyCodes.keyCode(forHID: item.from.hidUsage) { usedCodes.insert(code) }
             if case .key(let hid) = item.to {
                 usedHID.insert(hid)
                 if let code = KeyCodes.keyCode(forHID: hid) { usedCodes.insert(code) }
@@ -448,8 +455,8 @@ struct Config {
             case .key(let hid):
                 remaps.append(RemapRule(from: item.from.hidUsage, to: hid, target: item.target))
             case .combination(let mods, let keyCode, _):
-                let (carrier, isNew) = try pool.carrier(for: "\(mods.rawValue)-\(keyCode.map(String.init) ?? "")")
-                if isNew { tap.addCarrier(keyCode: carrier.keyCode!, .init(modifiers: mods, keyCode: keyCode)) }
+                let (carrier, carrierCode, isNew) = try pool.carrier(for: "\(mods.rawValue)-\(keyCode.map(String.init) ?? "")")
+                if isNew { tap.addCarrier(keyCode: carrierCode, .init(modifiers: mods, keyCode: keyCode)) }
                 remaps.append(RemapRule(from: item.from.hidUsage, to: carrier.hidUsage, target: item.target))
             }
         }
@@ -482,12 +489,15 @@ struct Config {
     private mutating func parseMouse(_ mouse: RawConfig.Mouse) throws {
         tap.reverseScroll = mouse.reverseScroll ?? TapConfig.defaultReverseScroll
         if let drag = mouse.dragModifier, !drag.isEmpty {
-            tap.dragModifier = try Modifiers.parse(drag)
+            let modifiers = try Modifiers.parse(drag)
+            // No modifier at all ("+") would make every plain click a window drag.
+            guard !modifiers.isEmpty else { throw ConfigError("dragModifier names no modifier (got '\(drag)')") }
+            tap.dragModifier = modifiers
         }
         for button in mouse.buttons ?? [] {
             // 0 and 1 are left/right click: remapping them would make the mouse unusable.
-            guard (2..<32).contains(button.button) else {
-                throw ConfigError("mouse button must be between 2 and 31 (got \(button.button))")
+            guard (2..<TapConfig.buttonCount).contains(button.button) else {
+                throw ConfigError("mouse button must be between 2 and \(TapConfig.buttonCount - 1) (got \(button.button))")
             }
             tap.bindButton(button.button, try Modifiers.parse(button.modifiers ?? ""), try Action.parse(button.action))
         }

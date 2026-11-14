@@ -39,7 +39,8 @@ enum RemapTarget: Equatable {
         return .combination(mods, keyCode: keyCode, keyName: keyName)
     }
 
-    private static func singleModifierKey(_ mods: Modifiers) -> String? {
+    /// The left key of a single generic modifier; nil for none or several.
+    static func singleModifierKey(_ mods: Modifiers) -> String? {
         switch mods {
         case .cmd: return "left_command"
         case .alt: return "left_option"
@@ -68,21 +69,23 @@ enum RemapTarget: Equatable {
 /// F13/F14/F15, and the tap tells keys apart by key code only).
 struct CarrierPool {
     private static let candidates = ["f20", "f19", "f18", "f17", "f16", "f15", "f14", "f13"]
-    private var free: [KeyInfo]
-    private var assigned: [String: KeyInfo] = [:]
+    private typealias Key = (info: KeyInfo, keyCode: UInt16)
+    private var free: [Key]
+    private var assigned: [String: Key] = [:]
 
     init(excludingHID usedHID: Set<UInt64>, keyCodes usedCodes: Set<UInt16>) {
-        free = Self.candidates.compactMap { KeyCodes.lookup($0) }.filter { key in
-            !usedHID.contains(key.hidUsage) && !usedCodes.contains(key.keyCode!)
-        }
+        free = Self.candidates.compactMap { name -> Key? in
+            guard let key = KeyCodes.lookup(name), let code = key.keyCode else { return nil }
+            return (key, code)
+        }.filter { !usedHID.contains($0.info.hidUsage) && !usedCodes.contains($0.keyCode) }
     }
 
     /// The same combination always shares one carrier.
-    mutating func carrier(for id: String) throws -> (key: KeyInfo, isNew: Bool) {
-        if let key = assigned[id] { return (key, false) }
-        guard !free.isEmpty else { throw ConfigError("too many different combinations (at most 8)") }
+    mutating func carrier(for id: String) throws -> (key: KeyInfo, keyCode: UInt16, isNew: Bool) {
+        if let key = assigned[id] { return (key.info, key.keyCode, false) }
+        guard !free.isEmpty else { throw ConfigError("too many different combinations (at most \(Self.candidates.count))") }
         let key = free.removeFirst()
         assigned[id] = key
-        return (key, true)
+        return (key.info, key.keyCode, true)
     }
 }

@@ -10,14 +10,21 @@ import AppKit
 /// 3. Otherwise a native back/forward mouse button, handled by Chrome, Firefox, Electron
 ///    and JetBrains apps on their own.
 enum Navigation {
-    private struct Shortcut {
+    /// A menu item's shortcut as Accessibility reports it.
+    struct Shortcut {
         let char: String
-        /// kAXMenuItemModifier* bits: 1 shift, 2 option, 4 control, 8 no command.
+        /// `kAXMenuItemModifier*` bits (HIServices/AXRoleConstants.h).
         let modifiers: Int
+
+        /// ⌘ is implied unless `noCommand` is set.
+        static let shift = 1 << 0
+        static let option = 1 << 1
+        static let control = 1 << 2
+        static let noCommand = 1 << 3
     }
 
     /// How a Back or Forward menu item can be recognized.
-    private struct Matcher {
+    struct Matcher {
         let shortcuts: [Shortcut]
         let identifiers: Set<String>
         /// Lowercased titles in common languages; only items with a shortcut qualify.
@@ -31,17 +38,21 @@ enum Navigation {
         }
     }
 
-    private static let backMatcher = Matcher(
-        shortcuts: [Shortcut(char: "[", modifiers: 0), Shortcut(char: "-", modifiers: 4 | 8)],
+    /// ⌘[ / ⌘] and the ⌃- / ⌃⇧- of some editors.
+    static let backMatcher = Matcher(
+        shortcuts: [Shortcut(char: "[", modifiers: 0),
+                    Shortcut(char: "-", modifiers: Shortcut.control | Shortcut.noCommand)],
         identifiers: ["Back", "goBack:", "GoBack"],
         titles: ["back", "go back", "indietro", "vai indietro", "zurück", "précédent", "retour", "atrás", "anterior", "terug", "tillbaka"]
     )
-    private static let forwardMatcher = Matcher(
-        shortcuts: [Shortcut(char: "]", modifiers: 0), Shortcut(char: "-", modifiers: 1 | 4 | 8)],
+    static let forwardMatcher = Matcher(
+        shortcuts: [Shortcut(char: "]", modifiers: 0),
+                    Shortcut(char: "-", modifiers: Shortcut.shift | Shortcut.control | Shortcut.noCommand)],
         identifiers: ["Forward", "goForward:", "GoForward"],
         titles: ["forward", "go forward", "avanti", "vai avanti", "vorwärts", "suivant", "avancer", "adelante", "siguiente", "vooruit", "framåt"]
     )
-    private static let xcode = (back: try! KeyCombo.parse("ctrl+cmd+left"), forward: try! KeyCombo.parse("ctrl+cmd+right"))
+    /// ⌃⌘← / ⌃⌘→.
+    private static let xcode = (back: try? KeyCombo.parse("ctrl+cmd+left"), forward: try? KeyCombo.parse("ctrl+cmd+right"))
 
     /// The menu bar is searched here, off the main thread: one AX call per menu item, up to
     /// 0.3 s each for a slow app. The cache and its pruning are confined to this queue.
@@ -55,7 +66,7 @@ enum Navigation {
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         log.debug("navigate \(back ? "back" : "forward", privacy: .public) in \(app.bundleIdentifier ?? "?", privacy: .public)")
         if app.bundleIdentifier == "com.apple.dt.Xcode" {
-            KeyEmitter.post(back ? xcode.back : xcode.forward)
+            if let combo = back ? xcode.back : xcode.forward { KeyEmitter.post(combo) }
             return
         }
         let pid = app.processIdentifier
@@ -71,7 +82,7 @@ enum Navigation {
         if let item = cache[pid]?[back] {
             let result = AXUIElementPerformAction(item, kAXPressAction as CFString)
             log.debug("navigate: cached menu item press -> \(result.rawValue)")
-            if result != .invalidUIElement && result != .cannotComplete { return true }
+            if pressed(result) { return true }
             cache[pid]?[back] = nil // the app rebuilt its menus
         }
         let app = AXUIElementCreateApplication(pid)
@@ -87,10 +98,17 @@ enum Navigation {
             log.debug("navigate: no Back/Forward menu item")
             return false
         }
-        cache[pid, default: [:]][back] = item
         let result = AXUIElementPerformAction(item, kAXPressAction as CFString)
         log.debug("navigate: menu item \(AX.string(item, kAXTitleAttribute) ?? "?", privacy: .public) press -> \(result.rawValue)")
+        guard pressed(result) else { return false }
+        cache[pid, default: [:]][back] = item
         return true
+    }
+
+    /// Whether a press went through, the same rule for a cached item and a new one: a stale
+    /// element, or a press the app did not complete, falls back to the mouse button.
+    private static func pressed(_ result: AXError) -> Bool {
+        result != .invalidUIElement && result != .cannotComplete
     }
 
     /// Depth-first through menu bar items, menus, items and submenus. Each element costs
@@ -143,6 +161,14 @@ enum SystemAction: String {
     }
 }
 
+/// NX_SYSDEFINED events (IOKit/hidsystem/IOLLEvent.h): the media, volume and brightness keys
+/// arrive as their subtype NX_SUBTYPE_AUX_CONTROL_BUTTONS; other subtypes come from the mouse.
+enum SystemDefinedEvent {
+    /// The event type (14), as a CGEvent reports it.
+    static let type = UInt32(NSEvent.EventType.systemDefined.rawValue)
+    static let mediaKeySubtype: Int16 = 8
+}
+
 /// Media keys, posted as the same system-defined events the keyboard sends.
 enum MediaKey: String {
     case playPause = "play_pause"
@@ -184,7 +210,7 @@ enum MediaKey: String {
             let state = down ? 0xA00 : 0xB00
             let event = NSEvent.otherEvent(
                 with: .systemDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state)),
-                timestamp: 0, windowNumber: 0, context: nil, subtype: 8,
+                timestamp: 0, windowNumber: 0, context: nil, subtype: SystemDefinedEvent.mediaKeySubtype,
                 data1: keyType << 16 | state, data2: -1
             )
             guard let cgEvent = event?.cgEvent else { continue }

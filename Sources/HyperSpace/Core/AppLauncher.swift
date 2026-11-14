@@ -3,7 +3,7 @@ import AppKit
 /// Finds and opens apps named by bundle identifier ("com.apple.Terminal") or name ("Terminal").
 enum AppLauncher {
     /// Names already resolved to a bundle identifier (main thread only): shortcuts such as
-    /// `scratchpad <App>` ask on every press. Dropped when the app is no longer found.
+    /// `scratchpad <App>` ask on every press. Kept for the app's run.
     private static var bundleIDs: [String: String] = [:]
 
     private static func installedURL(forBundleID id: String) -> URL? {
@@ -18,10 +18,8 @@ enum AppLauncher {
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    private static func url(for name: String) -> URL? {
-        installedURL(forBundleID: name) ?? urlInFolders(named: name)
-    }
-
+    /// The bundle id `name` stands for: itself when an app has it, else a running app's
+    /// (by the name it shows), else the one of the app of that name in the usual folders.
     static func bundleID(for name: String) -> String? {
         if let known = bundleIDs[name] { return known }
         let resolved: String?
@@ -37,15 +35,19 @@ enum AppLauncher {
     }
 
     /// Opens (or brings forward, asking a running app with no window for a new one) the app.
+    /// The name is resolved as `bundleID(for:)` does, so what opens is the app the scratchpad
+    /// looks for; an app no longer installed is still looked for in the folders.
     static func open(_ name: String) {
-        guard let url = url(for: name) else {
-            bundleIDs[name] = nil
+        guard let url = bundleID(for: name).flatMap(installedURL(forBundleID:)) ?? urlInFolders(named: name) else {
             log.error("launch: app not found: \(name, privacy: .public)")
             return
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in }
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+            guard let error else { return }
+            log.error("launch: cannot open \(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - For the settings pages (main thread)

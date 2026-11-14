@@ -15,8 +15,10 @@ import os
 /// Trackpads are only watched while a slider or a corner is on; ones connected later are picked
 /// up from IOKit match notifications and on wake.
 final class EdgeSliders {
-    /// The one instance the C callback reaches.
-    fileprivate static var shared: EdgeSliders?
+    /// The one instance the C callback reaches (MultitouchSupport's callback has no context
+    /// pointer). Set on the main thread before any trackpad is registered and read on the
+    /// multitouch thread, hence the lock.
+    fileprivate static let shared = OSAllocatedUnfairLock<EdgeSliders?>(initialState: nil)
 
     private struct State {
         /// The edges' actions (all `none` with the sliders off) and the corners'.
@@ -30,7 +32,8 @@ final class EdgeSliders {
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
-    private let api = MultitouchAPI.load()
+    /// The private framework, loaded the first time a slider or a corner is on (main thread).
+    private lazy var api = MultitouchAPI.load()
     /// Main thread: the devices being listened to, kept alive by their list.
     private var deviceList: CFArray?
     private var devices: [UnsafeMutableRawPointer] = []
@@ -53,11 +56,12 @@ final class EdgeSliders {
         self.onHoldChange = onHoldChange
         self.onCornerClicksHeld = onCornerClicksHeld
         self.onAction = onAction
-        Self.shared = self
+        Self.shared.withLock { $0 = self }
     }
 
     /// The trackpads listened to.
     var deviceCount: Int { devices.count }
+    /// Whether MultitouchSupport loads (loading it if it has not been yet).
     var isAvailable: Bool { api != nil }
 
     func apply(_ newConfig: TrackpadConfig) {
@@ -92,7 +96,8 @@ final class EdgeSliders {
     /// Stops listening and lets the pointer go (on quit too).
     func stop() {
         restartDebouncer.cancel()
-        if let api {
+        // Not `api`: stopping must not load the framework when nothing was ever started.
+        if !devices.isEmpty, let api {
             for device in devices {
                 api.unregister(device, contactCallback)
                 _ = api.stop(device)
@@ -119,7 +124,12 @@ final class EdgeSliders {
             // The Magic Mouse has a touch surface too: the sliders are for trackpads.
             if MultitouchAPI.mouseFamilies.contains(family) { continue }
             api.register(device, contactCallback)
-            _ = api.start(device, 0)
+            let status = api.start(device, 0)
+            guard status == 0 else {
+                log.error("edge sliders: a trackpad (family \(family)) did not start: \(status)")
+                api.unregister(device, contactCallback)
+                continue
+            }
             devices.append(device)
         }
         log.info("trackpad edges and corners: \(self.devices.count) trackpad(s)")
@@ -230,7 +240,7 @@ private enum TouchLayout {
 }
 
 private let contactCallback: MultitouchAPI.Callback = { device, touches, count, time, _ in
-    guard let device, let sliders = EdgeSliders.shared else { return 0 }
+    guard let device, let sliders = EdgeSliders.shared.withLock({ $0 }) else { return 0 }
     // Only the number of fingers on the surface and the first of them: nothing is allocated
     // per frame (about 100 a second).
     var first: EdgeTouch?

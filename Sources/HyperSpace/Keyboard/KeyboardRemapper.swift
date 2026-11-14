@@ -16,11 +16,12 @@ enum KeyboardTarget: Equatable {
     static let externalText = "external"
 
     init(_ text: String?) {
-        switch text?.lowercased() ?? "" {
+        guard let text else { self = .all; return }
+        switch text.lowercased() {
         case "", Self.allText: self = .all
         case Self.builtInText, "built-in", "internal": self = .builtIn
         case Self.externalText: self = .external
-        default: self = .product(text!)
+        default: self = .product(text)
         }
     }
 
@@ -129,7 +130,10 @@ final class KeyboardRemapper {
             let desired = suspended ? NSArray() : Self.mapping(rules, product: product, builtIn: keyboard.builtIn)
             let current = IOHIDServiceClientCopyProperty(service, Self.mappingKey) as? NSArray ?? []
             guard !current.isEqual(desired) else { continue }
-            IOHIDServiceClientSetProperty(service, Self.mappingKey, desired as CFArray)
+            guard IOHIDServiceClientSetProperty(service, Self.mappingKey, desired as CFArray) else {
+                log.error("keyboard '\(product, privacy: .public)': cannot set \(desired.count) mapping(s)")
+                continue
+            }
             log.info("keyboard '\(product, privacy: .public)': \(desired.count) mapping(s)")
         }
     }
@@ -140,10 +144,10 @@ final class KeyboardRemapper {
             if let existing = bySource[rule.from], existing.specificity > rule.target.specificity { continue }
             bySource[rule.from] = (rule.target.specificity, rule.to)
         }
-        return bySource.keys.sorted().map { from in
+        return bySource.sorted { $0.key < $1.key }.map { from, mapping in
             [
                 "HIDKeyboardModifierMappingSrc": NSNumber(value: from),
-                "HIDKeyboardModifierMappingDst": NSNumber(value: bySource[from]!.to),
+                "HIDKeyboardModifierMappingDst": NSNumber(value: mapping.to),
             ] as NSDictionary
         } as NSArray
     }

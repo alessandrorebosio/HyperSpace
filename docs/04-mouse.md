@@ -51,7 +51,7 @@ Universal Back/Forward, independent of language and layout (`Navigation` in `Sys
 1. **Xcode** (`com.apple.dt.Xcode`): sends ⌃⌘← / ⌃⌘→.
 2. Otherwise it presses, through Accessibility, the frontmost app's **Back/Forward menu item**. The item is recognised by identifier (`Back`, `goBack:`, `GoBack`, …), or by unlocalised
    shortcut (⌘[ / ⌘] or ⌃- / ⌃⇧-), or by title in several languages (English, Italian "indietro"/"vai indietro"/"avanti"/"vai avanti", German, French, Spanish, Dutch, Swedish; only items that have a shortcut qualify).
-   The menu bar is searched to depth 2 first, then up to 5 (to avoid descending straight into history/bookmark submenus). The found item is cached per app (cache pruned every 5 minutes of apps no longer running).
+   The menu bar is searched to depth 2 first, then up to 5 (to avoid descending straight into history/bookmark submenus). The item is pressed and, if the press went through, cached per app (cache pruned every 5 minutes of apps no longer running); a cached item that fails (the app rebuilt its menus) is looked up again. A press that fails falls through to step 3.
 3. If the app has no such item: sends a real back/forward mouse button (button 3/4), which Chrome, Firefox, Electron and JetBrains apps handle themselves.
 
 ### `click <modifiers>`
@@ -61,6 +61,8 @@ A left click at the pointer position with those modifiers held (e.g. `click cmd`
 ## Modifier + drag (`dragModifier`)
 
 - Sets the modifiers (e.g. `ctrl+alt`). With **exactly** those modifiers held: **left drag = move the window**, **right drag = resize**. The click never reaches the window (it and its drag and release are swallowed).
+  An empty value (or no key) turns it off; a value that names no modifier (`"+"`) is a config error, since every plain click would become a drag.
+- The drag belongs to the button that started it: only that button's release ends it. Pressing the other button (left or right) meanwhile neither restarts nor ends it, and the app sees neither that press nor its release.
 - On press, HyperSpace finds the window under the pointer (`AXUIElementCopyElementAtPosition`), focuses it and remembers its position and size. During the drag it moves/resizes through AX
   on the app's `AXQueues` queue (focus first, then the moves, in order), one write at a time with only the newest point waiting; only the latest position travels from the tap to the main thread. Resize has a 160×100 minimum.
 - No retile happens while dragging (`drag != nil`).
@@ -87,7 +89,7 @@ Off by default. When on, **one finger slid along an edge** of a trackpad (up and
 - **The pointer is held still** while the finger is down in the band: the event tap drops the pointer moves and, should the pointer move anyway, puts it back where the slide started. With the sliders on the tap therefore listens to pointer moves, letting them all through untouched except during a slide. The pointer may move a pixel or two before the touch is recognised. Moving across the edge by more than 5% before the first notch makes it an ordinary pointer move: the hold lifts and the finger is ignored until lifted. The hold needs the Accessibility permission (the event tap does).
 - A second finger (a scroll, a two-finger click) or pressing the trackpad (a click-drag) ends the slider until every finger is lifted; a finger that starts outside the bands, or on an edge set to `none`, is never a slider. Clicks and taps are not affected.
 - Built-in trackpads and Magic Trackpads are used; the Magic Mouse (whose surface is also a multitouch device) is not. Trackpads connected later are picked up when macOS reports them and after waking.
-- The touches come from Apple's private **MultitouchSupport** framework (as in BetterTouchTool or MiddleClick), loaded at run time: the recognition is in `EdgeSliderTracker` (pure, tested), the framework glue in `EdgeSliders`. If the framework is missing or changes, the sliders do nothing and *Copy Debug Info* says so.
+- The touches come from Apple's private **MultitouchSupport** framework (as in BetterTouchTool or MiddleClick), loaded at run time the first time a slider or a corner is on (never while they are off): the recognition is in `EdgeSliderTracker` (pure, tested), the framework glue in `EdgeSliders`. If the framework is missing or changes, the sliders do nothing and *Copy Debug Info* says so; a trackpad that does not start is logged and left out of the count.
 - Settings: the **Trackpad** page: the *Edge sliders* switch and a menu per edge.
 
 ## Trackpad corners

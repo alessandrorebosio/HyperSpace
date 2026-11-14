@@ -5,7 +5,7 @@ an unknown action or bad arguments is a config error. The verb is case-insensiti
 
 Window-manager commands only work while tiling is on (`running`), otherwise they do nothing.
 
-**Holding a shortcut**: an action runs once per press. Only the ones that move in steps repeat with the key's autorepeat: `focus`, `swap`, `resize`, `ratio`, `key` and `media` (`Action.repeats`).
+**Holding a shortcut**: an action runs once per press. Only the ones that move in steps repeat with the key's autorepeat: `focus`, `swap`, `resize`, `ratio`, `key` and `media` (`Action.repeats`). The repeats keep the action of the press even if a modifier is released meanwhile ([Keyboard](03-keyboard.md#shortcuts-bindings)).
 
 **Names**: config keys are camelCase (`reverseScroll`), key names and arguments snake_case (`caps_lock`, `mission_control`, `play_pause`), verbs kebab-case (`move-to-workspace`). `media next` / `previous` also accept the key names `next_track` / `previous_track`.
 
@@ -52,7 +52,7 @@ Details in [Scratchpad](08-scratchpad.md).
 
 | Action | Arguments | Effect |
 |---|---|---|
-| `launch` | `<App name or bundle id>` | Open or bring the app forward. Looks up the bundle id first, then an `.app` of that name in `/Applications`, `/System/Applications`, `/System/Applications/Utilities`, `/Applications/Utilities`, `~/Applications`. If not found it logs an error. |
+| `launch` | `<App name or bundle id>` | Open or bring the app forward. The name resolves as for `scratchpad`: a bundle id, else a running app showing that name, else an `.app` of that name in `/Applications`, `/System/Applications`, `/System/Applications/Utilities`, `/Applications/Utilities`, `~/Applications`. If it is not found, or macOS cannot open it, an error is logged. |
 | `shell` | `<command>` | Run the command with `/bin/sh -c`; stdout and stderr discarded; the process is tracked until it ends. Requires an argument. |
 | `key` | `<combo>`, e.g. `key cmd+shift+4` | Send a synthetic key combination. Symbols are translated to the active layout ([Keyboard](03-keyboard.md#keyboard-layouts-and-symbols)). |
 | `reload` | — | Reload `config.json`. |
