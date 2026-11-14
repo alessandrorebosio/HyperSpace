@@ -33,7 +33,9 @@ On first launch macOS asks for the Accessibility permission; HyperSpace starts b
 
 ## Configuration
 
-`~/.hyperspace/config.json` — created on first launch, reloaded automatically on every save.
+`~/.config/hyperspace/config.json` — created on first launch, reloaded automatically on every save. It can live anywhere:
+**Settings → General → Move…** moves it, **Use Another File…** reads one you already have (a dotfiles folder, say), and
+HyperSpace remembers the choice. A config from an older version in `~/.hyperspace/config.json` keeps working while it is the only one.
 If the file has an error the menu bar icon turns into ⚠︎ and the menu shows the message; the last valid config stays active.
 
 ```json

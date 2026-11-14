@@ -1,10 +1,11 @@
 import AppKit
 
-/// Loads `~/.hyperspace/config.json` and reloads it when it changes.
+/// Loads the config file (`ConfigLocation`) and reloads it when it changes.
 /// Watching uses a kqueue vnode source: zero cost while the file is untouched.
 final class ConfigStore {
-    static let url = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".hyperspace/config.json")
+    /// The config file, read once at launch and changed only by `relocate`: the writers and the
+    /// watcher always agree on it, whatever appears on disk meanwhile.
+    private(set) static var url = ConfigLocation.current
 
     /// Posted on the main thread after every load, successful or not (`onChange` has run):
     /// the settings window follows the file with it.
@@ -13,7 +14,7 @@ final class ConfigStore {
     var onChange: ((Result<Config, Error>) -> Void)?
 
     /// The file watched: the real config, or a temporary one in the tests.
-    private let fileURL: URL
+    private var fileURL: URL
     /// How long to wait before the first look for a missing file (doubling up to 30 s).
     private let firstRetryDelay: TimeInterval
 
@@ -32,6 +33,20 @@ final class ConfigStore {
         writeDefaultIfMissing()
         reload()
         watch()
+    }
+
+    /// Uses the config at `url` from now on (Settings → General). `moving`: the current file
+    /// goes there first (replacing one already there); otherwise the file there is used as it
+    /// is (written with the defaults if missing). The choice is remembered for the next launches.
+    func relocate(to url: URL, moving: Bool) throws {
+        if moving { try ConfigLocation.move(from: fileURL, to: url) }
+        ConfigLocation.choose(url)
+        Self.url = url
+        fileURL = url
+        log.info("config file: \((url.path as NSString).abbreviatingWithTildeInPath, privacy: .public)")
+        writeDefaultIfMissing()
+        watch()
+        reload()
     }
 
     func reload() {

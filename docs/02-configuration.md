@@ -2,7 +2,12 @@
 
 ## File, creation and reload
 
-- **Path**: `~/.hyperspace/config.json` (`ConfigStore.url`).
+- **Path**: chosen by each user (`ConfigLocation`, read once at launch into `ConfigStore.url`):
+  1. The path chosen in **Settings → General**: *Move…* moves the file there (replacing one already there, once the panel has asked), *Use Another File…* reads an existing file as it is and leaves the current one where it is. The choice is the `configPath` user default, so it can also be set from Terminal: `defaults write com.alessandrorebosio.HyperSpace configPath ~/dotfiles/hyperspace.json` (a folder means its `config.json`), then quit and reopen HyperSpace. `defaults delete com.alessandrorebosio.HyperSpace configPath` goes back to the default.
+  2. Otherwise `~/.config/hyperspace/config.json` if it exists;
+  3. otherwise `~/.hyperspace/config.json` (where earlier versions kept it) if it exists;
+  4. otherwise `~/.config/hyperspace/config.json`, written with the defaults.
+  - A chosen file that does not exist is written there with the defaults. Moving away from `~/.hyperspace` removes that folder once empty; no other folder is ever removed. A symbolic link (a config kept in a dotfiles repository) is moved as the link.
 - **Creation**: on first launch (or from *Edit Config…*) if the file is missing, the default config (`DefaultConfig.json`) is written.
 - **Automatic reload**: the file is watched with a kqueue `DispatchSource` (`write`, `extend`, `delete`, `rename`), at zero cost while untouched. Several events per save
   are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is missing it looks again after 1 s, then less and less often (up to every 30 s), and loads the file as soon as it is back.

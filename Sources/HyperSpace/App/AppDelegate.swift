@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remapper: remapper, eventTap: eventTap,
         actions: GeneralModel.Actions(
             openConfig: { [unowned self] in store.openInEditor() },
+            relocateConfig: { [unowned self] url, moving in try store.relocate(to: url, moving: moving) },
             // The permission has its own row and notice there.
             configProblem: { [unowned self] in statusMenu.configError.map { StatusMenu.Problem.config($0).text } }
         )

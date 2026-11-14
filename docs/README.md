@@ -24,7 +24,7 @@ written from the code in `Sources/HyperSpace/`. For a quick overview and install
 ## At a glance
 
 - **One permission: Accessibility.** Key remapping works without it.
-- **Config**: `~/.hyperspace/config.json`, created on first launch, reloaded on every save. Edit by hand or from *Settings…* (which rewrites the file).
+- **Config**: `~/.config/hyperspace/config.json` by default, or wherever the user put it (Settings → General), created on first launch, reloaded on every save. Edit by hand or from *Settings…* (which rewrites the file).
 - **Workspace state**: `~/Library/Application Support/HyperSpace/workspaces.json`.
 - **Version / requirements**: 0.1.0, macOS 13+ (`LSMinimumSystemVersion`); an agent app (`LSUIElement`): no Dock icon except while the Settings window is open.
 - **Bundle id**: `com.alessandrorebosio.HyperSpace`.

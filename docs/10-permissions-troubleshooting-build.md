@@ -121,7 +121,7 @@ Where the offscreen drawing comes out blank (the GitHub runners: no Liquid Glass
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `develop` and `main`, on pull requests and by hand (*Run workflow*), on a GitHub macOS runner:
-`make app`, `make test`, then `--render-settings` with a sample config (`.github/ci/sample-config.json`, copied to `~/.hyperspace/config.json` on the runner) so the lists have rows to show.
+`make app`, `make test`, then `--render-settings` with a sample config (`.github/ci/sample-config.json`, copied to `~/.hyperspace/config.json` on the runner, which is read as the only config there) so the lists have rows to show.
 The screenshots are kept as the **settings-screenshots** artifact of the run (Actions → the run → Artifacts) and, except for pull requests, also pushed to the hidden git ref `refs/ci/screenshots` (not a branch), which can be read without the GitHub web page:
 
 ```bash

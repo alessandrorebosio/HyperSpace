@@ -11,7 +11,7 @@ a tiling window manager with virtual workspaces. Docs in `docs/`.
 - The `swiftui-macos` skill in `.claude/skills` assumes macOS 26 and Swift 6.2: use its
   runtime insights (view identity, observation cost, AppKit bridging), not its macOS 26-only
   APIs or `@Observable`.
-- Settings models write the real `~/.hyperspace/config.json`: test pure functions, not the models.
+- Settings models write the user's real config file (`ConfigLocation`, by default `~/.config/hyperspace/config.json`): test pure functions, not the models.
 
 ## Commands
 

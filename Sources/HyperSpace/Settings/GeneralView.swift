@@ -36,6 +36,11 @@ struct GeneralView: View {
                 } label: {
                     RowLabel("Config file")
                 }
+                if let error = model.configLocationError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let problem = model.configProblem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
@@ -45,11 +50,15 @@ struct GeneralView: View {
                     Button("Edit Config…") { model.actions.openConfig() }
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.url]) }
                     Spacer()
+                    Button("Move…") { model.moveConfig() }
+                        .help("Move the config file to another folder (~/.config/hyperspace, a dotfiles folder…)")
+                    Button("Use Another File…") { model.useOtherConfig() }
+                        .help("Read an existing config file from now on; the current one stays where it is")
                 }
             } header: {
                 Text("Configuration")
             } footer: {
-                SectionFooter("Everything on these pages is saved there. Changes made in an editor apply as soon as the file is saved.")
+                SectionFooter("Everything on these pages is saved there. Changes made in an editor apply as soon as the file is saved. The file can live anywhere: HyperSpace remembers where.")
             }
 
             Section {

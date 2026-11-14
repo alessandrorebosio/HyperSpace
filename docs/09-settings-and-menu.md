@@ -114,7 +114,7 @@ While recording, key bindings are suspended (so an existing shortcut reaches the
 - **App card**: icon, name, version (`CFBundleShortVersionString`) and the state as a colored pill.
 - **Accessibility permission needed** notice while it is missing.
 - **Startup**: *Launch at login* (`SMAppService`); a failure to change it shows in red under the switch.
-- **Configuration**: the file path (selectable), the config error if any (in red, like every error), *Edit Config…*, *Show in Finder*.
+- **Configuration**: the file path (selectable), the config error if any (in red, like every error), *Edit Config…*, *Show in Finder*, *Move…* (a save panel: the file goes there and is read from there from now on) and *Use Another File…* (an open panel: an existing file is read as it is). The pages, the menu bar and the watcher follow the new file at once (`ConfigStore.relocate`); a failure shows in red under the path. See [Configuration](02-configuration.md).
 - **Permission**: Accessibility, *Allowed* or *Open System Settings…* (checked again whenever the app becomes active).
 - **Quit HyperSpace**.
 
