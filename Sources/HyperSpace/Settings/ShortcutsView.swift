@@ -9,6 +9,7 @@ struct ShortcutsView: View {
         Form {
             PageHero(page: .shortcuts)
             PermissionNotice()
+            SaveErrorNotice(status: model.saveStatus)
             TilingOffNotice(model: model)
 
             ForEach(TilingModel.pairedShortcuts, id: \.title) { group in
@@ -42,8 +43,7 @@ struct ShortcutsView: View {
                     Text(group.group)
                 } footer: {
                     if group.group == TilingModel.singleShortcuts.last?.group {
-                        SectionFooter("Click a shortcut and press the keys. Esc cancels, Delete clears it.",
-                                      error: model.saveError)
+                        SectionFooter(ShortcutRecorder.hint)
                     }
                 }
             }

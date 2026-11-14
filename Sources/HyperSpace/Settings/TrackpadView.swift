@@ -8,6 +8,7 @@ struct TrackpadView: View {
         Form {
             PageHero(page: .trackpad)
             PermissionNotice(detail: "The sliders and corners work, but the pointer is held still and a corner's tap kept from clicking only once HyperSpace is allowed in Privacy & Security → Accessibility.")
+            SaveErrorNotice(status: model.saveStatus)
 
             Section {
                 SwitchRow(title: "Edge sliders", detail: "Slide one finger along an edge: up and down on the sides, sideways on the top and bottom.",
@@ -18,8 +19,7 @@ struct TrackpadView: View {
             } header: {
                 Text("Edges")
             } footer: {
-                SectionFooter("The pointer stays still while you slide; moving across the edge, a second finger or pressing the trackpad leaves it as usual. Seek sends the arrow keys: videos jump back and forward, editors move the playhead. Brightness changes the built-in display and Apple displays.",
-                              error: model.saveError)
+                SectionFooter("The pointer stays still while you slide; moving across the edge, a second finger or pressing the trackpad leaves it as usual. Seek sends the arrow keys: videos jump back and forward, editors move the playhead. Brightness changes the built-in display and Apple displays.")
             }
 
             Section {
@@ -40,11 +40,16 @@ struct TrackpadView: View {
         .formStyle(.grouped)
     }
 
+    /// A row like every other setting's (`SettingRow`), its menu sized to its choice.
     private func edgePicker(_ edge: TrackpadModel.Edge) -> some View {
-        Picker(edge.title, selection: Binding(get: { model.edge(edge) }, set: { model.setEdge($0, for: edge) })) {
-            ForEach(EdgeAction.allCases, id: \.self) { action in
-                Text(TrackpadModel.label(action, vertical: edge.isVertical)).tag(action)
+        SettingRow(title: edge.title) {
+            Picker(edge.title, selection: Binding(get: { model.edge(edge) }, set: { model.setEdge($0, for: edge) })) {
+                ForEach(EdgeAction.allCases, id: \.self) { action in
+                    Text(TrackpadModel.label(action, vertical: edge.isVertical)).tag(action)
+                }
             }
+            .labelsHidden()
+            .fixedSize()
         }
         .disabled(!model.edgeSliders)
     }

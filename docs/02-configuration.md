@@ -9,7 +9,7 @@
 - **Manual reload**: the [`reload`](05-actions.md) action (`hyper+escape` in the default config).
 - What a reload applies: HID remaps always; tap and tiling only with the Accessibility permission (see [Architecture](01-architecture.md)).
 - **Edits from the UI**: the Settings window rewrites the file with `ConfigWriter` (only touched keys change, stable key order, one line per binding/remap);
-  the watcher then applies it like a manual edit. Nothing is written when the new text is identical to the file, so a no-op edit causes no reload. The file gets reformatted and **unknown keys are preserved**. JSON has no comments.
+  the watcher then applies it like a manual edit. Nothing is written when the new text is identical to the file, so a no-op edit causes no reload. The file gets reformatted. **Unknown keys are preserved at section level only**: a key Settings does not know, in `keyboard`, `mouse`, `trackpad`, `tiling` or at the top, stays; but the lists Settings edits (`keyboard.remap`, `mouse.buttons`, `tiling.workspaces`, `tiling.assign`) are rebuilt from what the pages show, so an unknown key inside one of their entries is lost when that list is saved (`keyboard.bindings` is edited entry by entry and keeps them). A list that becomes empty is left out of the file. JSON has no comments.
 
 ## Errors
 
@@ -101,7 +101,7 @@ Every section and key is optional.
 | `padding` | number | `8` | minimum 0 |
 | `masterRatio` | number | `0.55` | clamped to 0.1…0.9 |
 | `mouseFollowsFocus` | bool | `true` | The pointer follows the focus to another display, and goes to the middle of the display on a workspace switch. |
-| `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (the Settings slider has the same range). Written only when not the default |
+| `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (the Settings slider has the same range). Settings writes it only once it is changed there (left out while never set) |
 | `scratchpad.width` / `.height` | number | `0.6` / `0.7` | fractions of the display's visible area, clamped to 0.2…1 |
 | `floating` | `[string]` | `[]` | Bundle ids that are never tiled |
 | `floatingWindows[]` | `{ app?, title }` | `[]` | `title` required and non-empty (entries with an empty title are dropped); `app` absent or empty = any app |

@@ -6,9 +6,11 @@ struct WorkspacesView: View {
 
     var body: some View {
         let screens = model.screens
+        let names = model.workspaces.map(\.name)
         Form {
             PageHero(page: .workspaces)
             PermissionNotice()
+            SaveErrorNotice(status: model.saveStatus)
             TilingOffNotice(model: model)
 
             Section {
@@ -17,15 +19,12 @@ struct WorkspacesView: View {
                 } else {
                     ShortcutGrid(columns: ["Show workspace", "Move window here"], leading: "Name", after: "Display",
                                  trailing: RemoveButton.width) {
-                        ForEach(model.workspaces) { workspace in
+                        ForEach(Array(model.workspaces.enumerated()), id: \.element.id) { index, workspace in
                             GridRow {
-                                HStack(spacing: 4) {
-                                    TextField("Name", text: Binding(get: { workspace.name }, set: { model.rename(workspace.id, to: $0) }))
-                                        .textFieldStyle(.roundedBorder)
-                                        .labelsHidden()
-                                    WarningBadge(text: model.nameWarning(for: workspace))
-                                }
-                                .frame(width: 140)
+                                WorkspaceNameField(draft: model.nameDraft(for: workspace), saved: workspace.name,
+                                                   others: Set(names.enumerated().filter { $0.offset != index }.map(\.element)),
+                                                   typed: model.nameTyped)
+                                    .frame(width: 140)
                                 ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
                                     .equatable()
                                 ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
@@ -40,7 +39,7 @@ struct WorkspacesView: View {
                                 .fixedSize()
                                 .help("Pin the workspace to a display: it always shows there while that display is connected")
                                 Spacer(minLength: 0)
-                                RemoveButton { model.removeWorkspace(workspace.id) }
+                                RemoveButton { model.askToRemoveWorkspace(workspace.id) }
                             }
                         }
                     }
@@ -50,23 +49,18 @@ struct WorkspacesView: View {
                     AddButton(title: "Add Workspace") { model.addWorkspace() }
                 }
             } footer: {
-                SectionFooter(
-                    "Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one. Click a shortcut and press the keys: Esc cancels, Delete clears it.",
-                    error: model.saveError
-                )
+                SectionFooter("Windows of the other workspaces are parked out of sight. They come back when you switch, quit or turn tiling off. A workspace pinned to a display always shows there; with that display unplugged it goes back to its usual one. " + ShortcutRecorder.hint)
             }
 
             Section {
                 if model.assignments.isEmpty {
-                    EmptyRow(symbol: "app.badge", text: "Apps open in the workspace you are on")
+                    EmptyRow(symbol: "app.badge", text: "No app rules: apps open in the workspace you are on")
                 }
                 ForEach(model.assignments) { rule in
-                    HStack(spacing: 10) {
-                        AppLabel(bundleID: rule.app)
-                        Spacer(minLength: 12)
+                    AppRuleRow(app: rule.app, remove: { model.removeAssignment(rule.id) }) {
                         Picker("Workspace", selection: Binding(get: { rule.workspace }, set: { if let id = $0 { model.setAssignment(rule.id, workspace: id) } })) {
                             ForEach(model.workspaces) { workspace in
-                                Text(workspace.savedName).tag(Optional(workspace.id))
+                                Text(workspace.name).tag(Optional(workspace.id))
                             }
                             if rule.workspace == nil {
                                 Text("\(rule.text) (no such workspace)").tag(UUID?.none)
@@ -74,7 +68,6 @@ struct WorkspacesView: View {
                         }
                         .labelsHidden()
                         .fixedSize()
-                        RemoveButton { model.removeAssignment(rule.id) }
                     }
                 }
             } header: {
@@ -89,5 +82,33 @@ struct WorkspacesView: View {
             }
         }
         .formStyle(.grouped)
+        .confirmationDialog(model.removal.map { "Remove the workspace “\($0.name)”?" } ?? "",
+                            isPresented: Binding(get: { model.removal != nil }, set: { if !$0 { model.cancelRemoval() } }),
+                            titleVisibility: .visible, presenting: model.removal) { _ in
+            Button("Remove Workspace", role: .destructive) { model.confirmRemoval() }
+            Button("Cancel", role: .cancel) { model.cancelRemoval() }
+        } message: { removal in
+            Text("These go with it:\n" + removal.losses.map { "• \($0)" }.joined(separator: "\n"))
+        }
+    }
+}
+
+/// A workspace's name, as typed, with a warning when it cannot be saved. It observes its own
+/// draft, so a keystroke redraws this field, not the page.
+private struct WorkspaceNameField: View {
+    @ObservedObject var draft: NameDraft
+    /// The name saved, kept while the typed one is not valid.
+    let saved: String
+    /// The other workspaces' names.
+    let others: Set<String>
+    let typed: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            TextField("Name", text: Binding(get: { draft.text }, set: { draft.text = $0; typed() }))
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+            WarningBadge(text: TilingModel.nameWarning(typed: draft.text, saved: saved, others: others))
+        }
     }
 }

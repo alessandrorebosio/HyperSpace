@@ -58,7 +58,7 @@ import Testing
 /// App rules follow their workspace by identity; names are only saved when valid.
 @Suite struct WorkspaceIdentityTests {
     private func workspace(_ name: String) -> TilingModel.Workspace {
-        TilingModel.Workspace(name: name, savedName: name, switchKeys: "", moveKeys: "")
+        TilingModel.Workspace(name: name, switchKeys: "", moveKeys: "")
     }
 
     @Test func rulesResolveByNameOrNumber() {
@@ -82,8 +82,8 @@ import Testing
         var spaces = [workspace("web"), workspace("we")]
         let rules = TilingModel.assignments(from: [["app": "safari", "workspace": "web"]], workspaces: spaces)
         // "we" is renamed to "web2" through "web": the rule stays on the first workspace.
-        spaces[1].savedName = "web2"
-        spaces[0].savedName = "browser"
+        spaces[1].name = "web2"
+        spaces[0].name = "browser"
         let written = TilingModel.assignEntries(rules, workspaces: spaces)
         #expect(written.first?["workspace"] as? String == "browser")
     }

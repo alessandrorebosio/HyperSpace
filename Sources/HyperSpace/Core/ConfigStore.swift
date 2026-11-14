@@ -13,7 +13,7 @@ final class ConfigStore {
     var onChange: ((Result<Config, Error>) -> Void)?
 
     /// The file watched: the real config, or a temporary one in the tests.
-    let fileURL: URL
+    private let fileURL: URL
     /// How long to wait before the first look for a missing file (doubling up to 30 s).
     private let firstRetryDelay: TimeInterval
 

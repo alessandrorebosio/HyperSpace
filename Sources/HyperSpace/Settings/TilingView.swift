@@ -12,6 +12,7 @@ struct TilingView: View {
                     .accessibilityLabel("Tile windows")
             }
             PermissionNotice()
+            SaveErrorNotice(status: model.saveStatus)
 
             Section {
                 LayoutChooser(selection: model.layout, gap: model.gap, padding: model.padding,
@@ -26,22 +27,21 @@ struct TilingView: View {
             Section {
                 SliderRow(title: "Gap between windows",
                           value: model.gap, range: TilingModel.spacingRange, step: 2,
-                          onChange: { model.setGap($0) }, onCommit: model.commitSpacing)
+                          onChange: { model.setGap($0) }, onEditingChanged: model.sliderEditing)
                 SliderRow(title: "Margin around the screen",
                           value: model.padding, range: TilingModel.spacingRange, step: 2,
-                          onChange: { model.setPadding($0) }, onCommit: model.commitSpacing)
+                          onChange: { model.setPadding($0) }, onEditingChanged: model.sliderEditing)
             } header: {
                 Text("Spacing")
             } footer: {
-                SectionFooter("Windows stay inside the visible area, clear of the menu bar and the Dock.",
-                              error: model.saveError)
+                SectionFooter("Windows stay inside the visible area, clear of the menu bar and the Dock.")
             }
             .disabled(!model.enabled)
 
             Section {
                 SliderRow(title: "Visible edges",
                           value: model.accordionPadding, range: TilingModel.accordionRange, step: 5,
-                          onChange: { model.setAccordionPadding($0) }, onCommit: model.commitSpacing)
+                          onChange: { model.setAccordionPadding($0) }, onEditingChanged: model.sliderEditing)
                 AccordionPreview(peek: model.accordionPadding)
                     .frame(height: 70)
                     .frame(maxWidth: .infinity)

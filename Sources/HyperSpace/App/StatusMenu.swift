@@ -46,15 +46,34 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 return "Config error: " + (line.count > 48 ? String(line.prefix(47)) + "…" : line)
             }
         }
-
-        var isConfig: Bool {
-            if case .config = self { return true }
-            return false
-        }
     }
 
-    var problem: Problem? {
-        didSet { if problem != oldValue { updateIcon() } }
+    /// The two problems are tracked apart, so fixing one never hides the other: the permission
+    /// is missing until it is granted, a config error lasts until the file loads again.
+    static func problems(permissionMissing: Bool, configError: String?) -> [Problem] {
+        (permissionMissing ? [.permission] : []) + (configError.map { [.config($0)] } ?? [])
+    }
+
+    /// The Accessibility permission is missing: the event tap and window control are off.
+    var permissionMissing = false {
+        didSet { if permissionMissing != oldValue { updateIcon() } }
+    }
+
+    /// Why the config file did not load (or could not be written); the last valid config stays active.
+    var configError: String? {
+        didSet { if configError != oldValue { updateIcon() } }
+    }
+
+    var problems: [Problem] {
+        Self.problems(permissionMissing: permissionMissing, configError: configError)
+    }
+
+    /// What VoiceOver says for the menu bar item: what it shows, then a lock and a problem.
+    static func accessibilityDescription(workspace: String?, locked: Bool, problem: Bool) -> String {
+        var parts = [workspace.map { "Workspace \($0)" } ?? "HyperSpace"]
+        if locked { parts.append("keyboard locked") }
+        if problem { parts.append("needs attention") }
+        return parts.joined(separator: ", ")
     }
 
     /// With tiling off the icon is drawn dimmed; the menu turns it back on.
@@ -75,25 +94,29 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         super.init()
         let menu = NSMenu()
         menu.delegate = self
+        // Items are enabled by hand: Lock Keyboard is off without the permission.
+        menu.autoenablesItems = false
         item.menu = menu
         updateIcon()
     }
 
     private func updateIcon() {
         guard let button = item.button else { return }
-        button.appearsDisabled = !tilingEnabled && problem == nil && !keyboardLocked
+        let problem = !problems.isEmpty
+        button.appearsDisabled = !tilingEnabled && !problem && !keyboardLocked
         button.toolTip = tilingEnabled ? "HyperSpace" : "HyperSpace — tiling is off"
         button.attributedTitle = NSAttributedString()
         guard let workspaces else {
-            let symbol = keyboardLocked ? "lock" : problem == nil ? "square.grid.2x2" : "exclamationmark.triangle"
-            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "HyperSpace")
+            let symbol = keyboardLocked ? "lock" : problem ? "exclamationmark.triangle" : "square.grid.2x2"
+            let description = Self.accessibilityDescription(workspace: nil, locked: keyboardLocked, problem: problem)
+            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)
             image?.isTemplate = true
             button.image = image
             return
         }
         // One template image, so it follows the menu bar's colors like the system items.
         button.image = Self.workspacesImage(names: workspaces.names, focused: workspaces.focused,
-                                            locked: keyboardLocked, problem: problem != nil)
+                                            locked: keyboardLocked, problem: problem)
         button.imagePosition = .imageOnly
     }
 
@@ -143,7 +166,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Workspace " + (names.indices.contains(focused) ? names[focused] : "")
+        image.accessibilityDescription = accessibilityDescription(
+            workspace: names.indices.contains(focused) ? names[focused] : "", locked: locked, problem: problem)
         return image
     }
 
@@ -161,7 +185,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        if let problem { addProblem(problem, to: menu) }
+        let problems = problems
+        for problem in problems { addProblem(problem, to: menu) }
+        if !problems.isEmpty { menu.addItem(.separator()) }
 
         let enabled = tilingEnabled
         let tiling = ClosureMenuItem("Tiling") { [host] in host.setTilingEnabled(!enabled) }
@@ -178,9 +204,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         // Lock and Unlock share one place, so the mouse finds Unlock where it clicked Lock.
         let locked = keyboardLocked
         let left = locked ? host.keyboardUnlocksAt().map { " (\(KeyboardLock.remaining(until: $0)))" } ?? "" : ""
-        menu.addItem(Self.item(locked ? "Unlock Keyboard" + left : "Lock Keyboard", symbol: locked ? "lock.open" : "lock") { [host] in
+        let lock = Self.item(locked ? "Unlock Keyboard" + left : "Lock Keyboard", symbol: locked ? "lock.open" : "lock") { [host] in
             host.setKeyboardLocked(!locked)
-        })
+        }
+        // As in Settings: without the event tap a lock would only claim to be on.
+        if !locked && permissionMissing {
+            lock.isEnabled = false
+            lock.toolTip = "Needs the Accessibility permission"
+        }
+        menu.addItem(lock)
         menu.addItem(.separator())
 
         let settings = Self.item("Settings…", symbol: "gearshape") { [host] in host.openSettings() }
@@ -311,7 +343,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 }
 
 extension StatusMenu {
-    /// The problem and how to fix it: a click opens the Accessibility settings or the config file.
+    /// A problem and how to fix it: a click opens the Accessibility settings or the config file.
     private func addProblem(_ problem: Problem, to menu: NSMenu) {
         let fix: String
         let item: ClosureMenuItem
@@ -327,7 +359,6 @@ extension StatusMenu {
         item.attributedTitle = Self.title(problem.menuTitle, symbol: "exclamationmark.triangle.fill", color: .systemOrange)
         if #available(macOS 14.4, *) { item.subtitle = fix } else { item.toolTip = fix }
         menu.addItem(item)
-        menu.addItem(.separator())
     }
 
     /// Wireless input devices and their battery; a click opens the Bluetooth settings.

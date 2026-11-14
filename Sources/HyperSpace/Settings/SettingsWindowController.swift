@@ -82,38 +82,42 @@ struct SettingsModels {
     let general: GeneralModel
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
-        // The file is read once for every page.
-        let config = ConfigWriter.read()
-        keyboard = KeyboardModel(remapper: remapper, eventTap: eventTap, config: config)
-        mouse = MouseModel(eventTap: eventTap, config: config)
-        trackpad = TrackpadModel(config: config)
-        tiling = TilingModel(eventTap: eventTap, config: config)
+        // The file is read once for every page. One with a syntax error shows as empty, every
+        // page saying why (nothing can be saved until it is fixed); the fix then loads.
+        let config = ConfigWriter.readIfValid()
+        keyboard = KeyboardModel(remapper: remapper, eventTap: eventTap, config: config ?? [:])
+        mouse = MouseModel(eventTap: eventTap, config: config ?? [:])
+        trackpad = TrackpadModel(config: config ?? [:])
+        tiling = TilingModel(eventTap: eventTap, config: config ?? [:])
         general = GeneralModel(actions: actions)
+        if config == nil {
+            for page in files { page.saveStatus.set(ConfigWriter.SyntaxError.message) }
+        }
     }
+
+    /// The models that show and write a part of the file.
+    private var files: [FileBackedModel] { [keyboard, mouse, trackpad, tiling] }
 
     /// The file was loaded (by the app, after any change): pages whose part of it changed
     /// elsewhere show the new values, and the status follows. A file that does not parse
     /// changes nothing on the pages: the settings keep what they showed.
     func reload() {
         if let root = ConfigWriter.readIfValid() {
-            let pages: [FileBackedModel] = [keyboard, mouse, trackpad, tiling]
-            for page in pages { page.reload(from: root) }
+            for page in files { page.reload(from: root) }
         }
-        general.refresh()
+        // Only the config error can have changed: the login item and the permission are
+        // checked when the app becomes active.
+        general.refreshConfigProblem()
     }
 
-    /// The window closes: captures end, a pending rename is saved, observers go.
+    /// The window closes: captures end, a pending rename or slider change is saved, observers go.
     func close() {
-        keyboard.close()
-        mouse.close()
-        tiling.close()
+        for page in files { page.close() }
     }
 
     /// A key press or click being recorded on one page must not stay armed on another.
     func stopCaptures() {
-        keyboard.stopCapture()
-        mouse.stopCapture()
-        tiling.stopCapture()
+        for page in files { page.stopCapture() }
     }
 }
 
@@ -239,6 +243,8 @@ private struct NoSidebarToggle: ViewModifier {
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// The smallest the window gets; every page is laid out to fit it.
     static let minimumSize = NSSize(width: 720, height: 460)
+    /// The size it first opens at (then the size it was left at).
+    static let defaultSize = NSSize(width: 900, height: 640)
 
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
@@ -259,7 +265,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let navigation = SettingsNavigation()
             navigation.onSwitch = { [weak self] in self?.models?.stopCaptures() }
             let root = SettingsRoot(navigation: navigation, models: models)
-            let window = Self.makeWindow(root, size: NSSize(width: 900, height: 640))
+            let window = Self.makeWindow(root, size: Self.defaultSize)
             window.delegate = self
             window.setFrameAutosaveName("HyperSpaceSettings")
             window.center()

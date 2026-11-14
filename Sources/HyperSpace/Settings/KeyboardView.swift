@@ -8,6 +8,7 @@ struct KeyboardView: View {
         Form {
             PageHero(page: .keyboard)
             PermissionNotice(detail: "Remapping one key to another already works. Combinations (the hyper key, ⌃⌥⇧…) and the keyboard lock need HyperSpace to be allowed in Privacy & Security → Accessibility.")
+            SaveErrorNotice(status: model.saveStatus)
 
             Section {
                 KeyboardLockRow(model: model, countdown: model.unlockCountdown)
@@ -27,7 +28,7 @@ struct KeyboardView: View {
 
             Section {
                 if model.rules.isEmpty {
-                    EmptyRow(symbol: "keyboard", text: "No remaps yet")
+                    EmptyRow(symbol: "keyboard", text: "No remaps: every key types what it shows")
                 }
                 ForEach(model.rules) { rule in
                     RuleRow(model: model, rule: rule)
@@ -37,10 +38,7 @@ struct KeyboardView: View {
                     AddButton(title: "Add Remap") { model.addRule() }
                 }
             } footer: {
-                SectionFooter(
-                    "Click a key cap, then press the key. For a combination, hold the keys together and release them. Every key is recorded, Esc too: click the cap again to cancel.",
-                    error: model.saveError
-                )
+                SectionFooter("Click a key cap and press the key: a new remap then goes on to what it becomes. For a combination, hold the keys together and release them. Every key is recorded, Esc too: click the cap again to cancel.")
             }
         }
         .formStyle(.grouped)
@@ -61,7 +59,7 @@ private struct KeyboardLockRow: View {
                 .monospacedDigit()
             Spacer(minLength: 12)
             if model.isKeyboardLocked {
-                Button("Unlock") { model.setKeyboardLocked(false) }
+                Button("Unlock Keyboard") { model.setKeyboardLocked(false) }
                     .buttonStyle(.borderedProminent)
             } else {
                 Button("Lock Keyboard") { model.setKeyboardLocked(true) }
@@ -75,7 +73,7 @@ private struct KeyboardLockRow: View {
     private var detail: String {
         guard model.isKeyboardLocked else { return "Lock it to clean it without typing anything." }
         if let left = countdown.text { return "Unlocks by itself in \(left)." }
-        return "Click Unlock to type again."
+        return "Click Unlock Keyboard to type again."
     }
 }
 
@@ -104,7 +102,7 @@ private struct RuleRow: View {
             KeyCap(text: targetText, minWidth: 96, placeholder: rule.to.isEmpty, active: model.capturing == .to(rule.id)) {
                 model.toggleCapture(.to(rule.id))
             }
-            KeyChoiceMenu(ruleID: rule.id) { model.setTarget($0, for: rule.id) }
+            GroupedChoiceMenu(ruleID: rule.id, help: "Choose from all keys", groups: Self.keyGroups) { model.setTarget($0, for: rule.id) }
                 .equatable()
         }
     }
@@ -137,25 +135,9 @@ private struct RuleRow: View {
     }
 }
 
-/// Every named key, grouped, to pick a remap's target from: about 130 items. The list never
-/// changes, so the menu is only built again for another rule (`==` compares the rule): a
-/// key press while recording redraws every row, not this.
-private struct KeyChoiceMenu: View, Equatable {
-    let ruleID: UUID
-    /// Called with the key's name; the same for a given rule.
-    let choose: (String) -> Void
-
-    static func == (a: Self, b: Self) -> Bool { a.ruleID == b.ruleID }
-
-    var body: some View {
-        ChoiceMenu(help: "Choose from all keys") {
-            ForEach(KeyCodes.groups, id: \.title) { group in
-                Menu(group.title) {
-                    ForEach(group.keys, id: \.name) { key in
-                        Button(key.label) { choose(key.name) }
-                    }
-                }
-            }
-        }
+extension RuleRow {
+    /// Every named key, grouped, to pick a remap's target from: about 130 items, built once.
+    static let keyGroups = KeyCodes.groups.map { group in
+        ChoiceGroup(title: group.title, items: group.keys.map { (label: $0.label, value: $0.name) })
     }
 }

@@ -58,4 +58,17 @@ import Testing
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
         #expect(try String(contentsOf: target, encoding: .utf8).contains(#""gap": 2"#))
     }
+
+    /// The one parse behind `readIfValid` and `update`: missing or blank is empty, broken is nil.
+    @Test func parsesMissingBlankBrokenAndValid() throws {
+        #expect(ConfigWriter.parseFile(url).root?.isEmpty == true)
+        try " \n".write(to: url, atomically: true, encoding: .utf8)
+        #expect(ConfigWriter.parseFile(url).root?.isEmpty == true)
+        try "[1]".write(to: url, atomically: true, encoding: .utf8)
+        #expect(ConfigWriter.parseFile(url).root == nil)
+        try #"{ "tiling": { "gap": 4 }"#.write(to: url, atomically: true, encoding: .utf8)
+        #expect(ConfigWriter.parseFile(url).root == nil)
+        try #"{ "tiling": { "gap": 4 } }"#.write(to: url, atomically: true, encoding: .utf8)
+        #expect(ConfigWriter.section("tiling", of: try #require(ConfigWriter.parseFile(url).root))["gap"] as? Int == 4)
+    }
 }
