@@ -9,17 +9,18 @@ import Testing
         var last: Bool? { results.last }
     }
 
-    private func makeStore() throws -> (ConfigStore, URL, Loads) {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hyperspace-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("config.json")
-        try #"{ "tiling": { "gap": 4 } }"#.write(to: url, atomically: true, encoding: .utf8)
-        let store = ConfigStore(url: url, firstRetryDelay: 0.05)
-        let loads = Loads()
-        store.onChange = { result in
-            if case .success = result { loads.results.append(true) } else { loads.results.append(false) }
+    /// Runs `body` with a store watching `config.json` in a temporary directory, removed afterwards.
+    private func withStore(_ body: (ConfigStore, URL, Loads) async throws -> Void) async throws {
+        try await withTemporaryDirectory { dir in
+            let url = dir.appendingPathComponent("config.json")
+            try #"{ "tiling": { "gap": 4 } }"#.write(to: url, atomically: true, encoding: .utf8)
+            let store = ConfigStore(url: url, firstRetryDelay: 0.05)
+            let loads = Loads()
+            store.onChange = { result in
+                if case .success = result { loads.results.append(true) } else { loads.results.append(false) }
+            }
+            try await body(store, url, loads)
         }
-        return (store, url, loads)
     }
 
     /// Waits on the main queue (where the watcher works) until `condition` holds, up to `timeout`.
@@ -29,35 +30,38 @@ import Testing
     }
 
     @Test func loadsAtStartAndAfterAnEdit() async throws {
-        let (store, url, loads) = try makeStore()
-        store.start()
-        #expect(loads.results == [true])
-        try #"{ "tiling": { "gap": 6 } }"#.write(to: url, atomically: false, encoding: .utf8)
-        await wait { loads.results.count >= 2 }
-        #expect(loads.results.count >= 2 && loads.last == true)
+        try await withStore { store, url, loads in
+            store.start()
+            #expect(loads.results == [true])
+            try #"{ "tiling": { "gap": 6 } }"#.write(to: url, atomically: false, encoding: .utf8)
+            await wait { loads.results.count >= 2 }
+            #expect(loads.results.count >= 2 && loads.last == true)
+        }
     }
 
     @Test func aFileThatComesBackIsLoaded() async throws {
-        let (store, url, loads) = try makeStore()
-        store.start()
-        try FileManager.default.removeItem(at: url)
-        // The delete is reported (a failed load), then the watcher looks for the file again.
-        await wait { loads.last == false }
-        #expect(loads.last == false)
-        try await Task.sleep(nanoseconds: 300_000_000)
-        try #"{ "tiling": { "gap": 2 } }"#.write(to: url, atomically: true, encoding: .utf8)
-        await wait { loads.last == true }
-        #expect(loads.last == true)
+        try await withStore { store, url, loads in
+            store.start()
+            try FileManager.default.removeItem(at: url)
+            // The delete is reported (a failed load), then the watcher looks for the file again.
+            await wait { loads.last == false }
+            #expect(loads.last == false)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            try #"{ "tiling": { "gap": 2 } }"#.write(to: url, atomically: true, encoding: .utf8)
+            await wait { loads.last == true }
+            #expect(loads.last == true)
+        }
     }
 
     @Test func aBrokenFileIsReportedAndItsFixLoaded() async throws {
-        let (store, url, loads) = try makeStore()
-        store.start()
-        try #"{ "tiling": "#.write(to: url, atomically: true, encoding: .utf8)
-        await wait { loads.last == false }
-        #expect(loads.last == false)
-        try #"{ "tiling": { "gap": 2 } }"#.write(to: url, atomically: true, encoding: .utf8)
-        await wait { loads.last == true }
-        #expect(loads.last == true)
+        try await withStore { store, url, loads in
+            store.start()
+            try #"{ "tiling": "#.write(to: url, atomically: true, encoding: .utf8)
+            await wait { loads.last == false }
+            #expect(loads.last == false)
+            try #"{ "tiling": { "gap": 2 } }"#.write(to: url, atomically: true, encoding: .utf8)
+            await wait { loads.last == true }
+            #expect(loads.last == true)
+        }
     }
 }
