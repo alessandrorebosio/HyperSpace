@@ -17,31 +17,48 @@ struct WorkspacesView: View {
                 if model.workspaces.isEmpty {
                     EmptyRow(symbol: "square.stack.3d.up", text: "No workspaces: every window shares one")
                 } else {
-                    ShortcutGrid(columns: ["Show workspace", "Move window here"], leading: "Name", after: "Display",
-                                 trailing: RemoveButton.width) {
-                        ForEach(Array(model.workspaces.enumerated()), id: \.element.id) { index, workspace in
-                            GridRow {
-                                WorkspaceNameField(draft: model.nameDraft(for: workspace), saved: workspace.name,
-                                                   others: Set(names.enumerated().filter { $0.offset != index }.map(\.element)),
-                                                   typed: model.nameTyped)
-                                    .frame(width: 140)
-                                ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
-                                    .equatable()
-                                ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
-                                    .equatable()
-                                Picker("Display", selection: Binding(get: { workspace.display },
-                                                                     set: { model.setDisplay($0, for: workspace.id) })) {
-                                    ForEach(model.displayOptions(for: workspace, screens: screens), id: \.self) { option in
-                                        Text(option.label).tag(option.value)
-                                    }
+                    // Side by side when the page is wide enough; otherwise each workspace on two
+                    // lines (name, display; then its shortcuts), so the page never gets wider than the window.
+                    ViewThatFits(in: .horizontal) {
+                        ShortcutGrid(columns: ["Show workspace", "Move window here"], leading: "Name", after: "Display",
+                                     trailing: RemoveButton.width) {
+                            ForEach(Array(model.workspaces.enumerated()), id: \.element.id) { index, workspace in
+                                GridRow {
+                                    nameField(workspace, at: index, names: names)
+                                        .frame(width: 120)
+                                    ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
+                                        .equatable()
+                                    ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
+                                        .equatable()
+                                    displayPicker(workspace, screens: screens, alignment: .leading)
+                                    Spacer(minLength: 0)
+                                    RemoveButton { model.askToRemoveWorkspace(workspace.id) }
                                 }
-                                .labelsHidden()
-                                .fixedSize()
-                                .help("Pin the workspace to a display: it always shows there while that display is connected")
-                                Spacer(minLength: 0)
-                                RemoveButton { model.askToRemoveWorkspace(workspace.id) }
                             }
                         }
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(Array(model.workspaces.enumerated()), id: \.element.id) { index, workspace in
+                                if index > 0 { Divider() }
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 10) {
+                                        nameField(workspace, at: index, names: names)
+                                            .frame(maxWidth: 160)
+                                        Spacer(minLength: 0)
+                                        displayPicker(workspace, screens: screens, alignment: .trailing)
+                                        RemoveButton { model.askToRemoveWorkspace(workspace.id) }
+                                    }
+                                    HStack(spacing: 10) {
+                                        caption("Show")
+                                        ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
+                                            .equatable()
+                                        caption("Move here")
+                                        ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
+                                            .equatable()
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
                 }
             } header: {
@@ -90,6 +107,33 @@ struct WorkspacesView: View {
         } message: { removal in
             Text("These go with it:\n" + removal.losses.map { "• \($0)" }.joined(separator: "\n"))
         }
+    }
+}
+
+extension WorkspacesView {
+    private func nameField(_ workspace: TilingModel.Workspace, at index: Int, names: [String]) -> some View {
+        WorkspaceNameField(draft: model.nameDraft(for: workspace), saved: workspace.name,
+                           others: Set(names.enumerated().filter { $0.offset != index }.map(\.element)),
+                           typed: model.nameTyped)
+    }
+
+    /// At most 160 points wide: a long display name (one not connected, say) is truncated
+    /// rather than widening the page.
+    private func displayPicker(_ workspace: TilingModel.Workspace, screens: [ScreenInfo],
+                               alignment: Alignment) -> some View {
+        Picker("Display", selection: Binding(get: { workspace.display },
+                                             set: { model.setDisplay($0, for: workspace.id) })) {
+            ForEach(model.displayOptions(for: workspace, screens: screens), id: \.self) { option in
+                Text(option.label).tag(option.value)
+            }
+        }
+        .labelsHidden()
+        .frame(maxWidth: 160, alignment: alignment)
+        .help("Pin the workspace to a display: it always shows there while that display is connected")
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
 }
 

@@ -91,6 +91,7 @@ The login item and the permission are checked when the window opens and whenever
 
 ### Workspaces
 - **Workspaces** (*+ Add Workspace*): a grid with **Name** (renames are saved 0.5 s after typing; an empty name or one another workspace has gets a warning and is not saved, the last valid one is kept; app rules follow their workspace whatever its name), **Show workspace** and **Move window here** shortcuts, **Display** (*Any display*, *Main display*, or a connected monitor by name: pins the workspace there), remove.
+  When the window is too narrow for the grid (`ViewThatFits`), each workspace takes two lines: name, display and remove, then its two shortcuts. The display menu is at most 160 points wide and truncates a long name (a display not connected) instead of widening the page.
   What is typed in a name lives in that row's own `NameDraft`, so a keystroke redraws the field and its warning, not the page.
   Removing a workspace that has shortcuts, app rules or a display pin asks first, listing what goes with it (`TilingModel.removalLosses`); an empty one goes at once. Its app rules leave the page with it, not only the file.
 - **App Rules** (*+ Add App*: running apps, or *Other App…*; needs a workspace first): app → the workspace its new windows open in. The app menus follow apps launching and quitting while the window is open (`AppLauncher.runningAppsDidChange`, published as `TilingModel.runningApps`).
