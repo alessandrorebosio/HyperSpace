@@ -130,3 +130,34 @@ import Testing
         #expect(merged.first?["keys"] as? String == "hyper+j")
     }
 }
+
+@Suite struct DisplayOptionTests {
+    private let screens = [makeScreen(1, name: "Built-in Retina Display"), makeScreen(2, x: 1000, name: "LG UltraFine")]
+
+    @Test func positionsThenMonitors() {
+        let options = TilingModel.displayOptions(pin: "", screens: screens)
+        #expect(options.map(\.value) == ["", "main", "2", "3", "Built-in Retina Display", "LG UltraFine"])
+        #expect(options.map(\.label) == ["Any display", "Main display", "Second display", "Third display",
+                                         "Built-in Retina Display", "LG UltraFine"])
+        #expect(options.filter(\.startsGroup).map(\.value) == ["Built-in Retina Display"])
+    }
+
+    @Test func onePositionPerDisplayBeyondThree() {
+        let four = (1...4).map { makeScreen(CGDirectDisplayID($0), x: CGFloat($0) * 1000, name: "D\($0)") }
+        #expect(TilingModel.displayOptions(pin: "", screens: four).map(\.value).prefix(5) == ["", "main", "2", "3", "4"])
+    }
+
+    @Test func pinsNotListedStillShow() {
+        #expect(TilingModel.displayOptions(pin: "5", screens: screens).last?.label == "Display 5")
+        #expect(TilingModel.displayOptions(pin: "1", screens: screens).last?.label == "Main display")
+        #expect(TilingModel.displayOptions(pin: "Dell", screens: screens).last?.label == "Dell (not connected)")
+        // A pin already offered is not repeated.
+        #expect(TilingModel.displayOptions(pin: "2", screens: screens).filter { $0.value == "2" }.count == 1)
+    }
+
+    @Test func aPositionFollowsWhicheverMonitorIsThere() {
+        #expect(ScreenInfo.pinned("2", among: screens)?.id == 2)
+        #expect(ScreenInfo.pinned("3", among: screens) == nil)
+        #expect(ScreenInfo.pinned("2", among: [makeScreen(1), makeScreen(7, x: -1000)])?.id == 7)
+    }
+}

@@ -39,7 +39,7 @@ A workspace can be fixed to a display with `"display"` (Settings → Workspaces 
 ]
 ```
 
-- The value is `"main"` (the display with the menu bar), a number (1 = main display, then left to right, as above), the monitor's **name** (exact, else the first display whose name contains it, case-insensitive) or its **UUID** (what Settings writes when two connected monitors have the same name). Empty or missing = not pinned.
+- The value is `"main"` (the display with the menu bar), a number (1 = main display, then left to right, as above: `"2"` is **whichever monitor is the second one**, so a workspace pinned that way follows any monitor you plug in as the second display), the monitor's **name** (exact, else the first display whose name contains it, case-insensitive) or its **UUID** (what Settings writes when two connected monitors have the same name). Empty or missing = not pinned.
 - While that display is connected the pin is the workspace's home, before any `move-workspace-to-display` move and before the default rule; `move-workspace-to-display` does nothing on a pinned workspace (a beep). A pin in the config clears a move made by hand for that workspace.
 - While that display is not connected (unplugged, asleep for a while) the pin is ignored: the workspace lives where it would without it, and goes back to its display as soon as it returns.
 - `ScreenInfo.pinned(_:among:)` resolves a pin; the debug report lists the pins and the display each one resolves to.

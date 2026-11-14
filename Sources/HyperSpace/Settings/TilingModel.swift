@@ -22,6 +22,8 @@ final class TilingModel: ObservableObject, FileBackedModel {
     struct DisplayOption: Hashable {
         let value: String
         let label: String
+        /// Shown after a separator: the first of the monitors by name.
+        var startsGroup = false
     }
 
     /// A window-management action with an editable shortcut (stored in keyboard.bindings).
@@ -275,22 +277,49 @@ final class TilingModel: ObservableObject, FileBackedModel {
         edit { workspaces.update(id: id) { $0.display = display } }
     }
 
-    /// The display choices for a workspace: automatic, the main display, every connected
-    /// display by name, and the workspace's own pin even when that display is not connected.
+    /// The display choices for a workspace (see `displayOptions(pin:screens:)`).
     /// `screens` is `ScreenInfo.current()`, read once for all the rows.
     func displayOptions(for workspace: Workspace, screens: [ScreenInfo]) -> [DisplayOption] {
+        Self.displayOptions(pin: workspace.display, screens: screens)
+    }
+
+    /// The display choices for a workspace pinned to `pin`: automatic; a display by position
+    /// (the main one, the second, the third…: whichever monitor is there, written as "main" or
+    /// its number); then every connected monitor by name; and the pin itself when it is none of
+    /// these (a monitor not connected, a fourth display, a name typed in the file).
+    static func displayOptions(pin: String, screens: [ScreenInfo]) -> [DisplayOption] {
         var options = [DisplayOption(value: "", label: "Any display"), DisplayOption(value: "main", label: "Main display")]
+        for number in 2...max(3, screens.count) {
+            options.append(DisplayOption(value: String(number), label: positionLabel(number)))
+        }
         for (index, screen) in screens.enumerated() {
             let name = screen.name.isEmpty ? "Display \(index + 1)" : screen.name
-            options.append(DisplayOption(value: screen.pinValue(among: screens), label: name))
+            options.append(DisplayOption(value: screen.pinValue(among: screens), label: name, startsGroup: index == 0))
         }
-        if !workspace.display.isEmpty, !options.contains(where: { $0.value == workspace.display }) {
-            let connected = ScreenInfo.pinned(workspace.display, among: screens)
-            let label = connected.map { $0.name.isEmpty ? workspace.display : $0.name }
-                ?? "\(workspace.display) (not connected)"
-            options.append(DisplayOption(value: workspace.display, label: label))
+        let pin = pin.trimmingCharacters(in: .whitespaces)
+        if !pin.isEmpty, !options.contains(where: { $0.value == pin }) {
+            let label: String
+            if pin.lowercased() == "main" || pin == "1" {
+                label = "Main display"
+            } else if let number = Int(pin), number > 1 {
+                label = positionLabel(number)
+            } else {
+                let connected = ScreenInfo.pinned(pin, among: screens)
+                label = connected.map { $0.name.isEmpty ? pin : $0.name } ?? "\(pin) (not connected)"
+            }
+            options.append(DisplayOption(value: pin, label: label, startsGroup: true))
         }
         return options
+    }
+
+    /// "Second display", "Third display", then "Display 4"…
+    static func positionLabel(_ number: Int) -> String {
+        switch number {
+        case 1: return "Main display"
+        case 2: return "Second display"
+        case 3: return "Third display"
+        default: return "Display \(number)"
+        }
     }
 
     /// The remove button of a workspace: a workspace with shortcuts, app rules or a display pin

@@ -124,12 +124,13 @@ extension WorkspacesView {
         Picker("Display", selection: Binding(get: { workspace.display },
                                              set: { model.setDisplay($0, for: workspace.id) })) {
             ForEach(model.displayOptions(for: workspace, screens: screens), id: \.self) { option in
+                if option.startsGroup { Divider() }
                 Text(option.label).tag(option.value)
             }
         }
         .labelsHidden()
         .frame(maxWidth: 160, alignment: alignment)
-        .help("Pin the workspace to a display: it always shows there while that display is connected")
+        .help("Pin the workspace to a display: by position (whichever monitor is second or third) or a monitor by name. It shows there while that display is connected")
     }
 
     private func caption(_ text: String) -> some View {
