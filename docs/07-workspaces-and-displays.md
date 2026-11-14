@@ -16,7 +16,7 @@ are parked off-screen. Everything below lives in `Tiling/WindowManager.swift` an
 
 - `name` (default: 1-based position), `switch` = shortcut that shows the workspace, `move` = shortcut that moves the focused window there (Settings calls it *Move window here*), `display` = the display it is pinned to (see [Pinned workspaces](#pinned-workspaces)).
 - Workspace count: `max(1, configured workspaces, number of displays)`. Workspaces past the configured ones are named with their 1-based number and have no shortcuts.
-- Fewer workspaces than before (after a reload): windows of removed ones join the first workspace.
+- Fewer workspaces than before (after a reload, or a display unplugged when fewer workspaces are configured than there were displays): windows of removed ones join the first workspace (`fitWorkspaces`), so none is left parked in a workspace that no longer exists.
 - Actions: `workspace n`, `workspace back-and-forth`, `move-to-workspace n` ([Actions](05-actions.md)).
 
 ## One home display per workspace
@@ -52,7 +52,7 @@ So focusing an empty workspace (`workspace n`, `focus <dir>` or `focus-display` 
 
 1. HyperSpace (`FocusAnchor`, `Tiling/FocusAnchor.swift`) **clicks the desktop** in the middle of the display's visible area, a moment later (the windows of the workspace just left are still there for a moment), with a synthetic left click (no modifiers, stamped with `EventTap.syntheticMarker`, so the event tap and your mouse mappings ignore it). As with a click of yours on an empty desktop, the **Finder** becomes the active app on that display and its menu bar is lit there. The pointer stays in the middle of the display;
 2. no click is sent while a mouse button is held, nor when a window covers that point (a floating window, a scratchpad): its app would take the focus instead;
-3. until a window is focused, that display **counts as the focused one** for HyperSpace too (menu bar highlight, apps opened from there, layout and workspace commands), even if macOS still reports the window left behind as focused;
+3. until a window is focused, that display **counts as the focused one** for HyperSpace too (menu bar highlight, apps opened from there, layout and workspace commands), even if macOS still reports the window left behind as focused: `focused()` is nil then, so window commands (`swap`, `resize`, `float`, `accordion`, `move-to-workspace`, `move-to-scratchpad`) leave that window alone;
 4. that ends as soon as a window is focused, or another app than the Finder becomes active (⌘Tab, Spotlight, an app opening).
 
 Earlier versions clicked an invisible window of HyperSpace's own instead; on macOS 27 that makes HyperSpace active but no longer moves the lit menu bar to that display.
@@ -80,10 +80,10 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 ## How windows are hidden ("parked")
 
 - Moving between displays of different sizes, floating windows keep their position and size as **percentages of the visible frame** (`ScreenInfo.relocate`), both when their workspace comes back on another display and on `move-to-workspace` to a workspace shown elsewhere. Tiled windows are simply re-laid out.
-- A window whose workspace is not displayed is moved to the **bottom-right corner of its display** (position `maxX−1, maxY−1`: practically all of it off-screen). Its previous frame is remembered (`hiddenFrame`).
+- A window whose workspace is not displayed is moved to the **bottom-right corner of its display** (position `maxX−1, maxY−1`: practically all of it off-screen), or to the **bottom-left** one (the window lying left of the display, its top-right point on it) when another display beyond the bottom-right corner would show more of it there, as with a taller display on the right (`parkingPoint`). Its previous frame is remembered (`hiddenFrame`).
 - Parked windows come back: when their workspace is shown (tiled ones are placed by the retile; floating ones return to their frame, or the same place relative to the new display), on **quit**, when tiling is **turned off**, and after a **crash** (at startup,
   windows with less than 10% visible on any display are centred on the main display).
-- Writes use the per-app `AXQueues` queues; on quit, pending writes are flushed (up to 1.5 s) so windows really come back.
+- Writes use the per-app `AXQueues` queues; on quit, pending writes are flushed (up to 1.5 s) so windows really come back. Turning tiling off does not wait for them.
 - ⌘Tab or a click on a window of a hidden workspace **shows that workspace** (focus follows), except for focus changes caused by HyperSpace itself (ignored for 0.6 s after it moves things) and for a window just moved away.
 
 ## App assignments
@@ -100,8 +100,8 @@ The move is not undone automatically; to bring a workspace back, run `move-works
   Choices outside the workspace count are skipped.
 - **Launch without waiting for focus**: right after an app launches its windows are looked for again after 0.5, 1.5, 3 and 6 s, and a window created before AX describes it is retried, so a window of an app with a rule goes to its workspace (and is parked there if that workspace is hidden) as soon as it exists, not when you first focus the app.
 - **Opened from**: `LaunchTracker` remembers the workspace you were on when an app launched (up to 60 s until its first window, then 3 s of grace for further windows). If you switch workspace while the app loads, its window appears in the original workspace (hidden), and the focus stays where you are.
-- An app **with a rule** that you just opened takes you to its workspace (`reveal`), even if the app is slow to show its window. Not during the 90 s after a login launch (apps macOS reopens by itself), and not for restored windows or scratchpad windows.
-- Without a rule, an app that finishes loading after you left its workspace stays in that workspace and does not steal focus.
+- An app **with a rule** that you just opened takes you to its workspace (`reveal`), even if the app is slow to show its window. Not during the 90 s after a login launch (apps macOS reopens by itself), and not for restored windows, scratchpad windows or dialogs. One decision (`revealsWorkspace`) covers windows the app announces and windows found by a later look.
+- Any other window opening in a hidden workspace while its app is in front (an app without a rule that finishes loading after you left its workspace, a window restored at login) stays in that workspace and does not steal focus.
 
 ## Saved state and restore
 
@@ -119,7 +119,7 @@ The move is not undone automatically; to bring a workspace back, run `move-works
 | `savedAt` | when |
 
 - **When**: 2 s after a change (and only if the state really changed, ignoring titles), and immediately on quit. The state is built on the main thread from the titles already cached on the windows, and written on the `HyperSpace.state` queue. Nothing is saved while a restore is still matching windows.
-- **Restore**: at start the state is loaded if it is **less than 7 days old**. For a minute, each window found is matched to a saved one: same app and title, otherwise the first unclaimed saved window of that app (titles change, e.g. browser tabs).
-  The window takes its saved workspace, floating flag, scratchpad flag, order and columns. App rules take precedence over the saved workspace. After 60 s the matching ends. Saved windows for apps not reopened yet are kept in the file on quit.
+- **Restore**: at start the state is loaded if it is **less than 7 days old**. For a minute, each window found is matched to a saved one: same app and title, otherwise the first unclaimed saved window of that app (titles change, e.g. browser tabs). That fallback is only for windows that existed when the restore started and for apps opened since (or still launching then): a new window (⌘N) of an app that was already running claims a saved window only with its exact title.
+  The window takes its saved workspace, floating flag, scratchpad flag, order and columns, **once**: later looks for windows (a Space change, the rescans) place only the windows found since, next to their saved neighbours, and leave what you arranged meanwhile alone. App rules take precedence over the saved workspace. After 60 s the matching ends. Saved windows for apps not reopened yet are kept in the file on quit.
 - `displays`, `moved` and `layouts` are matched by UUID; a saved display not connected yet keeps its workspace for when it is plugged in.
 - Windows are recognised after a Mac reboot too, since apps reopen their windows.

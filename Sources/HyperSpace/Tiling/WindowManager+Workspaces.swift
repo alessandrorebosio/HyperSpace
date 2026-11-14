@@ -92,7 +92,7 @@ extension WindowManager {
             log.debug("switch to workspace \(index) on display \(screen.id) (shown there: \(self.displayed[screen.id] ?? -1), focused: \(focusedWorkspace ?? -1))")
             if let current = focusedWorkspace, current != index {
                 previousWorkspace = current
-                if let window = focused(), window.workspace == current, !window.scratchpad { lastFocused[current] = window.id }
+                if let window = focused(), isMember(window, of: current) { lastFocused[current] = window.id }
             }
             // Any workspace switch closes the scratchpad, the one you are on included: left on
             // screen behind the windows focused below, it would still show (in gaps, screenshots).
@@ -125,8 +125,7 @@ extension WindowManager {
             let source = window.workspace
             ignoreFocusChanges()
             // Its dialogs go along.
-            let moving = [window] + dialogWindows(of: window)
-            moving.forEach { $0.workspace = index }
+            let moving = setWorkspace(index, of: window)
             log.debug("move window \(window.id) (\(window.appLabel, privacy: .public)) from workspace \(source) to \(index), shown: \(self.display(showing: index) != nil)")
             // A floating window going to a workspace shown on another display keeps its place there.
             carryFloating(moving, screens: currentScreens())
@@ -138,11 +137,11 @@ extension WindowManager {
         }
     }
 
-    /// Parks a window in the bottom-right corner of its screen, nearly all of it off-screen.
+    /// Parks a window in a bottom corner of its screen, nearly all of it off-screen.
     func hide(_ window: ManagedWindow, from frame: CGRect, screens: [ScreenInfo]) {
-        guard window.hiddenFrame == nil, let screen = screens.screen(for: frame)?.frame else { return }
+        guard window.hiddenFrame == nil, let screen = screens.screen(for: frame) else { return }
         window.hiddenFrame = frame
-        park(window, in: screen)
+        park(window, size: frame.size, on: screen, screens)
     }
 
     /// Keeps a parked window parked: macOS moves windows of an unplugged display onto the
@@ -151,10 +150,10 @@ extension WindowManager {
     func keepHidden(_ window: ManagedWindow, bounds: [CGWindowID: CGRect], screens: [ScreenInfo]) {
         guard let saved = window.hiddenFrame, let frame = bounds[window.id],
               !Self.isParked(frame, on: screens),
-              Date().timeIntervalSince(window.movedByUs) > 0.5,
-              let screen = screens.screen(for: frame)?.frame else { return }
+              !window.movedByUsRecently,
+              let screen = screens.screen(for: frame) else { return }
         if !screens.contains(where: { $0.frame.contains(saved.center) }) { window.hiddenFrame = frame }
-        park(window, in: screen)
+        park(window, size: frame.size, on: screen, screens)
     }
 
     /// A window that must be out of sight: parked now if it is on screen, else kept parked.
@@ -166,17 +165,33 @@ extension WindowManager {
         }
     }
 
-    private func park(_ window: ManagedWindow, in screen: CGRect) {
+    private func park(_ window: ManagedWindow, size: CGSize, on screen: ScreenInfo, _ screens: [ScreenInfo]) {
         window.movedByUs = Date()
         let element = window.element
-        axQueues.perform(window.pid) { AX.setPosition(element, CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)) }
+        let others = screens.filter { $0.id != screen.id }.map(\.frame)
+        let point = Self.parkingPoint(size: size, on: screen.frame, others: others)
+        axQueues.perform(window.pid) { AX.setPosition(element, point) }
+    }
+
+    /// Where a parked window of `size` goes (its top-left corner): the bottom-right corner of
+    /// its display, all of it off-screen but a point; the bottom-left one (the window then
+    /// lies to the left of the display) when another display beyond the bottom-right corner
+    /// would show more of it there. Only bottom corners: macOS keeps windows below the menu bar.
+    static func parkingPoint(size: CGSize, on screen: CGRect, others: [CGRect]) -> CGPoint {
+        let right = CGPoint(x: screen.maxX - 1, y: screen.maxY - 1)
+        let left = CGPoint(x: screen.minX - size.width + 1, y: screen.maxY - 1)
+        func seen(_ origin: CGPoint) -> CGFloat {
+            others.reduce(0) { $0 + CGRect(origin: origin, size: size).intersection($1).area }
+        }
+        let onRight = seen(right)
+        return onRight > 0 && seen(left) < onRight ? left : right
     }
 
     /// Whether a window shows at most a sliver on every screen (or none): parked, not in view.
     static func isParked(_ frame: CGRect, on screens: [ScreenInfo]) -> Bool {
         let seen = screens.map { frame.intersection($0.frame) }.filter { !$0.isNull }
-        guard let best = seen.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return true }
-        return best.width <= 40 || best.height <= 40 || best.width * best.height < 0.1 * frame.width * frame.height
+        guard let best = seen.max(by: { $0.area < $1.area }) else { return true }
+        return best.width <= 40 || best.height <= 40 || best.area < 0.1 * frame.area
     }
 
     /// A floating window returns to its frame, on the display now showing its workspace;
@@ -198,7 +213,7 @@ extension WindowManager {
     /// their workspace (it was just moved, or the window was): carried over, proportionally.
     func carryFloating(_ members: [ManagedWindow], screens: [ScreenInfo]) {
         let bounds = currentBounds()
-        for window in members where window.isFloating && !window.scratchpad && window.hiddenFrame == nil {
+        for window in members where window.isFloating && isMember(window, of: window.workspace) && window.hiddenFrame == nil {
             guard let frame = bounds[window.id], let id = display(showing: window.workspace),
                   let screen = screens.first(id: id) else { continue }
             let target = Self.place(frame, on: screen, screens)
@@ -212,9 +227,7 @@ extension WindowManager {
     func focusWindow(in workspace: Int) -> ManagedWindow? {
         scopedValue {
             let bounds = currentBounds()
-            let candidates = orderedWindows.filter {
-                $0.workspace == workspace && !$0.scratchpad && bounds[$0.id] != nil
-            }
+            let candidates = orderedWindows.filter { isMember($0, of: workspace) && bounds[$0.id] != nil }
             if let target = candidates.first(where: { $0.id == lastFocused[workspace] }) ?? candidates.first {
                 focus(target)
                 return target
@@ -306,15 +319,15 @@ extension WindowManager {
     // MARK: - Menu
 
     /// Every workspace with its windows in tiling order, for when the menu opens. Titles are
-    /// the ones kept up to date by the title notifications: no AX round trip here.
+    /// the ones kept up to date by the title notifications: no AX round trip here. Only reads:
+    /// which workspace each display shows is kept current by the display changes themselves.
     func summaries() -> [WorkspaceSummary] {
         scopedValue {
             guard running, config.enabled, config.workspaces.count > 1 else { return [] }
-            syncDisplays()
             let screens = currentScreens()
             var apps: [pid_t: NSRunningApplication] = [:]
-            // In tiling order within each workspace.
-            let byWorkspace = Dictionary(grouping: orderedWindows.filter { !$0.scratchpad }, by: \.workspace)
+            // In tiling order within each workspace; the scratchpad and its dialogs are in none.
+            let byWorkspace = Dictionary(grouping: orderedWindows.filter { isMember($0, of: $0.workspace) }, by: \.workspace)
             return (0..<workspaceCount).map { index in
                 let members = byWorkspace[index] ?? []
                 let entries = members.map { window -> WorkspaceSummary.Window in

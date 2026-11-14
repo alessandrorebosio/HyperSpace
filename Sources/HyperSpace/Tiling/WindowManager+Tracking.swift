@@ -36,6 +36,7 @@ extension WindowManager {
         // Windows already tracked are not described again (`track` would skip them anyway):
         // only their id is read, which spares a busy app most of the round trips.
         let known = Set(windowIDs[pid] ?? [])
+        let generation = discoveryGeneration
         pendingDiscoveries += 1
         axQueues.read(pid, {
             let main = AX.element(app, kAXMainWindowAttribute).flatMap(AX.windowID)
@@ -45,10 +46,13 @@ extension WindowManager {
             }
             return (unknown.map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
         }, then: { [weak self] (probes: [AX.WindowProbe], focused: CGWindowID?) in
-            self?.discovered(probes, focused: focused, watcher: watcher, then: done)
+            guard let self, generation == discoveryGeneration else { return }
+            discovered(probes, focused: focused, watcher: watcher, then: done)
         })
     }
 
+    /// The answer of a lookup of this run (one of an earlier run, tiling turned off and on
+    /// meanwhile, is dropped before it gets here and is not counted).
     private func discovered(_ probes: [AX.WindowProbe], focused: CGWindowID?, watcher: AppWatcher, then done: (() -> Void)?) {
         let pid = watcher.pid
         scoped {
@@ -83,8 +87,9 @@ extension WindowManager {
     }
 
     /// Starts managing a window; nil when it is already known or not a window to manage.
+    /// `reveals`: it takes you to its workspace (see `revealsWorkspace`), which `reveal` does.
     @discardableResult
-    private func track(_ probe: AX.WindowProbe, in watcher: AppWatcher) -> ManagedWindow? {
+    private func track(_ probe: AX.WindowProbe, in watcher: AppWatcher) -> (window: ManagedWindow, reveals: Bool)? {
         let element = probe.element
         let appID = watcher.appLabel
         let role = probe.role ?? "-"
@@ -109,7 +114,8 @@ extension WindowManager {
         window.parent = parent?.id
         // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
         var restored: WorkspaceState.Window?
-        if parent == nil, let app = watcher.bundleID, let index = restorer?.claim(app: app, title: probe.title),
+        if parent == nil, let app = watcher.bundleID,
+           let index = restorer?.claim(app: app, title: probe.title, window: id, pid: watcher.pid),
            let saved = restorer?.window(index) {
             restored = saved
             restoredIndex[id] = index
@@ -156,14 +162,17 @@ extension WindowManager {
         }
         // An app with a rule you just opened takes you to its workspace, however its first
         // window was found (an app slow to answer is picked up by a later look).
-        if parent == nil, let assigned, assigned < workspaceCount, launch != nil, restored == nil, !window.scratchpad { reveal(window) }
+        let reveals = Self.revealsWorkspace(assigned: assigned, workspaces: workspaceCount, launched: launch != nil,
+                                            restored: restored != nil, scratchpad: window.scratchpad,
+                                            dialog: parent != nil, now: Date(), revealAfter: revealAfter)
+        if reveals { reveal(window) }
         windows[id] = window
         scope?.bounds = nil // a new window: what a command read before may lack it
         windowIDs[window.pid, default: []].append(id)
         order.append(id)
         watcher.watch(element)
         log.debug("track \(watcher.appLabel, privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)\(parent.map { " dialog of \($0.id)" } ?? "")")
-        return window
+        return (window, reveals)
     }
 
     /// The window a new dialog of `pid` belongs to.
@@ -185,10 +194,19 @@ extension WindowManager {
         return whereItAppears() ?? 0
     }
 
+    /// Whether a new window takes you to its workspace: a window of an app with a rule (to a
+    /// workspace that exists) that you just opened. Not a dialog (it follows its window), not
+    /// a scratchpad window, not a window found again after a restart, and not before
+    /// `revealAfter`: apps opened together with the Mac at login must not flip through their
+    /// workspaces.
+    static func revealsWorkspace(assigned: Int?, workspaces: Int, launched: Bool, restored: Bool, scratchpad: Bool,
+                                 dialog: Bool, now: Date, revealAfter: Date) -> Bool {
+        guard let assigned, assigned < workspaces else { return false }
+        return launched && !restored && !scratchpad && !dialog && now > revealAfter
+    }
+
     /// Shows the workspace of a window just tracked, once tracking is done.
     private func reveal(_ window: ManagedWindow) {
-        // Apps opened together with the Mac at login must not flip through their workspaces.
-        guard Date() > revealAfter else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, windows[window.id] === window, display(showing: window.workspace) == nil else { return }
             log.debug("reveal workspace \(window.workspace) for opened app \(window.appLabel, privacy: .public)")
@@ -204,23 +222,31 @@ extension WindowManager {
     }
 
     private func untrack(_ id: CGWindowID) {
-        if let pid = windows[id]?.pid, var ids = windowIDs[pid] {
-            ids.removeAll { $0 == id }
-            windowIDs[pid] = ids.isEmpty ? nil : ids
+        if let pid = windows[id]?.pid {
+            if var ids = windowIDs[pid] {
+                ids.removeAll { $0 == id }
+                windowIDs[pid] = ids.isEmpty ? nil : ids
+            }
+            if focusedIn[pid] == id { focusedIn[pid] = 0 }
         }
         windows[id] = nil
         order.removeAll { $0 == id }
         lastFocused = lastFocused.filter { $0.value != id }
+        restoredIndex[id] = nil
+        restoredApplied.remove(id)
+        if movedAway == id { movedAway = nil }
+        // Its dialogs left open are on their own now.
+        for dialog in windows.values where dialog.parent == id { dialog.parent = nil }
     }
 
     /// Space switch: pick up windows AX could not see before and drop dead ones.
     func rescan() {
         // (CGWindowListCreate, which returns only the ids, is not available from Swift.)
-        let alive = Set(
-            (CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? [])
-                .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
-        )
-        for id in windows.keys where !alive.contains(id) { untrack(id) }
+        let alive = WindowList.allIDs()
+        // An empty list is a failed query, not every window gone.
+        if !alive.isEmpty {
+            for id in windows.keys where !alive.contains(id) { untrack(id) }
+        }
         for watcher in apps.values { discover(watcher) }
         whenDiscovered { [weak self] in
             self?.applyRestoredLayout()
@@ -244,12 +270,12 @@ extension WindowManager {
             guard let window = managed(element, pid: pid) else { return }
             if window.hiddenFrame != nil {
                 // A parked window moved by macOS (a display went away): parked again.
-                if Date().timeIntervalSince(window.movedByUs) > 0.5 { scheduleRetile() }
+                if !window.movedByUsRecently { scheduleRetile() }
                 return
             }
-            guard !window.isFloating, !window.scratchpad,
+            guard takesTile(window),
                   // A window that cannot take its tile (a minimum size) must not loop.
-                  Date().timeIntervalSince(window.movedByUs) > 0.5 else { return }
+                  !window.movedByUsRecently else { return }
             scheduleSnapBack()
         case kAXFocusedWindowChangedNotification:
             if let window = managed(element, pid: pid) {
@@ -295,32 +321,31 @@ extension WindowManager {
                 }
                 return
             }
-            guard let window = track(probe, in: watcher) else { return }
-            windowTracked(window, watcher: watcher)
+            guard let (window, reveals) = track(probe, in: watcher) else { return }
+            windowTracked(window, reveals: reveals, watcher: watcher)
         }
     }
 
-    private func windowTracked(_ window: ManagedWindow, watcher: AppWatcher) {
+    private func windowTracked(_ window: ManagedWindow, reveals: Bool, watcher: AppWatcher) {
         scoped {
             let pid = watcher.pid
             // A scratchpad window is shown where you are, whatever its workspace.
             if window.scratchpad { return }
+            // A dialog of a scratchpad window comes and goes with it (see `retile`).
+            if case .scratchpad = placement(of: window) { return scheduleRetile(after: [0.25]) }
             if display(showing: window.workspace) == nil, frontmostPID == pid {
                 lastFocused[window.workspace] = window.id
-                if watcher.bundleID.flatMap({ config.assignments[$0] }) != nil {
-                    // An app you just opened shows its assigned workspace, so its window is visible.
-                    switchWorkspace(window.workspace)
-                } else {
-                    // It finished loading after you left its workspace: it stays there, and
-                    // the focus stays where you are.
-                    log.debug("window \(window.id) (\(watcher.appLabel, privacy: .public)) opened in hidden workspace \(window.workspace)")
-                    let here = activeDisplay.flatMap { displayed[$0] }
-                    ignoreFocusChanges()
-                    movedAway = window.id
-                    retile()
-                    if let here { focusWindow(in: here) }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
-                }
+                // An app with a rule you just opened: `reveal` shows its workspace.
+                if reveals { return }
+                // It finished loading after you left its workspace (or it is not one that takes
+                // you there): it stays there, and the focus stays where you are.
+                log.debug("window \(window.id) (\(watcher.appLabel, privacy: .public)) opened in hidden workspace \(window.workspace)")
+                let here = activeDisplay.flatMap { displayed[$0] }
+                ignoreFocusChanges()
+                movedAway = window.id
+                retile()
+                if let here { focusWindow(in: here) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
                 return
             }
             // Some apps put the window on screen a moment after announcing it.

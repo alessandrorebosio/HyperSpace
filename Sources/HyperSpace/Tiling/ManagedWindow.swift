@@ -21,6 +21,8 @@ final class ManagedWindow {
     var weight: CGFloat = 1
     /// When we last moved it: the moves this causes are ours, not the user's.
     var movedByUs = Date.distantPast
+    /// Moved by us a moment ago (`WindowManager.ownMoveSettle`): a move it reports now is ours.
+    var movedByUsRecently: Bool { Date().timeIntervalSince(movedByUs) <= WindowManager.ownMoveSettle }
     /// Out of the tiling and the workspaces: shown centered above the others on demand.
     var scratchpad = false
     /// A scratchpad window on screen (it stays there across workspace switches).

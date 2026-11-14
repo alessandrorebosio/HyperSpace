@@ -26,7 +26,7 @@ final class AppWatcher {
         element = AXUIElementCreateApplication(pid)
         self.refcon = refcon
         // A hung app must not freeze the window manager for long.
-        AXUIElementSetMessagingTimeout(element, 0.5)
+        AXUIElementSetMessagingTimeout(element, AX.messagingTimeout)
 
         var created: AXObserver?
         guard AXObserverCreate(pid, axCallback, &created) == .success, let created else { return nil }

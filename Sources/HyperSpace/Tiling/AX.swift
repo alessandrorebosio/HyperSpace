@@ -7,10 +7,14 @@ private func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePo
 
 /// Thin, allocation-light helpers over the Accessibility C API.
 enum AX {
+    /// How long (seconds) an app has to answer an AX call: a hung or busy app must not hold
+    /// up the window manager for long (the system default is 6 s).
+    static let messagingTimeout: Float = 0.5
+
     static let systemWide: AXUIElement = {
         let element = AXUIElementCreateSystemWide()
         // On the system-wide element this is the timeout of every element.
-        AXUIElementSetMessagingTimeout(element, 0.5)
+        AXUIElementSetMessagingTimeout(element, AX.messagingTimeout)
         return element
     }()
 

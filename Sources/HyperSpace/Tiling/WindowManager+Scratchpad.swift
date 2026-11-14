@@ -76,8 +76,9 @@ extension WindowManager {
         if window.scratchpad {
             window.scratchpad = false
             window.scratchpadShown = false
-            window.hiddenFrame = nil
-            window.workspace = focusedWorkspace ?? window.workspace
+            // A hidden one keeps the frame it was parked from: the retile brings a floating
+            // window back through it (a tiled one is placed anyway).
+            setWorkspace(focusedWorkspace ?? window.workspace, of: window)
             log.debug("window \(window.id) (\(window.appLabel, privacy: .public)) back into workspace \(window.workspace)")
             retile()
             focus(window)
@@ -110,7 +111,7 @@ extension WindowManager {
             // Apps that size in steps (terminals) or have a minimum size miss the exact size:
             // centered on what they took, and the other scratchpad windows take it too.
             let element = window.element
-            let misses = { (size: CGSize) in !size.isClose(to: frame.size, tolerance: 1) }
+            let misses = { (size: CGSize) in !size.isClose(to: frame.size, tolerance: Self.frameTolerance) }
             axQueues.perform(window.pid, retryAfter: 0.1) { [weak self] isRetry in
                 guard var size = AX.size(element) else { return false }
                 // Coming from another display, some apps resize themselves a moment after the
@@ -128,7 +129,7 @@ extension WindowManager {
                     DispatchQueue.main.async { self?.scratchpadFitted = (target, size) }
                 }
                 let centered = target.centered(size, rounded: true)
-                if !origin.isClose(to: centered.origin, tolerance: 1) {
+                if !origin.isClose(to: centered.origin, tolerance: Self.frameTolerance) {
                     AX.setPosition(element, centered.origin)
                 }
                 return false

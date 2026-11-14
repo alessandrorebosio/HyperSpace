@@ -33,14 +33,14 @@ Among the windows in the scratchpad: if one is shown and focused → hide it; el
 ## Move to scratchpad (`move-to-scratchpad`)
 
 - Without argument it acts on the focused window; with an app, on that app's scratchpad window, or else its focused/first window; with the app not open, it opens it.
-- A window **in the scratchpad** goes back into the tiling of the workspace *you are on* (the focused display's), and is focused. A window **in the tiling** becomes a scratchpad window and is shown.
+- A window **in the scratchpad** goes back into the tiling of the workspace *you are on* (the focused display's), with its dialogs, and is focused; a hidden one comes back out of its parking corner (a floating one where it was last shown). A window **in the tiling** becomes a scratchpad window and is shown.
 
 ## Showing, hiding, size
 
 - **Size**: a fraction of the focused display's visible area: `"scratchpad": { "width": 0.6, "height": 0.7 }` (default; each value clamped to 0.2…1; also not exposed in Settings, it is config only).
-- **Where**: centred on the display with focus. It stays visible until you hide it, and closes (with its dialogs) when you change workspace; `focus-display` and moving a workspace to another display do not close it. Pressing the shortcut of the workspace already focused changes nothing. ⌘Tab to a hidden scratchpad window shows it automatically (if more than 0.6 s after one of HyperSpace's own focus changes).
+- **Where**: centred on the display with focus. It stays visible until you hide it, and closes (with its dialogs) when you change workspace; `focus-display` and moving a workspace to another display do not close it. Pressing the shortcut of the workspace already focused closes it too (any workspace switch does, the one you are on included: left on screen behind the window focused there, it would still show in gaps and screenshots). ⌘Tab to a hidden scratchpad window shows it automatically (if more than 0.6 s after one of HyperSpace's own focus changes).
 - **Hiding**: the window is parked like a hidden workspace's windows (bottom-right corner) and focus goes back to a window of the workspace shown on the display it was on, so the pointer stays on that display.
-- Scratchpad windows are excluded from layouts, from the workspace summaries in the menu, from `focus`-by-workspace candidates, and from snap-back.
+- Scratchpad windows and their dialogs are excluded from layouts, from the workspace summaries in the menu, from `focus`-by-workspace candidates, from `swap`, `swap master`, `accordion` and drag and drop, and from snap-back (`WindowManager.placement`). A shown one is a candidate for `focus <dir>`, like any window in view.
 - The scratchpad state (which windows) is **saved** in `workspaces.json` (`scratchpad: true`) and restored across restarts.
 
 ## Centring and overlap logic

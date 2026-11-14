@@ -1,14 +1,15 @@
 # 6. Tiling
 
 Tiling is implemented by `Tiling/WindowManager.swift` (and its `WindowManager+*.swift` extensions), `Layout.swift` and `ColumnLayout.swift`. Enable it with `tiling.enabled` (default `true`) or the *Tile windows* switch.
-When it is off, HyperSpace stops observing apps, brings every parked window back and discards its window state.
+When it is off, HyperSpace stops observing apps, brings every parked window back (without waiting for slow apps; only quitting waits, up to 1.5 s) and discards its window state, columns and per-display layouts included: turned on again, it starts from the saved state like a launch.
 
 ## What gets tiled
 
 **Standard windows**: role `AXWindow`, subrole `AXStandardWindow`, and a settable position. **Dialogs** (subrole `AXDialog`/`AXSystemDialog`, movable) are tracked too, as floating windows of their parent (see [Dialogs](#dialogs)). Sheets, panels and popovers are ignored.
 Windows are described on the app's own AX queue (`AX.probe`: role, subrole, title, frame, the app's main window), not on the main thread; a window AX does not describe yet (no subrole) is looked at again after 0.2, 0.4, 0.8, 1.6 and 3.2 s.
 Excluded from a retile: minimized windows, hidden apps, windows on other macOS Spaces (not in the on-screen list), **native full-screen windows** (a frame that covers a whole display),
-floating windows and scratchpad windows. Windows without a CGWindowID are skipped (and noted in the debug report).
+floating windows and scratchpad windows (and their dialogs). Windows without a CGWindowID are skipped (and noted in the debug report).
+A window out of sight that way still belongs to its workspace: in `columns` it keeps its place in the arrangement (the others close up meanwhile) and comes back to it.
 New windows join the end of the tiling order; the first window of a workspace is its **master**.
 
 ## Layouts
@@ -30,7 +31,7 @@ The area is the display's `NSScreen.visibleFrame` (menu bar and Dock excluded), 
 
 ### Columns layout
 
-Each workspace has a `ColumnLayout`: new windows get their own column on the right; closed windows leave the arrangement. `swap` (`hyper+arrows` by default) means:
+Each workspace has a `ColumnLayout`: new windows get their own column on the right; closed windows leave the arrangement, while windows out of sight (minimized, app hidden, native full screen, another Space) keep their column and row: only the windows on screen are laid out (`ColumnLayout.restricted`), and an accordion left with one of them on screen is drawn as a plain column until the others are back. `swap` (`hyper+arrows` by default) means:
 
 | Key | Window shares its column | Window is alone in its column |
 |---|---|---|
@@ -53,8 +54,10 @@ In `accordion`, `focus left/right` and `swap left/right` go to / exchange with t
 
 - **`focus <dir>`**: among all visible windows of displayed workspaces (floating and other displays included) it picks the nearest one in that direction by window centers,
   preferring windows that overlap on the perpendicular axis (others are penalised).
-- **`swap <dir>`**: in `columns` as above; in the other layouts it finds the neighbour among *tiled* visible windows (also on other displays) and exchanges order, weight, workspace and frames — so the window can cross displays.
+- **`swap <dir>`**: in `columns` as above; in the other layouts it finds the neighbour among *tiled* visible windows (also on other displays) and exchanges order, weight, column slot, workspace (dialogs included) and frames — so the window can cross displays (`exchange`, shared with drag and drop).
 - **`swap master`**: exchanges the window with the first tiled window of its workspace.
+- `swap`, `swap master`, `accordion` and drag and drop act on tiled windows only: on a floating or scratchpad window they do nothing.
+- While the focus is held on an empty display (see [Empty workspaces](07-workspaces-and-displays.md#empty-workspaces)) the window left behind on the other display is not the focused one for any command: `focus`, `swap`, `resize`, `float`, `accordion`, `move-to-workspace` and `move-to-scratchpad` leave it alone.
 - **`float`**: toggles floating for the focused window; a floating window is raised and focused. The choice is remembered (and saved) and config reloads no longer override it.
 
 ## Resize
@@ -62,9 +65,9 @@ In `accordion`, `focus left/right` and `swap left/right` go to / exchange with t
 `resize width|height ±points` (the Settings Shortcuts page uses ±50):
 
 - **Floating window** (tiling on): resized directly (minimum 160 wide, 100 high). With tiling off the command does nothing: no window is tracked.
-- **`tall`/`wide`**: along the master/stack split, the ratio changes by `delta / area length` (the master grows with a positive delta; a stack window grows by shrinking the master).
+- **`tall`/`wide`**: along the master/stack split, the ratio changes by `delta / area length` (the area being the visible frame less `padding`; the master grows with a positive delta; a stack window grows by shrinking the master).
   Along the stack, the window's weight changes (needs a stack of at least 2 windows, and the window cannot be the master).
-- **`columns`**: *width* changes the window's column weight (needs 2+ columns); *height* changes the window's weight in its column (needs 2+ windows in it).
+- **`columns`**: *width* changes the window's column weight (needs 2+ columns on screen); *height* changes the window's weight in its column (needs 2+ windows of it on screen).
 - **`monocle`**, **`accordion`**: nothing.
 - Weights are computed so the other items keep their relative sizes; every item keeps at least 80 pt.
 
@@ -96,13 +99,14 @@ A window floats if any of these holds (rules 2–3: `TilingConfig.floats`):
 
 ## Dialogs
 
-- A dialog joins the **workspace of its parent**: the app's main window (`AXMainWindow`), else its window focused last in a shown workspace, else any of its windows. It is parked and shown with that workspace, and moves with the parent on `move-to-workspace`.
+- A dialog joins the **workspace of its parent**: the app's main window (`AXMainWindow`), else its window focused last in a shown workspace, else any of its windows. It is parked and shown with that workspace, and moves with the parent whenever the parent changes workspace (`setWorkspace`): `move-to-workspace`, `swap` across displays, drag and drop, and a scratchpad window going back to the tiling.
+- A dialog whose parent closes stays open on its own, as a floating window of the same workspace.
 - When the parent's app **comes to the front** (⌘Tab, a click, the Dock, or HyperSpace focusing it) its on-screen dialogs are raised above it (`AXRaise`). Focus changes inside the same app do not raise them, so a non-modal panel never locks you out of its window.
 - Dialog-like standard windows (no zoom/full-screen button) get the same parent and workspace.
 
 ## Drag and drop and snap back
 
-- **Modifier + drag** (`mouse.dragModifier`): see [Mouse](04-mouse.md#modifier--drag-dragmodifier). Dropping a tiled window on another tiled window swaps them; on another display it joins that display's workspace; resizing in `tall`/`wide` moves the split.
+- **Modifier + drag** (`mouse.dragModifier`): see [Mouse](04-mouse.md#modifier--drag-dragmodifier). Dropping a tiled window on another tiled window exchanges them as `swap` does (order, share, column slot and workspace, so across displays the other window goes to the display left); on another display it joins that display's workspace (with its dialogs); resizing in `tall`/`wide` moves the split by the distance as a share of the layout area, as the `resize` shortcut does. Floating and scratchpad windows are simply left where they are dropped.
 - **Snap back**: if you move or resize a tiled window by hand (AX `moved`/`resized` notifications), it returns to its tile **once the mouse button is released** (HyperSpace waits, checking every 0.15 s, until
   no mouse button is down, then retiles). Not applied to floating, scratchpad or parked windows, and ignored for 0.5 s after HyperSpace's own move (so a window that cannot take its tile does not loop).
   To really move a window use the shortcuts or the modifier drag.
@@ -119,6 +123,7 @@ Bursts are coalesced (30 ms). `retile` also: parks windows of non-displayed work
 - Across displays (moving a window to a workspace shown on another display, `swap` with a window there, a workspace moved to another display):
   - the frame is read back right after the writes and written once more (position, then size) if the app kept another size or position;
   - the workspace is retiled again after 0.3 s and 0.8 s: many apps resize themselves for the new display's scale a moment after the move, too soon (< 0.5 s) to be taken for a hand resize and snapped back. Floating and scratchpad windows are left alone.
+  - a parked window counts as being on the display it is parked on (the one its sliver shows on), so bringing it back into its tile there is a move within a display.
 - `AXEnhancedUserInterface` is switched off during a move (it makes some apps animate every AX resize) and restored after.
 - If the app does not take focus within 0.15 s, HyperSpace activates it and retries.
 - Failures are recorded in "Recent issues" of *Copy Debug Info*.
