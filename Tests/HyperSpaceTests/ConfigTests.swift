@@ -129,7 +129,7 @@ import Testing
     }
 }
 
-@Suite struct ConfigWriterTests {
+@Suite struct ConfigWriterFormatTests {
     private let sample: [String: Any] = [
         "tiling": ["enabled": true, "gap": 8, "layout": "tall"] as [String: Any],
         "mouse": ["reverseScroll": false, "dragModifier": "cmd"] as [String: Any],

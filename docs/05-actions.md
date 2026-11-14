@@ -79,7 +79,7 @@ Details in [Scratchpad](08-scratchpad.md).
 | `expected 'resize width\|height <points>' in '…'` | malformed `resize` |
 | `missing argument in '…'` | `launch`/`shell`/`key` without an argument |
 | `expected back/forward in '…'` | `navigate` |
-| `unknown system action …` / `unknown media key …` | unknown argument |
+| `unknown system action in '…'` / `unknown media key in '…'` | unknown argument |
 
 ## Removed actions
 

@@ -81,7 +81,7 @@ Every push to `develop` is built and tested on macOS by GitHub Actions, which al
 ### Keyboard
 **Keyboard lock.** At the top of the Keyboard page (or from the menu bar, **Lock Keyboard**) you can lock the
 keyboard to clean it: every key is ignored, media, volume and brightness included, until you unlock it
-with the mouse (**Unlock** on the page or **Unlock Keyboard** in the menu, in the same place as Lock; a padlock shows in the menu bar).
+with the mouse (**Unlock Keyboard** on the page or in the menu, in the same place as Lock; a padlock shows in the menu bar).
 To be safe it also unlocks by itself after the time chosen under it (1, 3, 5, 10 minutes or never;
 3 by default), with the countdown on the page and in the menu. The lock is not saved: quitting HyperSpace turns the keyboard back on. Touch ID and the power button
 cannot be locked.

@@ -55,8 +55,8 @@ import Testing
     }
 }
 
-/// `Optional.assignChange`: equal values are not assigned, so `@Published` does not redraw.
-@Suite struct AssignChangeTests {
+/// `assignIfChanged`: equal values are not assigned, so `@Published` does not redraw.
+@Suite struct AssignIfChangedTests {
     /// Equal by `value`, told apart by identity: shows whether the property was assigned.
     private final class Box: Equatable {
         let value: Int
@@ -67,24 +67,24 @@ import Testing
     @Test func anEqualValueIsNotAssigned() {
         let original = Box(1)
         var property: Box? = original
-        Optional.assignChange(Box(1), to: &property)
+        assignIfChanged(Box(1), to: &property)
         #expect(property === original)
     }
 
     @Test func aDifferentValueIsAssigned() {
         let replacement = Box(2)
         var property: Box? = Box(1)
-        Optional.assignChange(replacement, to: &property)
+        assignIfChanged(replacement, to: &property)
         #expect(property === replacement)
     }
 
     @Test func nilAndValueReplaceEachOther() {
         var property: Box?
-        Optional.assignChange(Box(3), to: &property)
+        assignIfChanged(Box(3), to: &property)
         #expect(property?.value == 3)
-        Optional.assignChange(nil, to: &property)
+        assignIfChanged(nil, to: &property)
         #expect(property == nil)
-        Optional.assignChange(nil, to: &property)
+        assignIfChanged(nil, to: &property)
         #expect(property == nil)
     }
 }
