@@ -124,14 +124,14 @@ struct EdgeSliderTracker {
         let position = along ? touch.y : touch.x
         let step = along ? Self.step : Self.horizontalStep
         var steps: [EdgeStep] = []
-        let action = action(side)
+        let edgeAction = action(side)
         while position - current.anchor >= step {
             current.anchor += step
-            steps.append(EdgeStep(action: action, up: true))
+            steps.append(EdgeStep(action: edgeAction, up: true))
         }
         while current.anchor - position >= step {
             current.anchor -= step
-            steps.append(EdgeStep(action: action, up: false))
+            steps.append(EdgeStep(action: edgeAction, up: false))
         }
         slider = current
         return steps
