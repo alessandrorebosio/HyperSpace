@@ -6,7 +6,7 @@ MIN_MACOS     := 13.0
 # Extra flags for every swift build/test, e.g. SWIFT_FLAGS="--scratch-path .build-clt" (CI's
 # Command Line Tools run, kept apart from the Xcode toolchain's .build).
 SWIFT_FLAGS   ?=
-# SDK_VERSION, SIGN_IDENTITY and TESTING_PLUGIN run xcrun or security. They are lazy and
+# SDK_VERSION, SIGN_IDENTITY, TESTING_PLUGIN and TESTING_FRAMEWORKS run xcrun or security. They are lazy and
 # cached: evaluated once, and only by the recipes that use them, so `make clean` runs neither.
 SDK_VERSION    = $(eval SDK_VERSION := $$(shell xcrun --show-sdk-version))$(SDK_VERSION)
 # macOS ties the Accessibility grant to the app's designated requirement. When a
@@ -30,8 +30,15 @@ build:
 # plugin to the compiler ("plugin for module 'TestingMacros' not found"): pass it explicitly.
 TESTING_PLUGIN  = $(eval TESTING_PLUGIN := $$(abspath $$(dir $$(shell xcrun --find swift))../lib/swift/host/plugins/testing/libTestingMacros.dylib))$(TESTING_PLUGIN)
 
+# Older Command Line Tools (Swift 6.3) keep the Testing framework in Library/Developer/Frameworks
+# but SwiftPM looks in Developer/Library/Frameworks ("no such module 'Testing'"): name the folder
+# for the compiler, the linker and the test bundle's run path. Xcode's toolchain has no such folder.
+TESTING_FRAMEWORKS = $(eval TESTING_FRAMEWORKS := $$(abspath $$(dir $$(shell xcrun --find swift))../../Library/Developer/Frameworks))$(TESTING_FRAMEWORKS)
+TESTING_FLAGS   = $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-library -Xswiftc $(TESTING_PLUGIN)) \
+                  $(if $(wildcard $(TESTING_FRAMEWORKS)/Testing.framework),-Xswiftc -F -Xswiftc $(TESTING_FRAMEWORKS) -Xlinker -F -Xlinker $(TESTING_FRAMEWORKS) -Xlinker -rpath -Xlinker $(TESTING_FRAMEWORKS))
+
 test:
-	swift test $(SWIFT_FLAGS) $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-library -Xswiftc $(TESTING_PLUGIN))
+	swift test $(SWIFT_FLAGS) $(TESTING_FLAGS)
 
 app: build
 	rm -rf $(BUNDLE)
