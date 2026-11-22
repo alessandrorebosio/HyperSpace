@@ -47,7 +47,7 @@ jobs:
       - name: Test with the Command Line Tools only
         run: |
           # Where this runner's Command Line Tools keep Swift Testing, should the step fail.
-          find /Library/Developer/CommandLineTools -maxdepth 6 \( -name Testing.framework -o -name Testing.swiftmodule \) | head -5
+          find /Library/Developer/CommandLineTools -maxdepth 6 \( -name Testing.framework -o -name Testing.swiftmodule -o -name lib_TestingInterop.dylib \) | head -5
           DEVELOPER_DIR=/Library/Developer/CommandLineTools make test SWIFT_FLAGS="--scratch-path .build-clt"
 
       - name: Build the app

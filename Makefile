@@ -31,11 +31,15 @@ build:
 TESTING_PLUGIN  = $(eval TESTING_PLUGIN := $$(abspath $$(dir $$(shell xcrun --find swift))../lib/swift/host/plugins/testing/libTestingMacros.dylib))$(TESTING_PLUGIN)
 
 # Older Command Line Tools (Swift 6.3) keep the Testing framework in Library/Developer/Frameworks
-# but SwiftPM looks in Developer/Library/Frameworks ("no such module 'Testing'"): name the folder
-# for the compiler, the linker and the test bundle's run path. Xcode's toolchain has no such folder.
+# and its lib_TestingInterop.dylib in Library/Developer/usr/lib, but SwiftPM looks in
+# Developer/Library/Frameworks ("no such module 'Testing'", then "Library not loaded:
+# @rpath/lib_TestingInterop.dylib"): name the folders for the compiler, the linker and the test
+# bundle's run path. Xcode's toolchain has no such folder.
 TESTING_FRAMEWORKS = $(eval TESTING_FRAMEWORKS := $$(abspath $$(dir $$(shell xcrun --find swift))../../Library/Developer/Frameworks))$(TESTING_FRAMEWORKS)
+TESTING_LIBS    = $(abspath $(TESTING_FRAMEWORKS)/../usr/lib)
 TESTING_FLAGS   = $(if $(wildcard $(TESTING_PLUGIN)),-Xswiftc -load-plugin-library -Xswiftc $(TESTING_PLUGIN)) \
-                  $(if $(wildcard $(TESTING_FRAMEWORKS)/Testing.framework),-Xswiftc -F -Xswiftc $(TESTING_FRAMEWORKS) -Xlinker -F -Xlinker $(TESTING_FRAMEWORKS) -Xlinker -rpath -Xlinker $(TESTING_FRAMEWORKS))
+                  $(if $(wildcard $(TESTING_FRAMEWORKS)/Testing.framework),-Xswiftc -F -Xswiftc $(TESTING_FRAMEWORKS) -Xlinker -F -Xlinker $(TESTING_FRAMEWORKS) -Xlinker -rpath -Xlinker $(TESTING_FRAMEWORKS)) \
+                  $(if $(wildcard $(TESTING_LIBS)/lib_TestingInterop.dylib),-Xlinker -rpath -Xlinker $(TESTING_LIBS))
 
 test:
 	swift test $(SWIFT_FLAGS) $(TESTING_FLAGS)
