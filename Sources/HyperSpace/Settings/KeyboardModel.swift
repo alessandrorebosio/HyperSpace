@@ -30,9 +30,9 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
 
     @Published private(set) var rules: [Rule] = []
     @Published private(set) var keyboards: [KeyboardRemapper.Keyboard] = []
-    @Published private(set) var capturing: Field?
-    /// Modifiers held so far while capturing a target, shown live ("⌃⌥⇧…").
-    @Published private(set) var capturePreview = ""
+    /// The cap being recorded and, for a target, the modifiers held so far ("⌃⌥⇧…"): its own
+    /// object, so a key press while recording redraws the rows, not the page.
+    let capture: FieldCapture<Field>
     @Published private(set) var isKeyboardLocked = false
     /// "2:41" until the lock lifts by itself: its own object, so the tick every second redraws
     /// the lock row only, not every remap.
@@ -42,12 +42,11 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
     private var lockObserver: NSObjectProtocol?
-    private let recorder: ShortcutRecorder
-    /// The remaps and the hyper key; the bindings belong to the Shortcuts page.
-    private var sync = FileSync<Void>(SyncedSlice { root in
+    /// The remaps and the hyper key (the bindings belong to the Shortcuts page), and the remaps
+    /// as loaded, in the file's form: the list is written only once it differs.
+    var sync = FileSync<[[String: Any]]>(SyncedSlice { root in
         ConfigWriter.section("keyboard", of: root).filter { $0.key != "bindings" }
     })
-    var saveStatus: SaveStatus { sync.status }
     // Target capture: the most modifiers held at once, and the physical key when only one was pressed.
     private var peakModifiers: Modifiers = []
     private var modifierPresses = 0
@@ -57,12 +56,19 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
     init(remapper: KeyboardRemapper, eventTap: EventTap, config: [String: Any]) {
         self.remapper = remapper
         self.eventTap = eventTap
-        recorder = ShortcutRecorder(eventTap: eventTap, remapper: remapper)
+        capture = FieldCapture(recorder: ShortcutRecorder(eventTap: eventTap, remapper: remapper))
         // Also locked and unlocked from the menu bar, and unlocked by the timer.
         lockObserver = NotificationCenter.default.addObserver(
             forName: EventTap.keyboardLockDidChange, object: eventTap, queue: .main
         ) { [weak self] _ in self?.syncLock() }
         syncLock()
+        // A capture that ends with nothing recorded: a rule left incomplete goes (it was never
+        // saved), except the one whose other key is recorded next.
+        capture.onEnd = { [weak self] next in
+            guard let self else { return }
+            rules.removeAll { !$0.isComplete && $0.id != next?.ruleID }
+            applyDeferredReload()
+        }
         load(config)
         refreshKeyboards()
         remapper.onKeyboardsChanged = { [weak self] in self?.refreshKeyboards() }
@@ -76,10 +82,6 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
 
     deinit {
         if let lockObserver { NotificationCenter.default.removeObserver(lockObserver) }
-    }
-
-    func reload(from root: [String: Any]) {
-        if sync.shouldReload(root, editing: capturing != nil) { load(root) }
     }
 
     func setLockMinutes(_ minutes: Int) {
@@ -109,13 +111,13 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
     }
 
     func remove(_ id: UUID) {
-        if capturing?.ruleID == id { endCapture() }
+        if capturing?.ruleID == id { capture.end() }
         edit { rules.removeAll { $0.id == id } }
     }
 
     /// A target picked from the menu: it ends the recording of that target.
     func setTarget(_ name: String, for id: UUID) {
-        if capturing == .to(id) { endCapture() }
+        if capturing == .to(id) { capture.end() }
         edit { rules.update(id: id) { $0.to = name } }
     }
 
@@ -158,15 +160,15 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
     ///   own is that physical key (e.g. Right Option).
     ///
     /// Every key is recorded, Esc too (it can be remapped): clicking the cap again cancels.
+    /// The one exception is a new remap waiting for what its key becomes: there Esc cancels
+    /// (`escapeCancels`), as on the other pages, and the remap goes.
     func startCapture(_ field: Field) {
-        stopCapture(keeping: field.ruleID)
-        capturing = field
+        capture.begin(field)
         peakModifiers = []
         modifierPresses = 0
         soleModifierKey = nil
-        capturePreview = ""
         // A bound shortcut is recorded, not run.
-        recorder.start([.keyDown, .flagsChanged], pausing: [.remaps, .keyBindings]) { [weak self] event in
+        capture.recorder.start([.keyDown, .flagsChanged], pausing: [.remaps, .keyBindings]) { [weak self] event in
             guard let self else { return false }
             if case .to = capturing {
                 captureTarget(event)
@@ -175,6 +177,14 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
             }
             return true
         }
+    }
+
+    /// Whether Esc cancels the recording instead of being recorded: alone, as the target of a
+    /// remap that has none yet. Such a remap is new, and "X → Escape" saved and applied at once
+    /// is rarely what a press of Esc there means; Escape as a target is in the ▾ menu.
+    static func escapeCancels(key: String, modifiers: Modifiers, field: Field, rule: Rule?) -> Bool {
+        guard case .to = field, let rule else { return false }
+        return key == "escape" && modifiers.isEmpty && rule.to.isEmpty
     }
 
     private func captureSource(_ event: NSEvent) {
@@ -188,6 +198,10 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
         let held = Modifiers(event.modifierFlags)
 
         if event.type == .keyDown {
+            if let field = capturing, Self.escapeCancels(key: name, modifiers: held, field: field,
+                                                          rule: rules.first { $0.id == field.ruleID }) {
+                return stopCapture()
+            }
             finishCapture(held.text(key: name))
             return
         }
@@ -198,7 +212,7 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
             modifierPresses += 1
             soleModifierKey = modifierPresses == 1 ? event.keyCode : nil
             peakModifiers.formUnion(held)
-            capturePreview = peakModifiers.symbols
+            capture.preview = peakModifiers.symbols
             return
         }
         guard held.isEmpty, !peakModifiers.isEmpty else { return }
@@ -209,32 +223,9 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
         }
     }
 
-    /// Recording ends with nothing recorded (the cap clicked again, another page, the window
-    /// closed). As on every page, a rule left incomplete goes: it was never saved.
-    func stopCapture() {
-        stopCapture(keeping: nil)
-    }
-
-    /// `stopCapture`, keeping the rule `kept` even if incomplete (its other key is next).
-    private func stopCapture(keeping kept: UUID?) {
-        guard endCapture() else { return }
-        rules.removeAll { !$0.isComplete && $0.id != kept }
-        if let root = sync.takeDeferredReload() { load(root) }
-    }
-
-    /// Stops listening; false when nothing was being recorded.
-    @discardableResult
-    private func endCapture() -> Bool {
-        recorder.stop()
-        guard capturing != nil else { return false }
-        capturing = nil
-        capturePreview = ""
-        return true
-    }
-
     private func finishCapture(_ name: String) {
         guard let field = capturing else { return }
-        endCapture()
+        capture.end()
         edit {
             switch field {
             case .from(let id): rules.update(id: id) { $0.from = name }
@@ -258,7 +249,7 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
 
     // MARK: - Persistence
 
-    private func load(_ config: [String: Any]) {
+    func load(_ config: [String: Any]) {
         let keyboard = ConfigWriter.section("keyboard", of: config)
         let remaps = (keyboard["remap"] as? [[String: Any]] ?? []).map {
             RawConfig.Remap(from: $0["from"] as? String ?? "", to: $0["to"] as? String ?? "", keyboard: $0["keyboard"] as? String)
@@ -271,32 +262,31 @@ final class KeyboardModel: ObservableObject, FileBackedModel {
         for index in loaded.indices { loaded[index].id = ids[index] }
         // A rule being recorded is not in the file yet: it stays.
         assignIfChanged(loaded + rules.filter { !$0.isComplete && !ids.contains($0.id) }, to: &rules)
-        sync.didLoad(config)
+        sync.didLoad(config, remapEntries)
     }
 
     private func refreshKeyboards() {
         assignIfChanged(remapper.connectedKeyboards(), to: &keyboards)
     }
 
-    /// A change made here: a reload skipped while recording comes first, so the save that
-    /// follows writes the file's latest remaps with the change.
-    private func edit(_ change: () -> Void) {
-        if let root = sync.takeDeferredReload() { load(root) }
-        change()
-        save()
+    /// The complete remaps as the file holds them.
+    private var remapEntries: [[String: Any]] {
+        rules.filter(\.isComplete).map { rule in
+            var entry: [String: Any] = ["from": rule.from, "to": rule.to]
+            if rule.keyboard != KeyboardTarget.allText { entry["keyboard"] = rule.keyboard }
+            return entry
+        }
     }
 
-    private func save() {
-        let complete = rules.filter(\.isComplete)
-        sync.save { root in
-            ConfigWriter.edit(&root, section: "keyboard") { keyboard in
+    /// Writes the remaps once they differ from the ones loaded (the hyper key then becomes the
+    /// remap it stands for); an empty list is left out, like every list the pages write.
+    func save() {
+        let remaps = remapEntries
+        let old = sync.loaded
+        sync.save(remaps) { root in
+            guard listChanged(remaps, since: old) else { return }
+            ConfigWriter.amend(&root, section: "keyboard") { keyboard in
                 keyboard["hyperKey"] = nil
-                let remaps = complete.map { rule -> [String: Any] in
-                    var entry: [String: Any] = ["from": rule.from, "to": rule.to]
-                    if rule.keyboard != KeyboardTarget.allText { entry["keyboard"] = rule.keyboard }
-                    return entry
-                }
-                // An empty list is left out, like every list the pages write.
                 keyboard["remap"] = remaps.isEmpty ? nil : remaps
             }
         }

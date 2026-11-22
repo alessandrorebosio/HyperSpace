@@ -18,7 +18,6 @@ enum Navigation {
 
         /// ⌘ is implied unless `noCommand` is set.
         static let shift = 1 << 0
-        static let option = 1 << 1
         static let control = 1 << 2
         static let noCommand = 1 << 3
     }
@@ -105,10 +104,11 @@ enum Navigation {
         return true
     }
 
-    /// Whether a press went through, the same rule for a cached item and a new one: a stale
-    /// element, or a press the app did not complete, falls back to the mouse button.
-    private static func pressed(_ result: AXError) -> Bool {
-        result != .invalidUIElement && result != .cannotComplete
+    /// Whether a press went through, the same rule for a cached item and a new one: anything
+    /// but success (a stale element, a press the app did not complete, an item that cannot
+    /// be pressed) falls back to the mouse button, and the item is not kept.
+    static func pressed(_ result: AXError) -> Bool {
+        result == .success
     }
 
     /// Depth-first through menu bar items, menus, items and submenus. Each element costs
@@ -145,7 +145,7 @@ private func CoreDockSendNotification(_ notification: CFString, _ unknown: Int32
 
 /// Mission Control family, triggered through the Dock (works even when their
 /// keyboard shortcuts are disabled or changed).
-enum SystemAction: String {
+enum SystemAction: String, ConfigNamed {
     case missionControl = "mission_control"
     case appWindows = "app_windows"
     case showDesktop = "show_desktop"
@@ -188,6 +188,15 @@ enum MediaKey: String {
         case "next_track": self = .next
         case "previous_track": self = .previous
         case let name: self.init(rawValue: name)
+        }
+    }
+
+    /// Whether holding its shortcut presses it again and again: the keys that move in steps.
+    /// The others toggle or skip, and would flap or run through the tracks.
+    var repeats: Bool {
+        switch self {
+        case .volumeUp, .volumeDown, .brightnessUp, .brightnessDown: return true
+        case .playPause, .next, .previous, .mute: return false
         }
     }
 

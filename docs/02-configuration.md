@@ -3,22 +3,23 @@
 ## File, creation and reload
 
 - **Path**: chosen by each user (`ConfigLocation`, read once at launch into `ConfigStore.url`):
-  1. The path chosen in **Settings → General**: *Move…* moves the file there (replacing one already there, once the panel has asked), *Use Another File…* reads an existing file as it is and leaves the current one where it is. The choice is the `configPath` user default, so it can also be set from Terminal: `defaults write com.alessandrorebosio.HyperSpace configPath ~/dotfiles/hyperspace.json` (a folder means its `config.json`), then quit and reopen HyperSpace. `defaults delete com.alessandrorebosio.HyperSpace configPath` goes back to the default.
+  1. The path chosen in **Settings → General**: *Move…* moves the file there (replacing one already there, once the panel has asked), *Use Another File…* reads an existing file as it is and leaves the current one where it is. The choice is the `configPath` user default, so it can also be set from Terminal: `defaults write com.alessandrorebosio.HyperSpace configPath ~/dotfiles/hyperspace.json` (a folder means its `config.json`; `~` is your home folder and `~name/…` that user's), then quit and reopen HyperSpace. `defaults delete com.alessandrorebosio.HyperSpace configPath` goes back to the default.
   2. Otherwise `~/.config/hyperspace/config.json` if it exists;
   3. otherwise `~/.hyperspace/config.json` (where earlier versions kept it) if it exists;
   4. otherwise `~/.config/hyperspace/config.json`, written with the defaults.
   - A chosen file that does not exist is written there with the defaults. Moving away from `~/.hyperspace` removes that folder once empty; no other folder is ever removed. A symbolic link (a config kept in a dotfiles repository) is moved as the link.
-- **Creation**: on first launch (or from *Edit Config…*) if the file is missing, the default config (`DefaultConfig.json`) is written.
+- **Creation**: on first launch (or from *Edit Config…*) if the file is missing, the default config (`DefaultConfig.json`) is written. When the path is a symbolic link whose file is missing, the defaults are written where the link points: the link stays a link.
 - **Automatic reload**: the file is watched with a kqueue `DispatchSource` (`write`, `extend`, `delete`, `rename`), at zero cost while untouched. Several events per save
-  are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is missing it looks again after 1 s, then less and less often (up to every 30 s), and loads the file as soon as it is back.
+  are coalesced with a 0.15 s delay. If the editor saves by atomic rename the watcher re-attaches itself; if the file is missing it looks again after 1 s, then less and less often (up to every 30 s), and loads the file as soon as it is back. A config that is a symbolic link is watched as a link too: pointing it at another file reloads the config from that one.
 - **Manual reload**: the [`reload`](05-actions.md) action (`hyper+escape` in the default config).
 - What a reload applies: HID remaps always; tap and tiling only with the Accessibility permission (see [Architecture](01-architecture.md)).
 - **Edits from the UI**: the Settings window rewrites the file with `ConfigWriter` (only touched keys change, stable key order, one line per binding/remap);
-  the watcher then applies it like a manual edit. Nothing is written when the new text is identical to the file, so a no-op edit causes no reload. The file gets reformatted. **Unknown keys are preserved at section level only**: a key Settings does not know, in `keyboard`, `mouse`, `trackpad`, `tiling` or at the top, stays; but the lists Settings edits (`keyboard.remap`, `mouse.buttons`, `tiling.workspaces`, `tiling.assign`) are rebuilt from what the pages show, so an unknown key inside one of their entries is lost when that list is saved (`keyboard.bindings` is edited entry by entry and keeps them). A list that becomes empty is left out of the file. JSON has no comments.
+  the watcher then applies it like a manual edit. Nothing is written when the new text is identical to the file, so a no-op edit causes no reload. A file that is there but cannot be read (its permissions) is never written over: the change is refused (`config.json cannot be read: check its permissions before changing settings`), as for a file with a syntax error. The file gets reformatted. **Unknown keys are preserved at section level only**: a key Settings does not know, in `keyboard`, `mouse`, `trackpad`, `tiling` or at the top, stays; but the lists Settings edits (`keyboard.remap`, `mouse.buttons`, `tiling.workspaces`, `tiling.assign`) are rebuilt from what the pages show, so an unknown key inside one of their entries is lost when that list is saved (`keyboard.bindings` is edited entry by entry and keeps them). A list that becomes empty is left out of the file. JSON has no comments.
 
 ## Errors
 
-- Invalid JSON → `invalid JSON: …`; wrong type or missing required key → `invalid config: …`.
+- Invalid JSON → `invalid JSON: …`; a wrong type or a missing required key names the place and what was expected (`Config.describe`): `keyboard.bindings[1].keys: expected text`, `keyboard.bindings[0]: missing "action"`.
+- A blank file (empty, or only spaces and newlines) is an empty config, not an error: every default applies.
 - Semantic errors (unknown action, key or layout, rule for a missing workspace, too many combinations…) → a `ConfigError` message.
 - On error the menu bar icon becomes ⚠︎ (and is shown even when tiling is off), the top of the menu shows `Config error: …` (click: opens the file) and **the last valid
   config stays active**. The error clears on the next successful load.
@@ -44,6 +45,7 @@
     "edgeSliders": true,
     "leftEdge": "brightness",
     "rightEdge": "volume",
+    "topEdge": "none",
     "bottomEdge": "seek",
     "corners": { "topRight": "media mute" }
   },
@@ -53,11 +55,12 @@
     "gap": 8,
     "padding": 8,
     "masterRatio": 0.55,
+    "accordionPadding": 30,
     "mouseFollowsFocus": true,
     "scratchpad": { "width": 0.6, "height": 0.7 },
     "floating": [ "com.apple.calculator" ],
     "floatingWindows": [ { "app": "com.autodesk.fusion360", "title": "Preferences" } ],
-    "workspaces": [ { "name": "1", "switch": "meh+1", "move": "hyper+1" } ],
+    "workspaces": [ { "name": "1", "switch": "meh+1", "move": "hyper+1", "display": "main" } ],
     "assign": [ { "app": "com.spotify.client", "workspace": "music" } ]
   }
 }
@@ -90,7 +93,7 @@ Every section and key is optional.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `edgeSliders` | bool | `false` | One finger slid along the left or right edge of the trackpad ([details](04-mouse.md#trackpad-edge-sliders-trackpad)). |
+| `edgeSliders` | bool | `false` | One finger slid along an edge of the trackpad: up and down on the left and right edges, sideways on the top and bottom ones ([details](04-mouse.md#trackpad-edge-sliders-trackpad)). |
 | `leftEdge` | string | `brightness` | `volume`, `brightness`, `seek` (the arrow keys) or `none`; anything else is a config error. |
 | `rightEdge` | string | `volume` | The same. |
 | `topEdge`, `bottomEdge` | string | `none` | The same, slid sideways. |
@@ -102,8 +105,8 @@ Every section and key is optional.
 |---|---|---|---|
 | `enabled` | bool | `true` | — |
 | `layout` | string | `columns` | `tall`, `wide`, `columns`, `monocle`, `accordion` (case-insensitive); anything else → error |
-| `gap` | number | `8` | minimum 0 |
-| `padding` | number | `8` | minimum 0 |
+| `gap` | number | `8` | clamped to 0…64 |
+| `padding` | number | `8` | clamped to 0…64 |
 | `masterRatio` | number | `0.55` | clamped to 0.1…0.9 |
 | `mouseFollowsFocus` | bool | `true` | The pointer follows the focus to another display, and goes to the middle of the display on a workspace switch. |
 | `accordionPadding` | number | `30` | accordion layout: points of the windows behind the focused one visible on each side; clamped to 0…200 (the Settings slider has the same range). Settings writes it only once it is changed there (left out while never set) |

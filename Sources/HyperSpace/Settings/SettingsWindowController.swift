@@ -66,7 +66,7 @@ final class SettingsNavigation: ObservableObject {
         }
     }
 
-    @Published var page: Page? = .keyboard {
+    @Published var page: Page = .keyboard {
         // A key press or click meant for one page must not be captured by another.
         didSet { if page != oldValue { onSwitch?() } }
     }
@@ -82,25 +82,29 @@ struct SettingsModels {
     let general: GeneralModel
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
-        // The file is read once for every page. One with a syntax error shows as empty, every
-        // page saying why (nothing can be saved until it is fixed); the fix then loads.
-        let config = ConfigWriter.readIfValid()
+        // The file is read once for every page. One with a syntax error, or one that cannot be
+        // read, shows as empty, every page saying why (nothing can be saved until it is fixed);
+        // the fix then loads.
+        let (data, config) = ConfigWriter.parseFile(ConfigStore.url)
         keyboard = KeyboardModel(remapper: remapper, eventTap: eventTap, config: config ?? [:])
         mouse = MouseModel(eventTap: eventTap, config: config ?? [:])
         trackpad = TrackpadModel(config: config ?? [:])
         tiling = TilingModel(eventTap: eventTap, config: config ?? [:])
         general = GeneralModel(actions: actions)
         if config == nil {
-            for page in files { page.saveStatus.set(ConfigWriter.SyntaxError.message) }
+            // No bytes at all: the file is there but cannot be read, which is not a syntax error.
+            let message = data == nil ? SaveStatus.unreadableMessage : ConfigWriter.SyntaxError.message
+            for page in files { page.saveStatus.setUnreadable(message) }
         }
     }
 
     /// The models that show and write a part of the file.
-    private var files: [FileBackedModel] { [keyboard, mouse, trackpad, tiling] }
+    private var files: [any FileBackedModel] { [keyboard, mouse, trackpad, tiling] }
 
     /// The file was loaded (by the app, after any change): pages whose part of it changed
-    /// elsewhere show the new values, and the status follows. A file that does not parse
-    /// changes nothing on the pages: the settings keep what they showed.
+    /// elsewhere show the new values, a page whose last save failed saves again, and the
+    /// status follows. A file that does not parse changes nothing on the pages: the settings
+    /// keep what they showed.
     func reload() {
         if let root = ConfigWriter.readIfValid() {
             for page in files { page.reload(from: root) }
@@ -115,7 +119,9 @@ struct SettingsModels {
         for page in files { page.close() }
     }
 
-    /// A key press or click being recorded on one page must not stay armed on another.
+    /// A key press or click being recorded on one page must not stay armed on another, nor
+    /// once the window or the app is no longer the active one (shortcuts and remaps are
+    /// suspended while recording).
     func stopCaptures() {
         for page in files { page.stopCapture() }
     }
@@ -142,7 +148,8 @@ struct SettingsRoot: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $navigation.page) {
+            // A sidebar always shows a page: a click that deselects the row (⌘-click) is ignored.
+            List(selection: Binding<Page?>(get: { navigation.page }, set: { if let page = $0 { navigation.page = page } })) {
                 sidebarSection("Input", [.keyboard, .mouse, .trackpad])
                 sidebarSection("Windows", [.tiling, .workspaces, .windowRules, .shortcuts])
                 sidebarSection("HyperSpace", [.general])
@@ -154,21 +161,27 @@ struct SettingsRoot: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
             .modifier(NoSidebarToggle())
         } detail: {
-            let page = navigation.page ?? .keyboard
+            let page = navigation.page
             Group {
                 switch page {
                 case .keyboard: KeyboardView(model: keyboard)
                 case .mouse: MouseView(model: mouse)
                 case .trackpad: TrackpadView(model: trackpad)
-                case .tiling: TilingView(model: tiling)
-                case .workspaces: WorkspacesView(model: tiling)
-                case .windowRules: WindowRulesView(model: tiling)
-                case .shortcuts: ShortcutsView(model: tiling)
+                case .tiling: TilingView(model: tiling.options, status: tiling.saveStatus)
+                case .workspaces:
+                    WorkspacesView(store: tiling, model: tiling.workspaces, capture: tiling.capture,
+                                   conflicts: tiling.conflicts, apps: tiling.apps)
+                case .windowRules:
+                    WindowRulesView(store: tiling, model: tiling.rules, capture: tiling.capture,
+                                    conflicts: tiling.conflicts, apps: tiling.apps)
+                case .shortcuts:
+                    ShortcutsView(store: tiling, model: tiling.shortcuts, capture: tiling.capture, conflicts: tiling.conflicts)
                 case .general: GeneralView(model: general)
                 }
             }
             .navigationTitle(page.title)
             .environment(\.permissionMissing, page.needsPermission && !general.accessibilityGranted)
+            .environment(\.openConfig, general.actions.openConfig)
         }
         .frame(minWidth: SettingsWindowController.minimumSize.width, minHeight: SettingsWindowController.minimumSize.height)
         .modifier(GlassToolbar())
@@ -245,13 +258,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let minimumSize = NSSize(width: 720, height: 460)
     /// The size it first opens at (then the size it was left at).
     static let defaultSize = NSSize(width: 900, height: 640)
+    private static let frameName = "HyperSpaceSettings"
 
     private let remapper: KeyboardRemapper
     private let eventTap: EventTap
     private let actions: GeneralModel.Actions
     private var window: NSWindow?
     private var models: SettingsModels?
-    private var configObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
 
     init(remapper: KeyboardRemapper, eventTap: EventTap, actions: GeneralModel.Actions) {
         self.remapper = remapper
@@ -267,13 +281,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let root = SettingsRoot(navigation: navigation, models: models)
             let window = Self.makeWindow(root, size: Self.defaultSize)
             window.delegate = self
-            window.setFrameAutosaveName("HyperSpaceSettings")
-            window.center()
+            // Where it was left; in the middle of the screen the first time.
+            if !window.setFrameUsingName(Self.frameName) { window.center() }
+            window.setFrameAutosaveName(Self.frameName)
             self.window = window
             self.models = models
-            configObserver = NotificationCenter.default.addObserver(
-                forName: ConfigStore.didLoad, object: nil, queue: .main
-            ) { [weak self] _ in self?.models?.reload() }
+            let center = NotificationCenter.default
+            observers = [
+                center.addObserver(forName: ConfigStore.didLoad, object: nil, queue: .main) { [weak self] _ in
+                    self?.models?.reload()
+                },
+                // Another app comes forward while a cap records: the recording ends, or the
+                // shortcuts and remaps it suspends would stay off with nobody to end it.
+                center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                    self?.models?.stopCaptures()
+                },
+            ]
         }
         // In the Dock and ⌘Tab while the window is open, like a regular app.
         NSApp.setActivationPolicy(.regular)
@@ -308,10 +331,21 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         return window
     }
 
+    /// The window is no longer the key one (another window or app, a panel, the window
+    /// minimized): a recording in progress ends, like on a page switch.
+    func windowDidResignKey(_ notification: Notification) {
+        models?.stopCaptures()
+    }
+
+    /// The config error changed without a load (a write that failed): General shows it.
+    func configProblemChanged() {
+        models?.general.refreshConfigProblem()
+    }
+
     func windowWillClose(_ notification: Notification) {
         models?.close()
-        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
-        configObserver = nil
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = []
         window = nil
         models = nil
         AppLauncher.forgetAppInfo()

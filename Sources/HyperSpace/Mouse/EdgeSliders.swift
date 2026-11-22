@@ -29,7 +29,15 @@ final class EdgeSliders {
         var cornerTrackers: [Int: CornerTapTracker] = [:]
         var holding = false
         var holdingClicks = false
+        /// The frame time of the last hold asked of the tap, which lets one go that is not renewed.
+        var lastHold: Double = 0
+        /// Cleared by `stop`: a frame still on its way then must not start a hold nobody ends.
+        var running = false
     }
+
+    /// How often a hold in progress is asked again, in seconds: well within the time the tap
+    /// keeps one (`EventTap.holdTimeout`), so a slide lasts as long as the frames come.
+    private static let holdRenewal: Double = 0.1
 
     private let state = OSAllocatedUnfairLock(initialState: State())
     /// The private framework, loaded the first time a slider or a corner is on (main thread).
@@ -42,8 +50,9 @@ final class EdgeSliders {
     private var deviceWatcher: DeviceWatcher?
     private let restartDebouncer = Debouncer(delay: 1)
 
-    /// Called when a slider starts or ends, to hold the pointer still meanwhile; on the
-    /// multitouch thread (or the main thread when the sliders stop), so it must be thread-safe.
+    /// Called when a slider starts or ends, to hold the pointer still meanwhile, and again with
+    /// true every `holdRenewal` while it goes on; on the multitouch thread (or the main thread
+    /// when the sliders stop), so it must be thread-safe.
     private let onHoldChange: (Bool) -> Void
     /// Called when a finger goes down in a corner with an action (true) or leaves it (false;
     /// `grace` when lifted from what may be a tap); thread-safe like `onHoldChange`.
@@ -105,7 +114,10 @@ final class EdgeSliders {
         }
         devices = []
         deviceList = nil
-        state.withLock { $0.trackers = [:]; $0.cornerTrackers = [:]; $0.holding = false; $0.holdingClicks = false }
+        state.withLock {
+            $0.running = false
+            $0.trackers = [:]; $0.cornerTrackers = [:]; $0.holding = false; $0.holdingClicks = false
+        }
         onHoldChange(false)
         onCornerClicksHeld(false, false)
     }
@@ -116,6 +128,7 @@ final class EdgeSliders {
             return
         }
         deviceList = list
+        state.withLock { $0.running = true }
         for index in 0..<CFArrayGetCount(list) {
             guard let raw = CFArrayGetValueAtIndex(list, index) else { continue }
             let device = UnsafeMutableRawPointer(mutating: raw)
@@ -153,6 +166,7 @@ final class EdgeSliders {
         let pressed = count > 0 && NSEvent.pressedMouseButtons != 0
         typealias Result = (steps: [EdgeStep], action: Action?, hold: Bool?, clicks: Bool?)
         let result = state.withLock { state -> Result in
+            guard state.running else { return ([], nil, nil, nil) }
             var tracker = state.trackers[key] ?? state.sliders
             let steps = tracker.update(first: first, count: count, pressed: pressed)
             state.trackers[key] = tracker
@@ -162,8 +176,11 @@ final class EdgeSliders {
             let holdingClicks = state.cornerTrackers.values.contains { $0.holding }
             let holding = holdingClicks || state.trackers.values.contains { $0.holding }
             defer { state.holding = holding; state.holdingClicks = holdingClicks }
-            return (steps, corner.flatMap { state.corners[$0] },
-                    holding != state.holding ? holding : nil,
+            // A change, or a hold that goes on and is due to be asked again.
+            var hold: Bool? = holding != state.holding ? holding : nil
+            if holding, hold == nil, abs(time - state.lastHold) >= Self.holdRenewal { hold = true }
+            if hold == true { state.lastHold = time }
+            return (steps, corner.flatMap { state.corners[$0] }, hold,
                     holdingClicks != state.holdingClicks ? holdingClicks : nil)
         }
         // Straight to the event tap: the sooner the hold starts, the less the pointer moves.
@@ -179,17 +196,14 @@ final class EdgeSliders {
     }
 
     /// The arrows a seek posts.
-    private static let rightArrow: UInt16 = 0x7C
-    private static let leftArrow: UInt16 = 0x7B
+    private static let seek = (forward: try? KeyCombo.parse("right"), back: try? KeyCombo.parse("left"))
 
     private static func post(_ step: EdgeStep) {
         switch step.action {
         case .volume: (step.up ? MediaKey.volumeUp : .volumeDown).post()
         case .brightness: (step.up ? MediaKey.brightnessUp : .brightnessDown).post()
         case .seek:
-            let key = step.up ? rightArrow : leftArrow
-            KeyEmitter.post(keyCode: key, flags: [], down: true)
-            KeyEmitter.post(keyCode: key, flags: [], down: false)
+            if let combo = step.up ? seek.forward : seek.back { KeyEmitter.post(combo) }
         case .none: break
         }
     }

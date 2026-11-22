@@ -23,6 +23,11 @@ final class ManagedWindow {
     var movedByUs = Date.distantPast
     /// Moved by us a moment ago (`WindowManager.ownMoveSettle`): a move it reports now is ours.
     var movedByUsRecently: Bool { Date().timeIntervalSince(movedByUs) <= WindowManager.ownMoveSettle }
+    /// The tile on another display it was last sent to with a look again a moment later (see
+    /// `WindowManager.setFrame`): not looked at again for that same tile until it got there, so
+    /// a window that cannot go (its app hung, a minimum size keeping it on the other display)
+    /// is not retiled for ever.
+    var crossDisplayTarget: CGRect?
     /// Out of the tiling and the workspaces: shown centered above the others on demand.
     var scratchpad = false
     /// A scratchpad window on screen (it stays there across workspace switches).

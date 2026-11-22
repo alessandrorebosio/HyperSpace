@@ -51,11 +51,24 @@ enum AX {
     /// Position and size in one round trip.
     static func frame(_ element: AXUIElement) -> CGRect? {
         let list = values(element, [kAXPositionAttribute, kAXSizeAttribute])
-        guard let list, let origin = point(list[0]), let size = size(list[1]) else {
-            // Not answered as a batch: one at a time.
-            return position(element).flatMap { origin in size(element).map { CGRect(origin: origin, size: $0) } }
-        }
-        return CGRect(origin: origin, size: size)
+        // Not answered as a batch: one at a time.
+        return list.flatMap { frame(position: $0[0], size: $0[1]) }
+            ?? position(element).flatMap { origin in size(element).map { CGRect(origin: origin, size: $0) } }
+    }
+
+    /// A frame from the values of the position and size attributes.
+    private static func frame(position: CFTypeRef?, size: CFTypeRef?) -> CGRect? {
+        point(position).flatMap { origin in self.size(size).map { CGRect(origin: origin, size: $0) } }
+    }
+
+    /// The app's focused window.
+    static func focusedWindowID(of app: AXUIElement) -> CGWindowID? {
+        element(app, kAXFocusedWindowAttribute).flatMap(windowID)
+    }
+
+    /// The app's main window.
+    static func mainWindowID(of app: AXUIElement) -> CGWindowID? {
+        element(app, kAXMainWindowAttribute).flatMap(windowID)
     }
 
     /// Several attributes in one round trip, in order, a missing one as nil; nil when the app
@@ -140,6 +153,13 @@ enum AX {
         let frame: CGRect?
         /// The app's main window, the likely parent of a dialog.
         let mainWindow: CGWindowID?
+
+        /// A kind of element that is never managed (a sheet, a popover, the desktop), unlike a
+        /// window that only cannot be moved right now.
+        var isNeverManaged: Bool {
+            kind == .other && !(role == kAXWindowRole
+                && [kAXStandardWindowSubrole, kAXDialogSubrole, kAXSystemDialogSubrole].contains(subrole ?? ""))
+        }
     }
 
     /// `main` is the app's main window ID when the caller already resolved it (once per app
@@ -161,9 +181,8 @@ enum AX {
         case (nil, _), (kAXWindowRole, nil), (kAXWindowRole, kAXUnknownSubrole): kind = .pending
         default: kind = .other
         }
-        let frame = point(list[2]).flatMap { origin in size(list[3]).map { CGRect(origin: origin, size: $0) } }
-        let main = kind == .other ? nil
-            : resolved ?? self.element(AXUIElementCreateApplication(pid), kAXMainWindowAttribute).flatMap(windowID)
+        let frame = frame(position: list[2], size: list[3])
+        let main = kind == .other ? nil : resolved ?? mainWindowID(of: AXUIElementCreateApplication(pid))
         return WindowProbe(element: element, id: windowID(element), role: role, subrole: subrole, kind: kind,
                            dialogLike: kind == .standard && isDialogLike(close: asElement(list[5]), fullScreen: asElement(list[6]),
                                                                          zoom: asElement(list[7])),

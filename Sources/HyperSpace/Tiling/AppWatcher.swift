@@ -39,6 +39,9 @@ final class AppWatcher {
         for name in notifications {
             let result = AXObserverAddNotification(observer, element, name as CFString, refcon)
             if result == .success { registered = true } else { failure = result }
+            // An app that does not answer (hung, still launching) would make each of the
+            // others wait for the timeout too, on the main thread: the caller tries again later.
+            if result == .cannotComplete, !registered { break }
         }
         guard registered else {
             log.debug("watch \(app.bundleIdentifier ?? "?", privacy: .public) failed: AX error \(failure.rawValue)")
@@ -51,7 +54,8 @@ final class AppWatcher {
     /// retitled (for title floating rules).
     func watch(_ window: AXUIElement) {
         for name in [kAXUIElementDestroyedNotification, kAXMovedNotification, kAXResizedNotification, kAXTitleChangedNotification] {
-            AXObserverAddNotification(observer, window, name as CFString, refcon)
+            // Not answering: the others would each wait for the timeout too.
+            if AXObserverAddNotification(observer, window, name as CFString, refcon) == .cannotComplete { break }
         }
     }
 

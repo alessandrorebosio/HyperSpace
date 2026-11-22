@@ -13,7 +13,7 @@ written from the code in `Sources/HyperSpace/`. For a quick overview and install
 | [1. Overview and architecture](01-architecture.md) | Modules, threads, data flow from config to features |
 | [2. Configuration](02-configuration.md) | `config.json`: every section and key, defaults, reload, errors |
 | [3. Keyboard](03-keyboard.md) | Shortcuts, key names, per-keyboard remaps (HID), combinations/carriers, keyboard lock |
-| [4. Mouse](04-mouse.md) | Button mapping, reverse scroll, modifier + drag |
+| [4. Mouse](04-mouse.md) | Button mapping, reverse scroll, modifier + drag, trackpad edge sliders and corners |
 | [5. Actions](05-actions.md) | Full list of actions and their arguments |
 | [6. Tiling](06-tiling.md) | Layouts, gaps/padding, floating windows and rules, resize, focus/swap, drag & drop, snap back |
 | [7. Workspaces and displays](07-workspaces-and-displays.md) | Workspaces per display, empty workspaces, moving, app assignments, parking, saved state |
@@ -26,5 +26,5 @@ written from the code in `Sources/HyperSpace/`. For a quick overview and install
 - **One permission: Accessibility.** Key remapping works without it.
 - **Config**: `~/.config/hyperspace/config.json` by default, or wherever the user put it (Settings → General), created on first launch, reloaded on every save. Edit by hand or from *Settings…* (which rewrites the file).
 - **Workspace state**: `~/Library/Application Support/HyperSpace/workspaces.json`.
-- **Version / requirements**: 0.1.0, macOS 13+ (`LSMinimumSystemVersion`); an agent app (`LSUIElement`): no Dock icon except while the Settings window is open.
+- **Version / requirements**: 0.1.0, macOS 13+ (`LSMinimumSystemVersion`); an agent app (`LSUIElement`): no Dock icon except while the Settings window is open. One copy at a time (`LSMultipleInstancesProhibited`).
 - **Bundle id**: `com.alessandrorebosio.HyperSpace`.

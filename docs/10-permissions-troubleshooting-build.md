@@ -2,7 +2,7 @@
 
 ## Permissions
 
-**Accessibility is the only permission.** It covers the active event tap (read + modify input), posting synthetic events, and AX window control. Not needed: Input Monitoring, Screen Recording (titles are never requested from `CGWindowList`),
+**Accessibility is the only permission.** It covers the active event tap (read + modify input), posting synthetic events, and AX window control. The tap is an active one on purpose: a passive (listen-only) tap would need Input Monitoring as well. Not needed: Input Monitoring, Screen Recording (titles are never requested from `CGWindowList`),
 notifications, drivers/kexts, root.
 
 | Feature | Needs Accessibility |
@@ -44,8 +44,10 @@ notifications, drivers/kexts, root.
 
 - `HyperSpace <version> — <date>`, macOS version and uptime;
 - Accessibility `granted`/`missing`, *launched at login*;
+- `Event tap: available` or `unavailable (cannot be created, retried every 5 s)`;
 - `Devices:` the wireless keyboards, mice and trackpads that report a battery, with their level (or `none with a battery`);
 - Keyboard `locked`/`active` and the names of connected keyboards;
+- `Trackpad edge sliders:` `off` or what each edge is set to, the corners that have an action and, while either is on, how many trackpads are watched (or `MultitouchSupport not available`);
 - `Problem: …` if any;
 - Tiling: `running`/`stopped`, enabled, layout; per display: id, UUID, frame, visible frame, the workspace it shows, `[focused]`;
 - *Displays left out* (asleep or on another input, see [page 7](07-workspaces-and-displays.md));
@@ -68,19 +70,21 @@ The build is for the architecture of the Mac it runs on: **arm64 only** on Apple
 ```bash
 make build      # swift build -c release (CONFIG=release by default)
 make app        # build/HyperSpace.app: release build, Info.plist, icon, stripped, codesigned
-make run        # make app + open the bundle
+make run        # build + quit the running HyperSpace + make app + open the new bundle
 make install    # make app + quit the running HyperSpace + copy to /Applications (replaces the existing copy)
 make test       # run the tests
+make icon       # redraw Resources/AppIcon.icns (needs Pillow)
 make clean      # remove .build, .build-clt (CI's Command Line Tools build), .swiftpm and build/
 ```
 
 - `make app` copies the binary, `Resources/Info.plist` and `Resources/AppIcon.icns` into the bundle, strips the binary, and codesigns it with hardened runtime (`--options runtime`)
   using `HyperSpace Dev` if that identity exists, otherwise ad-hoc with the designated requirement pinned to the bundle id.
-  Override with `SIGN_IDENTITY=… make app`, or `CONFIG=debug`. The identity, the SDK version and the test plugin path are looked up only by the targets that need them, once per `make`.
+  Override with `SIGN_IDENTITY=… make app`, or `CONFIG=debug`; `SWIFT_FLAGS=…` is passed to every `swift build` and `swift test` (CI uses it for `--scratch-path`). The bundle's `LSMinimumSystemVersion` is set from the Makefile's `MIN_MACOS`, the value the binary is stamped with. The identity, the SDK version and the test plugin path are looked up only by the targets that need them, once per `make`.
 - `make app` also rewrites the binary's build version with `vtool` (minimum macOS 13.0, SDK = `xcrun --show-sdk-version`). SwiftPM records the deployment target as the SDK version, and AppKit would then run the app in compatibility mode, with the pre-Liquid Glass look on macOS 26 and later.
-- `Resources/AppIcon.icns` is drawn by `scripts/make-icon.py` (needs Pillow): run `python3 scripts/make-icon.py` after changing the icon. The 16 and 32 px sizes leave out the glyphs: only the tiles stay.
+- `Resources/AppIcon.icns` is drawn by `scripts/make-icon.py` (needs Pillow, `pip3 install pillow`: the only thing here that is not in the Command Line Tools): run `make icon` after changing the icon (it says so when Pillow is missing). The 16 and 32 px sizes leave out the glyphs: only the tiles stay.
 - There is no `scripts/bundle.sh`; the bundle is built by the Makefile.
-- After rebuilding, relaunch the app (`make run`) to test the new binary.
+- After rebuilding, relaunch the app to test the new binary: `make run` quits the running copy first (as `make install` does: `pkill`, then up to 5 s for it to put the keyboards and parked windows back), since `open` on an app that is already running only brings the old binary forward. `make app` alone neither quits nor relaunches it.
+- One copy runs at a time (`LSMultipleInstancesProhibited` in `Info.plist`): while a copy runs (the one in `/Applications`, say), macOS does not start a second one from `build/`, which would fight with it over the keyboards' `UserKeyMapping`. Running the binary directly (`--render-settings`) is not affected.
 
 ## Test
 
@@ -88,7 +92,7 @@ make clean      # remove .build, .build-clt (CI's Command Line Tools build), .sw
 make test
 ```
 
-Tests use **Swift Testing** (`Tests/HyperSpaceTests/`, one file per area, shared helpers in `TestHelpers.swift`). **Use `make test`, not plain `swift test`**: with only the Command Line Tools, SwiftPM does not always hand the Swift Testing macro plugin
+Tests use **Swift Testing** (`Tests/HyperSpaceTests/`, one file per subject, shared helpers in `TestHelpers.swift`: `config`, `withTemporaryDirectory`, `waitUntil`, `makeScreen`). File tests work on temporary folders; no test reads or writes the real config, `UserDefaults` or the saved workspace state, and none creates a settings model (they write the real config). **Use `make test`, not plain `swift test`**: with only the Command Line Tools, SwiftPM does not always hand the Swift Testing macro plugin
 to the compiler and fails with `plugin for module 'TestingMacros' not found`. The Makefile passes it explicitly (`-Xswiftc -load-plugin-library … libTestingMacros.dylib`, found next to the active `swift`) when it exists.
 
 What is covered:
@@ -101,7 +105,10 @@ What is covered:
 - **Layouts**: `tall`/`wide`/`columns`/`monocle`/`accordion` frames and weights, column operations (stack/unstack, swap, accordion), neighbours across displays, frame steps (only what changed, shrink before moving, across displays), parking, centring.
 - **Workspaces**: homes, pinned displays and display sync (each display shows one of its own, moved workspaces, what a display shows after losing a workspace), new-window workspace choice, launch tracking and timeout, saved state round trip, saved columns and restorer matching, menu summaries.
 - **Scratchpad**: frame and centring, the remembered size, actions and size config.
-- **Settings models' pure parts**: tiling bindings and scratchpad apps, workspace names and the rules that follow them, comparing shortcuts and actions by meaning, `SyncedSlice` and `Optional.assignChange` (`FileSync.swift`).
+- **Settings models' pure parts**: tiling bindings and scratchpad apps, workspace names and the rules that follow them, comparing shortcuts and actions by meaning, which keys recording refuses, `SyncedSlice`, `assignIfChanged`, `listChanged` and the retry of a failed save (`FileSync.swift`).
+- **Status menu**: its problems (permission, event tap, config error) and the VoiceOver text.
+- **Saved workspace state**: the real save and load on a temporary file, the 7-day limit, a file from an older version.
+- **Config file edge cases**: a blank, missing or unreadable file, symbolic links (dangling, retargeted), `~` in paths; the sample config in `.github/ci` and the default config decode with no duplicate shortcut.
 
 The UI is not unit-tested; to check a settings layout, render the pages to PNG files (below).
 
@@ -112,7 +119,7 @@ make app
 build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings ~/Desktop/hyperspace-shots
 ```
 
-Draws every page of the settings window (sidebar included), in light and dark appearance, at 720×460 (the minimum size) and 900×640, at 2× scale, as `<page>-<light|dark>-<width>x<height>.png` (e.g. `tiling-dark-900x640.png`), then quits.
+Draws every page of the settings window (sidebar included), in light and dark appearance, at 720×460 (the minimum size) and 900×640, at 2× scale, as `<page>-<light|dark>-<width>x<height>.png` (e.g. `tiling-dark-900x640.png`), then quits. With no folder after the flag they go to the current directory.
 Nothing else starts: no event tap, remapping, tiling or menu bar item, and nothing is written to `config.json` (the pages show your current config). Run it with HyperSpace quit or running, it makes no difference.
 The code is in `Settings/SettingsSnapshot.swift`; the window is drawn offscreen (invisible) with `cacheDisplay`, so AppKit controls are included.
 
@@ -121,8 +128,13 @@ Where the offscreen drawing comes out blank (the GitHub runners: no Liquid Glass
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `develop` and `main`, on pull requests and by hand (*Run workflow*), on a GitHub macOS runner:
-`make app`, `make test`, then `--render-settings` with a sample config (`.github/ci/sample-config.json`, copied to `~/.hyperspace/config.json` on the runner, which is read as the only config there) so the lists have rows to show.
-The screenshots are kept as the **settings-screenshots** artifact of the run (Actions → the run → Artifacts) and, except for pull requests, also pushed to the hidden git ref `refs/ci/screenshots` (not a branch), which can be read without the GitHub web page:
+
+1. a build and the tests **with the Command Line Tools only** (`DEVELOPER_DIR=/Library/Developer/CommandLineTools`, in their own `.build-clt` folder): the check behind "Xcode is not required". A runner without the Command Line Tools fails the job rather than skip it;
+2. `make app` and `make test` with the runner's Xcode toolchain;
+3. `--render-settings` with a sample config (`.github/ci/sample-config.json`, copied to `~/.config/hyperspace/config.json` on the runner) so the lists have rows to show.
+
+The workflow's token can only read the repository; a second job (`publish-screenshots`, not run for pull requests) is the only one allowed to write.
+The screenshots are kept as the **settings-screenshots** artifact of the run (Actions → the run → Artifacts) and, except for pull requests, that second job also pushes them to the hidden git ref `refs/ci/screenshots` (not a branch), which can be read without the GitHub web page:
 
 ```bash
 mkdir /tmp/shots && cd /tmp/shots && git init -q && git fetch -q https://github.com/alessandrorebosio/HyperSpace refs/ci/screenshots && git checkout -q FETCH_HEAD

@@ -14,7 +14,7 @@ enum WindowList {
 
     /// Every window (other Spaces, minimized), or with `onScreenOnly` those on screen on the
     /// current Space; the desktop is left out of the on-screen list.
-    static func entries(onScreenOnly: Bool) -> [Entry] {
+    private static func entries(onScreenOnly: Bool) -> [Entry] {
         let options: CGWindowListOption = onScreenOnly ? [.optionOnScreenOnly, .excludeDesktopElements] : .optionAll
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
         return list.compactMap { info in

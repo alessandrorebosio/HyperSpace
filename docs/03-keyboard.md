@@ -16,10 +16,11 @@ The keyboard side has three independent parts:
 ]
 ```
 
-- `keys` is `modifier+…+key`; **the last token is the key**, the others must be modifiers. Spaces around tokens are ignored.
+- `keys` is `modifier+…+key`; **the last token is the key**, the others must be modifiers. Spaces around tokens are ignored. An empty name (`ctrl++h`, `+h`) is an error (`a modifier is missing in '…'`).
 - **Modifiers** (case-insensitive): `cmd`/`command`/`⌘`, `alt`/`opt`/`option`/`⌥`, `ctrl`/`control`/`⌃`, `shift`/`⇧`, `hyper` (= ⌃⌥⇧⌘), `meh` (= ⌃⌥⇧).
 - Matching is **exact on modifiers**: `hyper+h` does not fire while another modifier is also held. Only cmd/alt/ctrl/shift are considered (not fn or caps lock).
 - The key must have a keycode: media keys and `f21`–`f24` can be remapped but not used in a binding (error `'…' can be remapped but not used in a shortcut`).
+- The key cannot be a modifier key, caps lock or `fn` either: macOS reports those as a change of flags, never as a key press, so the shortcut would load and never fire (error `'…' is a modifier key: it cannot be the key of a shortcut`). To use caps lock in shortcuts, remap it to a combination (`hyper`).
 - When a binding fires, the key-down is **swallowed**, and so is the matching key-up: the frontmost app sees nothing.
 - **Holding the key**: its autorepeat belongs to the binding that the press fired, even after a modifier is released (letting go of caps lock/hyper before `h` neither types "hhh" nor fires another binding).
   The repeats run the action again only for actions that move in steps ([Actions](05-actions.md)); otherwise they are swallowed. The repeats of a key the app got (pressed without the binding's modifiers) stay with the app.
@@ -67,7 +68,7 @@ Used in both bindings and remaps (case-insensitive). The first name is canonical
 - Any other string: a **substring of the product name** (case-insensitive), e.g. `"Keychron"`, `"USB Receiver"`.
 - If several rules remap the same key on the same keyboard the **most specific** wins: product name (2) > builtin/external (1) > all (0). At equal specificity the last in the file wins.
 - Keyboards connected after launch are configured right away: `KeyboardRemapper` registers an IOKit notification (`IOHIDEventService`) and re-syncs after 0.3 s and 1.5 s
-  (the HID service client appears shortly after the registry entry); on wake from sleep (`didWakeNotification`) it checks again.
+  (the HID service client appears shortly after the registry entry), counted from the last change, so a burst of devices is one pair of re-syncs; on wake from sleep (`didWakeNotification`) it checks again.
 - Writes happen only where needed (the current mapping is compared with the desired one). Nothing is polled.
 
 ### How it works (HID layer)
@@ -85,7 +86,7 @@ Used in both bindings and remaps (case-insensitive). The first name is canonical
 `to` is interpreted as follows (`RemapTarget.parse`):
 
 1. **A single token that is a known key** (modifier, `none` and HID code included) → 1:1 remap.
-2. **Several tokens joined by `+`**: modifiers (`ctrl`, `alt`, `shift`, `cmd`, `hyper`, `meh`, also `left_shift`, `right_command`…) plus **at most one** non-modifier key (which needs a keycode). Two normal keys → error. A key without keycode (e.g. media) → error.
+2. **Several tokens joined by `+`**: modifiers (`ctrl`, `alt`, `shift`, `cmd`, `hyper`, `meh`, also `left_shift`, `right_command`…) plus **at most one** non-modifier key (which needs a keycode). Two normal keys → error. A key without keycode (e.g. media) → error. An empty name (`ctrl++alt`, `ctrl+`) → error (`a key is missing in remap target '…'`); modifier lists (`dragModifier`, a button's `modifiers`) refuse it the same way (`a modifier is missing in '…'`).
 3. A lone generic modifier (`shift`, `cmd`, `alt`, `ctrl`) is the corresponding **left** key (`left_shift`…), done in HID.
 
 ### Combinations and carriers
@@ -99,7 +100,7 @@ A combination cannot be expressed in HID, so:
 Behaviour:
 
 - **Modifiers only** (e.g. `caps_lock → shift+ctrl+alt`, `hyper`, `meh`): the modifiers stay down while the key is held (autorepeat is ignored). They are added to the flags of all events
-  (keys and also mouse clicks), so they work in bindings (`hyper+h`) and for ⌃⌥⇧-click. Several carriers held together merge their modifiers.
+  (keys, mouse clicks, the drags between a press and its release, and the scroll wheel), so they work in bindings (`hyper+h`), for ⌃⌥⇧-click and ⌃⌥⇧-drag, and for scrolling with them held. Several carriers held together merge their modifiers.
 - **With a key** (e.g. `right_command → cmd+space`): pressing the key is the same as pressing the combination: a synthetic key event is emitted with the modifiers added to those already held (for key down and key up).
 - The **same combination shares a single carrier**. At most **8 different combinations**; the ninth gives `too many different combinations (at most 8)`.
 - Needs Accessibility (the tap is required).
@@ -110,7 +111,9 @@ Behaviour:
 ### Remapped caps lock
 
 On recent macOS the HID layer still toggles caps lock even when the key is remapped. If a rule starts from `caps_lock` (`suppressCapsLock`), HyperSpace removes the caps flag from events
-and switches the lock off through IOKit (`CapsLock.turnOff`, when the config is applied and on every `flagsChanged` carrying the flag). It applies to all keyboards and needs Accessibility.
+and switches the lock off through IOKit (`CapsLock.turnOff`, when the config is applied and on every `flagsChanged` carrying the flag). It applies to all keyboards and needs Accessibility. A caps lock pressed while the keyboard is locked is dropped before it can be switched off, so the lock is switched off again when the keyboard lock is lifted.
+
+**Known limit.** The event tap cannot tell which keyboard an event came from. So as soon as caps lock is the `from` of any remap rule, whatever its `keyboard` (a rule for the built-in keyboard only, say), or is swapped with another key, caps lock cannot be engaged at all, on any keyboard: not by the keyboards the rule leaves alone, nor by the key that was given its place.
 
 ### Remapping from Settings
 
@@ -133,5 +136,5 @@ To clean the keyboard without typing. From *Settings → Keyboard → Keyboard L
 - Unlock **with the mouse**: **Unlock Keyboard** on the page or in the menu (same spot as Lock).
 - **Automatic unlock** after 1, 3, 5, 10 minutes or never (picker next to the button, default 3), with a countdown on the page and in the menu. The picker is disabled while locked. The timer also fires while a menu is open (it runs in the run loop's common modes).
 - While locked the menu bar icon shows a lock (and the icon is shown even if tiling is off).
-- The lock is **not saved**: quitting HyperSpace re-enables the keyboard. It needs the tap, hence Accessibility: without the permission *Lock Keyboard* is disabled (and the menu item only beeps).
+- The lock is **not saved**: quitting HyperSpace re-enables the keyboard. It needs the tap, hence Accessibility: without the permission *Lock Keyboard* is disabled, on the page and in the menu. The same when macOS refuses the event tap: a lock is refused with a beep, and one that is on is lifted, since nothing would enforce it.
 - On lock/unlock, the modifiers held by carriers and the swallowed-key state are cleared.

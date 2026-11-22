@@ -16,12 +16,18 @@ final class EventTap {
     static let syntheticMarker: Int64 = 0x4859_5045
     /// Posted on the main thread when the keyboard is locked or unlocked.
     static let keyboardLockDidChange = Notification.Name("HyperSpace.keyboardLockDidChange")
+    /// Posted on the main thread when `isTapUnavailable` changes.
+    static let tapAvailabilityDidChange = Notification.Name("HyperSpace.eventTapAvailabilityDidChange")
 
     /// Every key is ignored (e.g. to clean the keyboard); unlocked with the mouse. Main thread.
     private(set) var isKeyboardLocked = false
     /// When the lock lifts by itself, if it does. Main thread.
     private(set) var keyboardUnlocksAt: Date?
     private var unlockTimer: Timer?
+    /// The system refused the tap the config needs (a stale Accessibility grant after a rebuild,
+    /// say): no shortcut, button or lock works until it is made, which is tried again every
+    /// `tapRetryInterval`. Main thread.
+    private(set) var isTapUnavailable = false
     /// Main thread: the config last asked for, and what was last handed to the tap thread
     /// (carrier keys translated to the keyboard layout in use).
     private var requestedConfig: TapConfig?
@@ -49,17 +55,31 @@ final class EventTap {
     }
     private var activeDrag: Drag?
     private var keyboardLocked = false
-    /// Where the pointer is held while a trackpad edge slider is in progress.
+    /// The last attempt to make the tap failed, and whether another one is already scheduled.
+    private var tapFailed = false
+    private var tapRetryScheduled = false
+    /// Where the pointer is held while a trackpad edge slider is in progress, until
+    /// `heldPointerUntil` (uptime nanoseconds) unless the hold is renewed: a trackpad that
+    /// goes away with a finger on it must not leave the pointer stuck.
     private var heldPointer: CGPoint?
+    private var heldPointerUntil: UInt64 = 0
     /// A finger is down in a trackpad corner with an action: clicks are dropped (the ones tap
-    /// to click makes for a tap there), and until `cornerClicksUntil` (uptime nanoseconds) after.
+    /// to click makes for a tap there) until `cornerClicksHeldUntil` at the latest, and until
+    /// `cornerClicksUntil` after the lift (uptime nanoseconds, both).
     private var cornerClicksHeld = false
+    private var cornerClicksHeldUntil: UInt64 = 0
     private var cornerClicksUntil: UInt64 = 0
     /// The left (0) and right (1) button downs dropped that way: their ups are dropped too.
     private var droppedClicks = (false, false)
     /// How long clicks are still dropped after a corner tap's finger is lifted: tap to click
     /// posts the click on the lift, as a double click on the second tap.
     private static let cornerClickGrace: UInt64 = 400_000_000
+    /// How long a hold lasts without news from the trackpad. The pointer's is renewed several
+    /// times within it while a slider goes on (`EdgeSliders`); the clicks' never is, a corner
+    /// tap being much shorter.
+    private static let holdTimeout: UInt64 = 500_000_000
+    /// How often a tap the system refused is tried again.
+    private static let tapRetryInterval: TimeInterval = 5
 
     init(drag: DragController, onAction: @escaping (Action) -> Void, onOverview: @escaping (Bool) -> Void) {
         self.drag = drag
@@ -114,10 +134,7 @@ final class EventTap {
         pushedConfig = translated
         onTapThread { [self] in
             if state.setConfig(translated) { closeOverview() }
-            cancelDrag()
-            heldPointer = nil
-            cornerClicksHeld = false
-            cornerClicksUntil = 0
+            resetTransientState(mouse: true, holds: true)
             updateMask()
         }
     }
@@ -125,6 +142,22 @@ final class EventTap {
     /// Tap thread: the key holding the overview went up (or is forgotten): it closes.
     private func closeOverview() {
         Self.onMain(onOverview, false)
+    }
+
+    /// Tap thread: forgets what is held or owed, so nothing stays stuck once events were missed
+    /// or mean something else: the keys, the combinations' modifiers and the overview; with
+    /// `mouse`, the button-ups and click-ups owed and a drag in progress too; with `holds`,
+    /// the trackpad's pointer and click holds as well.
+    private func resetTransientState(mouse: Bool, holds: Bool) {
+        if state.resetKeys() { closeOverview() }
+        guard mouse else { return }
+        state.clearButtons()
+        droppedClicks = (false, false)
+        cancelDrag()
+        guard holds else { return }
+        heldPointer = nil
+        cornerClicksHeld = false
+        cornerClicksUntil = 0
     }
 
     /// Tap thread: a modifier-drag whose mouse-up will not be seen (a new config, a tap that
@@ -139,8 +172,8 @@ final class EventTap {
     func setKeyboardLocked(_ locked: Bool) {
         guard locked != isKeyboardLocked else { return }
         // Without the permission there is no tap to ignore the keys: a lock would only claim to be on.
-        if locked, !Permissions.isTrusted(prompt: false) {
-            log.error("keyboard not locked: Accessibility permission missing")
+        if locked, isTapUnavailable || !Permissions.isTrusted(prompt: false) {
+            log.error("keyboard not locked: \(self.isTapUnavailable ? "no event tap" : "Accessibility permission missing", privacy: .public)")
             NSSound.beep()
             return
         }
@@ -159,12 +192,26 @@ final class EventTap {
             unlockTimer = timer
         }
         log.info("keyboard \(locked ? "locked" : "unlocked", privacy: .public)")
+        // A remapped caps lock pressed while locked was dropped before it could be switched off.
+        if !locked, requestedConfig?.suppressCapsLock == true { CapsLock.turnOff() }
         onTapThread { [self] in
             keyboardLocked = locked
-            if state.resetKeys() { closeOverview() }
+            resetTransientState(mouse: false, holds: false)
             updateMask()
         }
         NotificationCenter.default.post(name: Self.keyboardLockDidChange, object: self)
+    }
+
+    /// Main thread: the tap could not be made, or could again. A lock that no tap enforces is
+    /// lifted: it would only claim to be on.
+    private func setTapUnavailable(_ unavailable: Bool) {
+        guard unavailable != isTapUnavailable else { return }
+        isTapUnavailable = unavailable
+        if unavailable, isKeyboardLocked {
+            NSSound.beep()
+            setKeyboardLocked(false)
+        }
+        NotificationCenter.default.post(name: Self.tapAvailabilityDidChange, object: self)
     }
 
     /// The events the config needs, plus every keyboard event while locked.
@@ -181,11 +228,13 @@ final class EventTap {
 
     /// Holds the pointer where it is, or lets it go (the trackpad edge sliders). Safe to call
     /// from any thread: the multitouch thread calls it, so the hold starts without a detour
-    /// through the main thread.
+    /// through the main thread. A hold lasts `holdTimeout` at most: asked again, it goes on.
     func setPointerHeld(_ held: Bool) {
+        let now = DispatchTime.now().uptimeNanoseconds
         onTapThread { [self] in
             guard config.holdsPointer || !held else { return }
             heldPointer = held ? (heldPointer ?? Pointer.eventLocation) : nil
+            heldPointerUntil = now + Self.holdTimeout
         }
     }
 
@@ -196,13 +245,19 @@ final class EventTap {
         onTapThread { [self] in
             guard config.holdsCornerClicks || !held else { return }
             cornerClicksHeld = held
+            cornerClicksHeldUntil = now + Self.holdTimeout
             cornerClicksUntil = !held && grace ? now + Self.cornerClickGrace : 0
         }
     }
 
-    /// Tap thread: whether a click now comes from a tap in a trackpad corner.
-    private var droppingCornerClicks: Bool {
-        cornerClicksHeld || (cornerClicksUntil != 0 && DispatchTime.now().uptimeNanoseconds < cornerClicksUntil)
+    /// Tap thread: whether a click now comes from a tap in a trackpad corner. A hold nobody
+    /// ended (the trackpad went away) and a grace that ran out are over.
+    private func droppingCornerClicks() -> Bool {
+        guard cornerClicksHeld || cornerClicksUntil != 0 else { return false }
+        let now = DispatchTime.now().uptimeNanoseconds
+        if cornerClicksHeld, now >= cornerClicksHeldUntil { cornerClicksHeld = false }
+        if cornerClicksUntil != 0, now >= cornerClicksUntil { cornerClicksUntil = 0 }
+        return cornerClicksHeld || cornerClicksUntil != 0
     }
 
     func setButtonsSuspended(_ suspended: Bool) {
@@ -224,7 +279,11 @@ final class EventTap {
         tap = nil
         source = nil
         mask = newMask
-        guard newMask != 0 else { return }
+        guard newMask != 0 else {
+            // No tap needed any more: none is missing either.
+            tapCreation(failed: false)
+            return
+        }
 
         guard let port = CGEvent.tapCreate(
             tap: .cghidEventTap,
@@ -235,8 +294,10 @@ final class EventTap {
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
             log.error("cannot create event tap (Accessibility permission missing?)")
+            tapCreation(failed: true)
             return
         }
+        tapCreation(failed: false)
         let src = CFMachPortCreateRunLoopSource(nil, port, 0)
         CFRunLoopAddSource(runLoop, src, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
@@ -244,13 +305,31 @@ final class EventTap {
         source = src
     }
 
+    /// Tap thread: tells the main thread when making the tap starts or stops failing, and
+    /// while it fails has it tried again every `tapRetryInterval` (the grant may come back).
+    private func tapCreation(failed: Bool) {
+        if failed != tapFailed {
+            tapFailed = failed
+            DispatchQueue.main.async { [self] in setTapUnavailable(failed) }
+        }
+        guard failed, !tapRetryScheduled else { return }
+        tapRetryScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.tapRetryInterval) { [self] in
+            onTapThread { [self] in
+                tapRetryScheduled = false
+                updateMask()
+            }
+        }
+    }
+
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            // Events were missed meanwhile, the mouse-up of a drag among them perhaps.
-            cancelDrag()
+            // Events were missed meanwhile: the mouse-up of a drag perhaps, or the key-up of a
+            // combination's key, whose modifiers would stay on every event after.
+            resetTransientState(mouse: true, holds: false)
             return pass
         default:
             break
@@ -291,6 +370,11 @@ final class EventTap {
             return pass
         case .mouseMoved:
             guard let held = heldPointer else { return pass }
+            guard DispatchTime.now().uptimeNanoseconds < heldPointerUntil else {
+                // Nobody renewed the hold: the trackpad that asked for it is gone.
+                heldPointer = nil
+                return pass
+            }
             // Dropped; and should the pointer have moved anyway, it goes back.
             if !event.location.isClose(to: held, tolerance: 0.5) { Pointer.warp(to: held) }
             return nil
@@ -302,7 +386,7 @@ final class EventTap {
                 if activeDrag?.mode != mode { activeDrag?.otherButtonDown = true }
                 return nil
             }
-            if config.holdsCornerClicks, droppingCornerClicks {
+            if config.holdsCornerClicks, droppingCornerClicks() {
                 if type == .leftMouseDown { droppedClicks.0 = true } else { droppedClicks.1 = true }
                 return nil
             }
@@ -356,12 +440,17 @@ final class EventTap {
     /// scrolling and keep the system "natural" direction.
     private func reverseScrollIfNeeded(_ event: CGEvent) {
         guard config.reverseScroll, event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0 else { return }
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: -event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: -event.getIntegerValueField(.scrollWheelEventDeltaAxis2))
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: -event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1))
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: -event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2))
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: -event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1))
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: -event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2))
+        // Every delta is read before any is written: setting the line delta may make the
+        // system work the other two out again, and those would then be reversed twice.
+        let lines = (event.getIntegerValueField(.scrollWheelEventDeltaAxis1), event.getIntegerValueField(.scrollWheelEventDeltaAxis2))
+        let points = (event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2))
+        let fixed = (event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1), event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: -lines.0)
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: -lines.1)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: -fixed.0)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: -fixed.1)
+        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: -points.0)
+        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: -points.1)
     }
 
     private func beginDrag(_ event: CGEvent, mode: DragMode) -> Bool {

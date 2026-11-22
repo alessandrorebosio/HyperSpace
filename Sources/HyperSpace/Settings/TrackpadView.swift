@@ -7,7 +7,7 @@ struct TrackpadView: View {
     var body: some View {
         Form {
             PageHero(page: .trackpad)
-            PermissionNotice(detail: "The sliders and corners work, but the pointer is held still and a corner's tap kept from clicking only once HyperSpace is allowed in Privacy & Security → Accessibility.")
+            PermissionNotice(detail: "The sliders and corners work, but the pointer is held still and a corner's tap kept from clicking only once HyperSpace is allowed in \(Wording.accessibilityPane).")
             SaveErrorNotice(status: model.saveStatus)
 
             Section {
@@ -25,7 +25,11 @@ struct TrackpadView: View {
             Section {
                 ForEach(TrackpadCorner.allCases, id: \.self) { corner in
                     SettingRow(title: TrackpadModel.cornerTitle(corner)) {
-                        CornerActionMenu(corner: corner, label: TrackpadModel.cornerLabel(model.corners[corner])) {
+                        // The ready-made actions of the mouse buttons, or nothing. Built again
+                        // only when the corner's action changes.
+                        GroupedChoiceMenu(id: corner, title: TrackpadModel.cornerLabel(model.corners[corner]),
+                                          help: "Action of a double tap in the \(TrackpadModel.cornerTitle(corner).lowercased()) corner",
+                                          groups: MouseModel.presetGroups, first: (label: "Nothing", value: "none")) {
                             model.setCorner($0, for: corner)
                         }
                         .equatable()
@@ -52,34 +56,5 @@ struct TrackpadView: View {
             .fixedSize()
         }
         .disabled(!model.edgeSliders)
-    }
-}
-
-/// A corner's action: the ready-made actions of the mouse buttons, grouped, or nothing. Built
-/// again only when the corner's action changes.
-private struct CornerActionMenu: View, Equatable {
-    let corner: TrackpadCorner
-    let label: String
-    /// Called with the action's config text ("none" for nothing).
-    let choose: (String) -> Void
-
-    static func == (a: Self, b: Self) -> Bool { a.corner == b.corner && a.label == b.label }
-
-    var body: some View {
-        Menu {
-            Button("Nothing") { choose("none") }
-            Divider()
-            ForEach(MouseModel.presets, id: \.group) { group in
-                Menu(group.group) {
-                    ForEach(group.items, id: \.action) { item in
-                        Button(item.name) { choose(item.action) }
-                    }
-                }
-            }
-        } label: {
-            Text(label)
-        }
-        .fixedSize()
-        .help("Choose the action of a double tap here")
     }
 }

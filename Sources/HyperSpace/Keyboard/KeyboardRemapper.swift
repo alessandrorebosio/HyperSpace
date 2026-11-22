@@ -73,6 +73,7 @@ final class KeyboardRemapper {
     /// While set, every keyboard sends its physical keys (used to capture keys in the editor).
     private var suspended = false
     private var deviceWatcher: DeviceWatcher?
+    private let resyncDebouncers = [Debouncer(delay: 0.3), Debouncer(delay: 1.5)]
 
     init() {
         deviceWatcher = DeviceWatcher(matching: "IOHIDEventService") { [weak self] in self?.keyboardsChanged() }
@@ -152,11 +153,15 @@ final class KeyboardRemapper {
         } as NSArray
     }
 
-    /// The HID service client shows up shortly after the IOKit registry entry.
+    /// The HID service client shows up shortly after the IOKit registry entry: one look soon
+    /// and one later. A keyboard is several services and every HID device matches, so a burst
+    /// of them (a hub plugged in, a wake) is one pair of looks, not one pair each.
     private func keyboardsChanged() {
-        DispatchQueue.main.asyncAfter(delays: [0.3, 1.5]) { [weak self] in
-            self?.sync()
-            self?.onKeyboardsChanged?()
+        for debouncer in resyncDebouncers {
+            debouncer.schedule { [weak self] in
+                self?.sync()
+                self?.onKeyboardsChanged?()
+            }
         }
     }
 }

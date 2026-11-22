@@ -24,7 +24,9 @@ enum ConfigLocation {
     /// standard one (a first launch).
     static func resolve(chosen: String?, home: URL, exists: (URL) -> Bool, isDirectory: (URL) -> Bool) -> URL {
         if let chosen = chosen?.trimmingCharacters(in: .whitespaces), !chosen.isEmpty {
-            let expanded = chosen.hasPrefix("~") ? home.path + chosen.dropFirst() : chosen
+            // "~" is `home`; "~name" is that user's home folder, which only the system knows.
+            let ownHome = chosen == "~" || chosen.hasPrefix("~/")
+            let expanded = ownHome ? home.path + chosen.dropFirst() : (chosen as NSString).expandingTildeInPath
             let url = URL(fileURLWithPath: expanded).standardizedFileURL
             return chosen.hasSuffix("/") || isDirectory(url) ? url.appendingPathComponent(fileName) : url
         }
@@ -48,8 +50,7 @@ enum ConfigLocation {
 
     /// Remembers `url` as this user's config file (written with `~` when it is in the home folder).
     static func choose(_ url: URL) {
-        let path = (url.standardizedFileURL.path as NSString).abbreviatingWithTildeInPath
-        UserDefaults.standard.set(path, forKey: defaultsKey)
+        UserDefaults.standard.set(url.standardizedFileURL.abbreviatedPath, forKey: defaultsKey)
     }
 
     /// Moves the config from `source` to `destination`, replacing a file already there, and

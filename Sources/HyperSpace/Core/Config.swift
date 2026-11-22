@@ -179,9 +179,12 @@ struct TapConfig: Equatable {
             add(.flagsChanged)
         }
         if carriers.contains(where: { $0.keyCode == nil }) {
-            // Held combination modifiers also apply to clicks (e.g. ⌃⌥⇧-click).
+            // Held combination modifiers also apply to clicks (e.g. ⌃⌥⇧-click), to the drag
+            // between a press and its release, and to the wheel.
             add(.leftMouseDown); add(.leftMouseUp); add(.rightMouseDown); add(.rightMouseUp)
             add(.otherMouseDown); add(.otherMouseUp)
+            add(.leftMouseDragged); add(.rightMouseDragged); add(.otherMouseDragged)
+            add(.scrollWheel)
         }
         if buttonTable.contains(where: { $0 >= 0 }) {
             add(.otherMouseDown); add(.otherMouseUp)
@@ -289,15 +292,12 @@ extension TilingConfig {
 }
 
 /// What sliding a finger along an edge of the trackpad changes.
-enum EdgeAction: String, CaseIterable {
+enum EdgeAction: String, CaseIterable, ConfigNamed {
     case volume
     case brightness
     /// The right and left arrow keys: seeks a video forward or back, moves an editor's playhead.
     case seek
     case none
-
-    /// A name as written in the config, in any case.
-    init?(configText text: String) { self.init(rawValue: text.lowercased()) }
 }
 
 /// A corner of the trackpad, as written in the config.
@@ -352,6 +352,8 @@ struct Config {
 
     static func load(from url: URL) throws -> Config {
         let data = try Data(contentsOf: url)
+        // A blank file is an empty config, as it is for the settings (`ConfigWriter.parseFile`).
+        if ConfigWriter.isBlank(data) { return try Config(RawConfig()) }
         let raw: RawConfig
         do {
             raw = try JSONDecoder().decode(RawConfig.self, from: data)

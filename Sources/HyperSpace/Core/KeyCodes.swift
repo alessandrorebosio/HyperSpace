@@ -215,4 +215,9 @@ enum KeyCodes {
         }
         return result
     }()
+
+    /// The keys macOS reports as a change of flags, never as a key press: the modifier keys,
+    /// caps lock and fn. A shortcut cannot have one as its key.
+    static let flagKeyCodes: Set<UInt16> = Set(modifierKeyCodes.keys)
+        .union(["caps_lock", "fn"].compactMap { lookup($0)?.keyCode })
 }

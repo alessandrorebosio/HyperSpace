@@ -24,6 +24,11 @@ final class ConfigStore {
     }
 
     private var source: DispatchSourceFileSystemObject?
+    /// When the config is a symbolic link, the link itself: pointing it at another file says
+    /// nothing on the file it pointed at.
+    private var linkSource: DispatchSourceFileSystemObject?
+    /// The next look for a missing file: one at a time, whoever asks to watch again.
+    private var retry: DispatchWorkItem?
     /// Editors often emit several events per save: one reload for them all.
     private let reloadDebouncer = Debouncer(delay: 0.15)
     /// One of the events coalesced replaced the file: watch the new one.
@@ -43,7 +48,7 @@ final class ConfigStore {
         ConfigLocation.choose(url)
         Self.url = url
         fileURL = url
-        log.info("config file: \((url.path as NSString).abbreviatingWithTildeInPath, privacy: .public)")
+        log.info("config file: \(url.abbreviatedPath, privacy: .public)")
         writeDefaultIfMissing()
         watch()
         reload()
@@ -61,10 +66,12 @@ final class ConfigStore {
 
     private func writeDefaultIfMissing() {
         let fm = FileManager.default
-        guard !fm.fileExists(atPath: fileURL.path) else { return }
+        // A link whose file is missing gets the file, where it points: the link stays a link.
+        let target = fileURL.linkTarget
+        guard !fm.fileExists(atPath: target.path) else { return }
         do {
-            try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try DefaultConfig.json.write(to: fileURL, atomically: true, encoding: .utf8)
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try DefaultConfig.json.write(to: target, atomically: true, encoding: .utf8)
         } catch {
             log.error("cannot write default config: \(error.localizedDescription, privacy: .public)")
         }
@@ -76,28 +83,46 @@ final class ConfigStore {
         let retryDelay = retryDelay ?? firstRetryDelay
         source?.cancel()
         source = nil
+        linkSource?.cancel()
+        linkSource = nil
+        retry?.cancel()
+        retry = nil
 
-        let fd = open(fileURL.path, O_EVTONLY)
-        guard fd >= 0 else {
+        // The link first: it is there to watch even while the file it points at is not.
+        if (try? FileManager.default.destinationOfSymbolicLink(atPath: fileURL.path)) != nil {
+            linkSource = fileSource(flags: O_EVTONLY | O_SYMLINK, events: [.delete, .rename]) { [weak self] _ in
+                self?.scheduleReload(rewatch: true)
+            }
+        }
+        let events: DispatchSource.FileSystemEvent = [.write, .extend, .delete, .rename]
+        source = fileSource(flags: O_EVTONLY, events: events) { [weak self] seen in
+            self?.scheduleReload(rewatch: !seen.isDisjoint(with: [.delete, .rename]))
+        }
+        guard source != nil else {
             // The editor may be mid-save (atomic rename): try again shortly. A file deleted for
             // good is looked for less and less often, up to every 30 s.
-            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
+            let retry = DispatchWorkItem { [weak self] in
                 self?.watch(retryDelay: min(retryDelay * 2, 30), isRetry: true)
             }
+            self.retry = retry
+            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: retry)
             return
         }
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename], queue: .main
-        )
-        source.setEventHandler { [weak self, unowned source] in
-            let replaced = !source.data.isDisjoint(with: [.delete, .rename])
-            self?.scheduleReload(rewatch: replaced)
-        }
-        source.setCancelHandler { close(fd) }
-        source.resume()
-        self.source = source
         // A file that came back (deleted, then written again later) has not been read yet.
         if isRetry { reload() }
+    }
+
+    /// A running kqueue source on the config's path opened with `flags`, nil when it cannot
+    /// be opened; `onEvent` gets the events seen, on the main thread.
+    private func fileSource(flags: Int32, events: DispatchSource.FileSystemEvent,
+                            onEvent: @escaping (DispatchSource.FileSystemEvent) -> Void) -> DispatchSourceFileSystemObject? {
+        let fd = open(fileURL.path, flags)
+        guard fd >= 0 else { return nil }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: events, queue: .main)
+        source.setEventHandler { [unowned source] in onEvent(source.data) }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        return source
     }
 
     private func scheduleReload(rewatch: Bool) {

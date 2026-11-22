@@ -15,8 +15,8 @@
       { "keys": "hyper+right", "action": "swap right" },
       { "keys": "hyper+f", "action": "float" },
       { "keys": "hyper+a", "action": "accordion" },
-      { "keys": "hyper+t", "action": "scratchpad com.apple.Terminal" },
-      { "keys": "hyper+shift+t", "action": "move-to-scratchpad com.apple.Terminal" }
+      { "keys": "meh+t", "action": "scratchpad com.apple.Terminal" },
+      { "keys": "hyper+t", "action": "move-to-scratchpad com.apple.Terminal" }
     ]
   },
   "mouse": {
@@ -35,9 +35,9 @@
     "floating": ["com.apple.calculator"],
     "floatingWindows": [{ "app": "com.apple.Safari", "title": "Settings" }],
     "workspaces": [
-      { "name": "1", "switch": "hyper+1", "move": "hyper+shift+1" },
-      { "name": "2", "switch": "hyper+2", "move": "hyper+shift+2" },
-      { "name": "web", "switch": "hyper+3", "move": "hyper+shift+3" }
+      { "name": "1", "switch": "meh+1", "move": "hyper+1" },
+      { "name": "2", "switch": "meh+2", "move": "hyper+2" },
+      { "name": "web", "switch": "meh+3", "move": "hyper+3" }
     ],
     "assign": [{ "app": "com.apple.Safari", "workspace": "web" }]
   }

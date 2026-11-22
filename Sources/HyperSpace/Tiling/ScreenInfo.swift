@@ -36,7 +36,7 @@ struct ScreenInfo {
 extension ScreenInfo {
     /// Height of the main display: AppKit's bottom-left coordinates and the top-left ones of AX
     /// and CGEvent mirror each other around it.
-    static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
+    private static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
 
     /// Between AppKit's bottom-left coordinates and the top-left ones of AX and CGEvent (the
     /// flip is its own inverse), against the main display's height.
@@ -51,12 +51,14 @@ extension ScreenInfo {
     /// The display's UUID: unlike its id, the same every time the monitor is plugged in.
     var uuid: String { Self.uuid(of: id) }
 
+    /// The UUID each display had when last asked: a display that is gone has none to ask for.
     private static var uuids: [CGDirectDisplayID: String] = [:]
 
+    /// Asked every time while the display is there (macOS may give the id of a monitor that
+    /// went away to another one); the UUID remembered only answers for a display that is gone.
     static func uuid(of id: CGDirectDisplayID) -> String {
-        if let uuid = uuids[id] { return uuid }
         guard let ref = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue(),
-              let text = CFUUIDCreateString(nil, ref) as String? else { return String(id) }
+              let text = CFUUIDCreateString(nil, ref) as String? else { return uuids[id] ?? String(id) }
         uuids[id] = text
         return text
     }

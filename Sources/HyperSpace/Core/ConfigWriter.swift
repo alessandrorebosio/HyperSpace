@@ -11,11 +11,30 @@ enum ConfigWriter {
     }
 
     /// The file's bytes and what they hold: `[:]` when it is missing or blank, nil when it is
-    /// not a JSON object. The one place the file is read and parsed for the settings.
+    /// not a JSON object or cannot be read (no permission, say: taking it for an empty one
+    /// would replace everything in it with the next change). The one place the file is read
+    /// and parsed for the settings.
     static func parseFile(_ url: URL) -> (data: Data?, root: [String: Any]?) {
-        guard let data = try? Data(contentsOf: url) else { return (nil, [:]) }
-        if String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return (data, [:]) }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            return (nil, isMissingFile(error) ? [:] : nil)
+        }
+        if isBlank(data) { return (data, [:]) }
         return (data, try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// Whether a file's bytes are only white space: an empty config, for `Config.load` too.
+    static func isBlank(_ data: Data) -> Bool {
+        String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Whether reading failed because nothing is there, rather than something unreadable.
+    static func isMissingFile(_ error: Error) -> Bool {
+        let error = error as NSError
+        return (error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError)
+            || (error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT))
     }
 
     /// One top-level object of `root` ("keyboard", "mouse"…), empty when missing.
@@ -42,15 +61,24 @@ enum ConfigWriter {
         var errorDescription: String? { Self.message }
     }
 
+    /// Refusal to edit a file that is there but cannot be read, for the same reason.
+    struct UnreadableError: LocalizedError {
+        var errorDescription: String? { "config.json cannot be read: check its permissions before changing settings" }
+    }
+
     /// Reads `url`, applies `change` and writes the result, unless nothing changed.
-    /// Throws `SyntaxError`, without writing, when the file is there but does not parse.
+    /// Throws `SyntaxError` or `UnreadableError`, without writing, when the file is there but
+    /// does not parse or cannot be read.
     static func update(_ url: URL = ConfigStore.url, _ change: (inout [String: Any]) -> Void) throws {
         // A linked config (dotfiles) is edited where it lives: an atomic write to the link
         // itself would replace it with a regular file.
-        let url = url.resolvingSymlinksInPath()
+        let url = url.resolvingSymlinksInPath().linkTarget
         // Read once: parsed to edit, and compared with what would be written.
         let (current, parsed) = parseFile(url)
-        guard var root = parsed else { throw SyntaxError() }
+        guard var root = parsed else {
+            if current == nil { throw UnreadableError() }
+            throw SyntaxError()
+        }
         change(&root)
         let text = text(for: root)
         // Nothing changed: no write, so no reload of the whole config.

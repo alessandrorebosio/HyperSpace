@@ -26,21 +26,28 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Something that keeps HyperSpace from working fully, shown at the top of the menu.
     enum Problem: Equatable {
         case permission
+        /// The permission looks granted but the event tap cannot be created (a grant gone
+        /// stale after a rebuild or an update): shortcuts, mouse buttons and the lock are off.
+        case tap
         case config(String)
 
         var text: String {
             switch self {
             // A rebuilt, ad-hoc signed app may lose the grant: say it is this build's.
             case .permission: return "\(Permissions.missingTitle): not granted to this build"
+            case .tap: return "\(Self.tapTitle): remove HyperSpace from Accessibility and allow it again"
             case .config(let message): return "Config error: \(message)"
             }
         }
+
+        static let tapTitle = "Event tap unavailable"
 
         /// The line in the menu: short, so a long parse error does not make the menu very wide
         /// (the whole message stays in the tooltip and in Settings).
         var menuTitle: String {
             switch self {
             case .permission: return Permissions.missingTitle
+            case .tap: return Self.tapTitle
             case .config(let message):
                 let line = message.split(separator: "\n").first.map(String.init) ?? message
                 return "Config error: " + (line.count > 48 ? String(line.prefix(47)) + "…" : line)
@@ -48,10 +55,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
     }
 
-    /// The two problems are tracked apart, so fixing one never hides the other: the permission
-    /// is missing until it is granted, a config error lasts until the file loads again.
-    static func problems(permissionMissing: Bool, configError: String?) -> [Problem] {
-        (permissionMissing ? [.permission] : []) + (configError.map { [.config($0)] } ?? [])
+    /// The problems are tracked apart, so fixing one never hides another: the permission is
+    /// missing until it is granted, the event tap unavailable until it can be created, a
+    /// config error lasts until the file loads again.
+    static func problems(permissionMissing: Bool, tapUnavailable: Bool = false, configError: String?) -> [Problem] {
+        (permissionMissing ? [.permission] : []) + (tapUnavailable ? [.tap] : []) + (configError.map { [.config($0)] } ?? [])
+    }
+
+    /// The event tap could not be created although Accessibility looks granted.
+    var tapUnavailable = false {
+        didSet { if tapUnavailable != oldValue { updateIcon() } }
     }
 
     /// The Accessibility permission is missing: the event tap and window control are off.
@@ -65,12 +78,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     var problems: [Problem] {
-        Self.problems(permissionMissing: permissionMissing, configError: configError)
+        Self.problems(permissionMissing: permissionMissing, tapUnavailable: tapUnavailable, configError: configError)
     }
 
     /// What VoiceOver says for the menu bar item: what it shows, then a lock and a problem.
     static func accessibilityDescription(workspace: String?, locked: Bool, problem: Bool) -> String {
-        var parts = [workspace.map { "Workspace \($0)" } ?? "HyperSpace"]
+        // An empty name would read "Workspace ": the app's name instead, as without the bar.
+        var parts = [workspace.flatMap { $0.isEmpty ? nil : "Workspace \($0)" } ?? "HyperSpace"]
         if locked { parts.append("keyboard locked") }
         if problem { parts.append("needs attention") }
         return parts.joined(separator: ", ")
@@ -166,8 +180,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             return true
         }
         image.isTemplate = true
+        // No focused workspace to name (no display shows one): the app's name, as without the bar.
         image.accessibilityDescription = accessibilityDescription(
-            workspace: names.indices.contains(focused) ? names[focused] : "", locked: locked, problem: problem)
+            workspace: names.indices.contains(focused) ? names[focused] : nil, locked: locked, problem: problem)
         return image
     }
 
@@ -192,7 +207,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let enabled = tilingEnabled
         let tiling = ClosureMenuItem("Tiling") { [host] in host.setTilingEnabled(!enabled) }
         tiling.state = enabled ? .on : .off
-        let hint = enabled ? "Windows are arranged in workspaces" : "Windows are left where you put them"
+        // The words of the Tiling page in Settings.
+        let hint = enabled ? Wording.tilingOn : Wording.tilingOff
         let symbol = enabled ? "rectangle.split.3x1.fill" : "rectangle.split.3x1"
         tiling.styled = { Self.title("Tiling", subtitle: hint, symbol: symbol, highlighted: $0) }
         menu.addItem(tiling)
@@ -281,7 +297,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         func line(_ string: String, font: NSFont, color: NSColor, height: CGFloat, iconFrom y: CGFloat) -> NSAttributedString {
             let line = NSMutableAttributedString()
             if let icon {
-                let half = NSImage(size: NSSize(width: textIndent, height: height), flipped: false) { rect in
+                let half = NSImage(size: NSSize(width: textIndent, height: height), flipped: false) { _ in
                     let x = (iconSlot - icon.size.width) / 2, offset = (top + bottom - icon.size.height) / 2
                     icon.draw(in: NSRect(x: x, y: offset - y, width: icon.size.width, height: icon.size.height))
                     return true
@@ -351,12 +367,15 @@ extension StatusMenu {
         case .permission:
             fix = "Click to open System Settings and allow HyperSpace"
             item = ClosureMenuItem(problem.menuTitle) { Permissions.openSettings() }
+        case .tap:
+            fix = "Click to open System Settings: remove HyperSpace from Accessibility and allow it again"
+            item = ClosureMenuItem(problem.menuTitle) { Permissions.openSettings() }
         case .config(let message):
             fix = "Click to edit the file. The last valid config stays active."
             item = ClosureMenuItem(problem.menuTitle) { [host] in host.openConfig() }
             item.toolTip = message
         }
-        item.attributedTitle = Self.title(problem.menuTitle, symbol: "exclamationmark.triangle.fill", color: .systemOrange)
+        item.attributedTitle = Self.title(problem.menuTitle, symbol: Wording.warningSymbol, color: .systemOrange)
         if #available(macOS 14.4, *) { item.subtitle = fix } else { item.toolTip = fix }
         menu.addItem(item)
     }
@@ -371,7 +390,7 @@ extension StatusMenu {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") { NSWorkspace.shared.open(url) }
             }
             let tabs = NSMutableParagraphStyle()
-            tabs.tabStops = [NSTextTab(textAlignment: .right, location: 230)]
+            tabs.tabStops = [NSTextTab(textAlignment: .right, location: Self.batteryColumn)]
             let symbol = battery.isLow ? Self.batterySymbol(battery.percent) : battery.symbol
             let title = Self.title(battery.name + "\t", symbol: symbol, color: battery.isLow ? .systemOrange : .labelColor,
                                    attributes: [.paragraphStyle: tabs])
@@ -387,6 +406,9 @@ extension StatusMenu {
         }
         menu.addItem(.separator())
     }
+
+    /// Where the battery levels end, from the left edge of the menu: they line up on the right.
+    private static let batteryColumn: CGFloat = 230
 
     private static func batterySymbol(_ percent: Int) -> String {
         switch percent {

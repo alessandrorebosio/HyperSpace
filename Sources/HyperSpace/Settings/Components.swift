@@ -9,16 +9,6 @@ import SwiftUI
 // with a PageHero; lists put their add button in the section header (SectionHeader); keys and
 // shortcuts are KeyCaps; anything that needs attention is a NoticeRow at the top.
 
-extension Array where Element: Identifiable {
-    /// Changes the element with `id`; false when there is none.
-    @discardableResult
-    mutating func update(id: Element.ID, _ change: (inout Element) -> Void) -> Bool {
-        guard let index = firstIndex(where: { $0.id == id }) else { return false }
-        change(&self[index])
-        return true
-    }
-}
-
 // MARK: - Icons
 
 /// A white symbol on a colored rounded square, as in System Settings: the sidebar (20 pt),
@@ -85,7 +75,7 @@ struct PageHero<Accessory: View>: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: Metrics.rowGap)
                 accessory
             }
             .padding(.vertical, 6)
@@ -107,7 +97,7 @@ struct SectionHeader<Trailing: View>: View {
     var body: some View {
         HStack(alignment: .center) {
             Text(title)
-            Spacer(minLength: 12)
+            Spacer(minLength: Metrics.rowGap)
             trailing
         }
     }
@@ -142,9 +132,9 @@ struct SettingRow<Control: View>: View {
     @ViewBuilder let control: Control
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: Metrics.rowGap) {
             RowLabel(title, detail: detail)
-            Spacer(minLength: 12)
+            Spacer(minLength: Metrics.rowGap)
             control
         }
     }
@@ -194,38 +184,76 @@ struct EmptyRow: View {
     }
 }
 
-/// A caption under a section, styled the same on every page; or, in red, an error about that
-/// section alone (Launch at login). Save errors are a notice at the top of the page instead.
+/// A caption under a section, styled the same on every page. Errors are not captions: an
+/// `ErrorLabel` in the section, or the notice at the top of the page for a save error.
 struct SectionFooter: View {
     private let text: String
-    private let error: String?
 
     init(_ text: String) {
         self.text = text
-        error = nil
-    }
-
-    init(error: String) {
-        text = ""
-        self.error = error
     }
 
     // A grouped Form puts footers on the trailing side (for buttons): text reads from the leading edge.
     var body: some View {
-        Group {
-            if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-            } else {
-                Text(text).foregroundStyle(.secondary)
+        Text(text)
+            .foregroundStyle(.secondary)
+            .font(.caption)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            // In line with the section's title and rows, which the Form insets by as much.
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// An error about one section (Launch at login, the config file), as a row of it: the one way
+/// an error that is not a save error is shown.
+struct ErrorLabel: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Label(text, systemImage: Wording.warningSymbol)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A colored dot and a word: on a tinted capsule, or plain and small (the sidebar).
+struct StatusPill: View {
+    let text: String
+    let color: Color
+    var compact = false
+
+    var body: some View {
+        if compact {
+            HStack(spacing: 5) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
+        } else {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(text).font(.callout.weight(.medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.14)))
         }
-        .font(.caption)
-        .multilineTextAlignment(.leading)
-        .fixedSize(horizontal: false, vertical: true)
-        // In line with the section's title and rows, which the Form insets by as much.
-        .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension GeneralModel.Health {
+    /// The color of the status dot.
+    var color: Color {
+        switch self {
+        case .running: return .green
+        case .permissionMissing: return .orange
+        case .configProblem: return .red
+        }
     }
 }
 
@@ -237,14 +265,14 @@ struct RuleRowLayout<First: View, Second: View, Trailing: View>: View {
     /// On one line, the second part sits before the trailing controls (a picker) rather than
     /// next to the first (an arrow and a target).
     var secondAtEnd = false
-    var spacing: CGFloat = 8
+    var spacing = Metrics.ruleSpacing
     /// Put before the second part when it has a line of its own ("On" before a keyboard).
     var secondLabel: String?
     let first: First
     let second: Second
     let trailing: Trailing
 
-    init(secondAtEnd: Bool = false, spacing: CGFloat = 8, secondLabel: String? = nil,
+    init(secondAtEnd: Bool = false, spacing: CGFloat = Metrics.ruleSpacing, secondLabel: String? = nil,
          @ViewBuilder first: () -> First, @ViewBuilder second: () -> Second, @ViewBuilder trailing: () -> Trailing) {
         self.secondAtEnd = secondAtEnd
         self.spacing = spacing
@@ -259,18 +287,18 @@ struct RuleRowLayout<First: View, Second: View, Trailing: View>: View {
             HStack(spacing: spacing) {
                 first
                 if secondAtEnd {
-                    Spacer(minLength: 12)
+                    Spacer(minLength: Metrics.rowGap)
                     second
                 } else {
                     second
-                    Spacer(minLength: 12)
+                    Spacer(minLength: Metrics.rowGap)
                 }
                 trailing
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: spacing) {
                     first
-                    Spacer(minLength: 12)
+                    Spacer(minLength: Metrics.rowGap)
                     trailing
                 }
                 HStack(spacing: 8) {
@@ -295,11 +323,11 @@ struct AppRuleRow<Detail: View>: View {
             if let app {
                 AppLabel(bundleID: app)
             } else {
-                Label("Any app", systemImage: "square.grid.2x2").foregroundStyle(.secondary)
+                Label(Wording.anyApp, systemImage: "square.grid.2x2").foregroundStyle(.secondary)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Metrics.rowGap)
             detail
-            RemoveButton(action: remove)
+            RemoveButton(what: "the rule of \(app.map(AppLauncher.name) ?? Wording.anyApp.lowercased())", action: remove)
         }
     }
 }
@@ -316,14 +344,14 @@ struct NoticeRow: View {
     let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Metrics.rowGap) {
             PageIcon(symbol: symbol, color: color, size: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
                 Text(detail).font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Metrics.rowGap)
             Button(button, action: action)
         }
         .padding(.vertical, 2)
@@ -345,29 +373,59 @@ extension EnvironmentValues {
 /// Shown under the hero of a page that needs the Accessibility permission, while it is missing.
 struct PermissionNotice: View {
     @Environment(\.permissionMissing) private var missing
-    var detail = "These settings do nothing until HyperSpace is allowed in Privacy & Security → Accessibility."
+    var detail = "These settings do nothing until HyperSpace is allowed in \(Wording.accessibilityPane)."
 
     var body: some View {
         if missing {
             Section {
                 NoticeRow(symbol: "lock.shield.fill", color: .orange, title: Permissions.missingTitle,
-                          detail: detail, button: "Open System Settings…") { Permissions.openSettings() }
+                          detail: detail, button: Wording.openSystemSettings) { Permissions.openSettings() }
             }
         }
     }
 }
 
-/// Shown under the hero while the page's last change could not be saved (a syntax error in the
-/// file, which the writer refuses to touch). It observes the model's save status alone, so an
-/// error coming or going redraws this notice, not the page.
+private struct OpenConfigKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    /// Opens the config file in the editor (writing the default one first if it is missing):
+    /// the one action behind every *Edit Config…* button.
+    var openConfig: () -> Void {
+        get { self[OpenConfigKey.self] }
+        set { self[OpenConfigKey.self] = newValue }
+    }
+}
+
+/// Shown under the hero while the page cannot save: its last change was not written (a syntax
+/// error in the file, which the writer refuses to touch), or the file could not be read when
+/// the window opened. It observes the model's save status alone, so a problem coming or going
+/// redraws this notice, not the page.
 struct SaveErrorNotice: View {
     @ObservedObject var status: SaveStatus
+    @Environment(\.openConfig) private var openConfig
 
     var body: some View {
-        if let error = status.error {
+        if let problem = status.problem {
             Section {
-                NoticeRow(symbol: "exclamationmark.triangle.fill", color: .red, title: "Changes not saved",
-                          detail: error, button: "Edit Config…") { NSWorkspace.shared.open(ConfigStore.url) }
+                NoticeRow(symbol: Wording.warningSymbol, color: .red, title: problem.title,
+                          detail: problem.message, button: Wording.editConfig, action: openConfig)
+            }
+        }
+    }
+}
+
+/// Shown on the window pages while tiling is off: the settings are kept but do nothing.
+struct TilingOffNotice: View {
+    @ObservedObject var model: TilingOptionsModel
+
+    var body: some View {
+        if !model.enabled {
+            Section {
+                NoticeRow(symbol: "pause.fill", color: .gray, title: "Tiling is off",
+                          detail: "\(Wording.tilingOff). These settings are kept and apply as soon as it is on.",
+                          button: "Turn On") { model.setEnabled(true) }
             }
         }
     }
@@ -378,6 +436,9 @@ struct SaveErrorNotice: View {
 /// A key drawn as a key cap. Clicking it starts recording; while it records it has an accent
 /// ring and a red dot, like a recording shortcut field.
 struct KeyCap: View {
+    /// What the cap holds, for VoiceOver ("Key to remap", "Show workspace web"): the text alone
+    /// ("⌘1", "None") says nothing out of its row.
+    let label: String
     let text: String
     var symbol: String?
     /// Fixed width, padding included: keeps caps aligned from row to row.
@@ -409,6 +470,8 @@ struct KeyCap: View {
         }
         .buttonStyle(.plain)
         .help(active ? "Recording: press the keys" : "Click to record")
+        .accessibilityLabel("\(label): \(text)")
+        .accessibilityHint(active ? "Recording" : "Records what you press next")
     }
 }
 
@@ -441,12 +504,14 @@ struct RuleArrow: View {
 /// The end of a rule row: its warning, if any, and its remove button.
 struct RuleTrailing: View {
     let warning: String?
+    /// What the remove button removes, for VoiceOver.
+    let what: String
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Metrics.ruleSpacing) {
             WarningBadge(text: warning)
-            RemoveButton(action: remove)
+            RemoveButton(what: what, action: remove)
         }
     }
 }
@@ -465,11 +530,10 @@ struct AddButton: View {
     }
 }
 
-/// "+ Add App", drawn like AddButton: a menu of the candidate apps, then a last entry that
-/// asks for any other app.
+/// "+ Add App", drawn like AddButton: a menu of the candidate apps, then a last entry
+/// (*Other App…*) that asks for any other app.
 struct AddAppMenu: View {
     let candidates: [(name: String, bundleID: String)]
-    let chooseTitle: String
     let add: (String) -> Void
     let choose: () -> Void
 
@@ -479,7 +543,7 @@ struct AddAppMenu: View {
                 Button(app.name) { add(app.bundleID) }
             }
             Divider()
-            Button(chooseTitle, action: choose)
+            Button(Wording.otherApp, action: choose)
         } label: {
             AddLabel(title: "Add App")
         }
@@ -500,46 +564,38 @@ private struct AddLabel: View {
     }
 }
 
-/// A dropdown next to a key cap, for picking from a list instead of pressing the keys.
-struct ChoiceMenu<Content: View>: View {
-    let help: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        Menu {
-            content
-        } label: {
-            Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-        }
-        .modifier(BorderedMenu())
-        .controlSize(.small)
-        .help(help)
-        .accessibilityLabel(help)
-    }
-}
-
 /// A named choice of a `GroupedChoiceMenu`, under its group's title.
 struct ChoiceGroup {
     let title: String
     let items: [(label: String, value: String)]
 }
 
-/// A ▾ next to a key cap with a long, fixed list in submenus (every key, the ready-made
-/// actions), and an optional last item after a divider. The list never changes, so the menu
-/// is only built again for another rule (`==` compares the rule): a key press while recording
-/// redraws every row, not this.
+/// A menu with a long, fixed list in submenus (every key, the ready-made actions), an optional
+/// first item before a divider and an optional last one after another. Without a `title` it is
+/// the small ▾ next to a key cap, for picking instead of pressing; with one it is a menu button
+/// showing the current choice (a trackpad corner's action). The list never changes, so the menu
+/// is only built again for another owner or title (`==`): a key press while recording redraws
+/// every row, not this.
 struct GroupedChoiceMenu: View, Equatable {
-    let ruleID: UUID
+    /// What the menu belongs to (a rule, a corner).
+    let id: AnyHashable
+    /// The current choice, shown on the button; nil for the ▾.
+    var title: String?
     let help: String
     let groups: [ChoiceGroup]
+    var first: (label: String, value: String)?
     var last: (label: String, value: String)?
-    /// Called with the chosen value; the same for a given rule.
+    /// Called with the chosen value; the same for a given owner.
     let choose: (String) -> Void
 
-    static func == (a: Self, b: Self) -> Bool { a.ruleID == b.ruleID }
+    static func == (a: Self, b: Self) -> Bool { a.id == b.id && a.title == b.title }
 
     var body: some View {
-        ChoiceMenu(help: help) {
+        Menu {
+            if let first {
+                Button(first.label) { choose(first.value) }
+                Divider()
+            }
             ForEach(groups, id: \.title) { group in
                 Menu(group.title) {
                     ForEach(group.items, id: \.value) { item in
@@ -551,7 +607,17 @@ struct GroupedChoiceMenu: View, Equatable {
                 Divider()
                 Button(last.label) { choose(last.value) }
             }
+        } label: {
+            if let title {
+                Text(title)
+            } else {
+                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+            }
         }
+        .modifier(BorderedMenu(indicator: title == nil ? .hidden : .visible))
+        .controlSize(title == nil ? .small : .regular)
+        .help(help)
+        .accessibilityLabel(title.map { "\(help): \($0)" } ?? help)
     }
 }
 
@@ -559,17 +625,20 @@ struct GroupedChoiceMenu: View, Equatable {
 /// which draws the label's symbols as vectors in their own colors; the older menu styles turn
 /// the label into a template bitmap, gray and blurry.
 struct BorderedMenu: ViewModifier {
+    /// The ▾ the system adds: hidden when the label is itself a symbol.
+    var indicator: Visibility = .hidden
+
     func body(content: Content) -> some View {
         if #available(macOS 14, *) {
             content
                 .menuStyle(.button)
                 .buttonStyle(.bordered)
-                .menuIndicator(.hidden)
+                .menuIndicator(indicator)
                 .fixedSize()
         } else {
             content
                 .menuStyle(.borderedButton)
-                .menuIndicator(.hidden)
+                .menuIndicator(indicator)
                 .fixedSize()
         }
     }
@@ -584,6 +653,8 @@ struct BorderedMenu: ViewModifier {
 struct RemoveButton: View {
     static let width: CGFloat = 20
 
+    /// What the button removes, for VoiceOver ("the workspace web"): every row has one.
+    let what: String
     let action: () -> Void
 
     var body: some View {
@@ -595,7 +666,7 @@ struct RemoveButton: View {
         }
         .buttonStyle(.borderless)
         .help("Remove")
-        .accessibilityLabel("Remove")
+        .accessibilityLabel("Remove \(what)")
     }
 }
 
@@ -605,7 +676,7 @@ struct WarningBadge: View {
 
     var body: some View {
         if let text {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: Wording.warningSymbol)
                 .foregroundStyle(.orange)
                 .help(text)
                 .accessibilityLabel(text)
@@ -626,15 +697,16 @@ struct SliderRow: View {
     let onEditingChanged: (Bool) -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Metrics.rowGap) {
             Text(title).layoutPriority(1)
-            Spacer(minLength: 12)
+            Spacer(minLength: Metrics.rowGap)
             // Continuous (no tick marks), rounded to `step`. Not saved while dragged: every save
             // reloads the config and retiles the windows.
             Slider(value: Binding(get: { Double(value) },
                                   set: { onChange(Int(($0 / Double(step)).rounded()) * step) }),
                    in: Double(range.lowerBound)...Double(range.upperBound), onEditingChanged: onEditingChanged)
-            .labelsHidden()
+            .accessibilityLabel(title)
+            .accessibilityValue("\(value) points")
             .frame(minWidth: 120, maxWidth: 200)
             Text("\(value) pt")
                 .monospacedDigit()

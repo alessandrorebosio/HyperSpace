@@ -4,4 +4,9 @@
 build/
 .swiftpm/
 *.xcodeproj/
+*.xcworkspace/
 xcuserdata/
+DerivedData/
+__pycache__/
+*.pyc
+.claude/settings.local.json

@@ -4,11 +4,8 @@ enum Direction: String {
     case left, right, up, down
 }
 
-enum LayoutKind: String, CaseIterable {
+enum LayoutKind: String, CaseIterable, ConfigNamed {
     case tall, wide, columns, monocle, accordion
-
-    /// A name as written in the config, in any case.
-    init?(configText text: String) { self.init(rawValue: text.lowercased()) }
 }
 
 /// Everything a key binding or mouse button can trigger.
@@ -58,9 +55,11 @@ enum Action: Equatable {
 
     /// Whether holding the shortcut repeats the action with the key's autorepeat. Only moves
     /// that make sense in steps do; the rest (launching, toggling, a shell command) run once.
+    /// Of the media keys, the volume and the brightness: play/pause and mute toggle.
     var repeats: Bool {
         switch self {
-        case .focus, .swap, .resize, .adjustRatio, .sendKey, .media: return true
+        case .focus, .swap, .resize, .adjustRatio, .sendKey: return true
+        case .media(let key): return key.repeats
         default: return false
         }
     }
@@ -93,7 +92,8 @@ enum Action: Equatable {
             guard let kind = LayoutKind(configText: arg) else { throw ConfigError("unknown layout in '\(text)'") }
             return .setLayout(kind)
         case "ratio":
-            guard let delta = Double(arg) else { throw ConfigError("expected a number in '\(text)'") }
+            // "nan" and "inf" read as numbers too.
+            guard let delta = Double(arg), delta.isFinite else { throw ConfigError("expected a number in '\(text)'") }
             return .adjustRatio(delta)
         case "float": return .toggleFloat
         case "tiling": return .toggleTiling
@@ -107,7 +107,7 @@ enum Action: Equatable {
         case "move-to-workspace": return .moveToWorkspace(try workspaceIndex())
         case "resize":
             let parts = arg.lowercased().split(separator: " ")
-            guard parts.count == 2, parts[0] == "width" || parts[0] == "height", let delta = Double(parts[1]) else {
+            guard parts.count == 2, parts[0] == "width" || parts[0] == "height", let delta = Double(parts[1]), delta.isFinite else {
                 throw ConfigError("expected 'resize width|height <points>' in '\(text)'")
             }
             return .resize(width: parts[0] == "width", delta: CGFloat(delta))
@@ -123,7 +123,7 @@ enum Action: Equatable {
             default: throw ConfigError("expected back/forward in '\(text)'")
             }
         case "system":
-            guard let action = SystemAction(rawValue: arg.lowercased()) else { throw ConfigError("unknown system action in '\(text)'") }
+            guard let action = SystemAction(configText: arg) else { throw ConfigError("unknown system action in '\(text)'") }
             return .system(action)
         case "media":
             guard let key = MediaKey(configText: arg) else { throw ConfigError("unknown media key in '\(text)'") }

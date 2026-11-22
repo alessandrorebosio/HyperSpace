@@ -29,15 +29,12 @@ extension WindowManager {
                 let shown = pad.filter(\.scratchpadShown)
                 if shown.contains(where: { $0.id == focusedID }) { hideScratchpad(shown) } else { showScratchpad(pad) }
             } else if let window = mine.first(where: { $0.id == focusedID }) ?? mine.first {
-                // Already open in the tiling: it moves to the scratchpad, and the windows it
-                // leaves take its place.
-                window.scratchpad = true
-                showScratchpad(window)
-                retile()
+                // Already open in the tiling: it moves to the scratchpad.
+                sendToScratchpad(window)
             } else {
                 // Not open, or no window: its next window is the scratchpad one.
                 pendingScratchpad = pendingScratchpad.filter { $0.value > Date() }
-                pendingScratchpad[bundleID] = Date().addingTimeInterval(30)
+                pendingScratchpad[bundleID] = Date().addingTimeInterval(Delay.scratchpadLaunch)
                 AppLauncher.open(name)
             }
         }
@@ -83,10 +80,16 @@ extension WindowManager {
             retile()
             focus(window)
         } else {
-            window.scratchpad = true
-            showScratchpad(window)
-            retile()
+            sendToScratchpad(window)
         }
+    }
+
+    /// A window of the tiling becomes a scratchpad window, shown; the windows it leaves take
+    /// its place.
+    private func sendToScratchpad(_ window: ManagedWindow) {
+        window.scratchpad = true
+        showScratchpad(window)
+        retile()
     }
 
     /// Shows several scratchpad windows, the one focused last on top.
@@ -112,7 +115,7 @@ extension WindowManager {
             // centered on what they took, and the other scratchpad windows take it too.
             let element = window.element
             let misses = { (size: CGSize) in !size.isClose(to: frame.size, tolerance: Self.frameTolerance) }
-            axQueues.perform(window.pid, retryAfter: 0.1) { [weak self] isRetry in
+            axQueues.perform(window.pid, retryAfter: Delay.scratchpadRefit) { [weak self] isRetry in
                 guard var size = AX.size(element) else { return false }
                 // Coming from another display, some apps resize themselves a moment after the
                 // move (a different scale): look again 0.1 s later (the app's queue is free
@@ -148,7 +151,7 @@ extension WindowManager {
             let screens = currentScreens()
             let frame = parkScratchpad(pad, screens: screens, bounds: currentBounds())
             // Back to what you were doing, on the display it was shown on: the pointer stays there.
-            let here = frame.flatMap { screens.screen(for: $0)?.id } ?? activeDisplay
+            let here = frame.flatMap { screens.screen(for: $0)?.id } ?? focusState.activeDisplay
             if let workspace = here.flatMap({ displayed[$0] }) ?? screens.first.flatMap({ displayed[$0.id] }) {
                 focusWindow(in: workspace)
             }

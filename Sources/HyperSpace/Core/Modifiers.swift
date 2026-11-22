@@ -38,7 +38,7 @@ struct Modifiers: OptionSet, Hashable {
         return flags
     }
 
-    static func token(_ token: String) -> Modifiers? {
+    private static func token(_ token: String) -> Modifiers? {
         switch token.lowercased() {
         case "cmd", "command", "⌘": return .cmd
         case "alt", "opt", "option", "⌥": return .alt
@@ -91,10 +91,12 @@ struct Modifiers: OptionSet, Hashable {
         (contains(.ctrl) ? "⌃" : "") + (contains(.alt) ? "⌥" : "") + (contains(.shift) ? "⇧" : "") + (contains(.cmd) ? "⌘" : "")
     }
 
-    /// Parses a modifier-only list such as "ctrl+alt". Empty string means no modifiers.
+    /// Parses a modifier-only list such as "ctrl+alt". Empty string means no modifiers; an
+    /// empty name in a list ("ctrl++alt", "+") is an error, as in `KeyCombo` and `RemapTarget`.
     static func parse(_ text: String) throws -> Modifiers {
-        let tokens = text.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        return try parse(tokens: tokens) { ConfigError("unknown modifier '\($0)'") }
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        let tokens = text.split(separator: "+", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        return try parse(tokens: tokens) { ConfigError($0.isEmpty ? "a modifier is missing in '\(text)'" : "unknown modifier '\($0)'") }
     }
 }
 
@@ -112,7 +114,13 @@ struct KeyCombo: Equatable {
         guard let keyCode = key.keyCode else {
             throw ConfigError("'\(name)' can be remapped but not used in a shortcut")
         }
-        let mods = try Modifiers.parse(tokens: tokens.dropLast()) { ConfigError("unknown modifier '\($0)' in '\(text)'") }
+        // A modifier key never comes as a key press: such a shortcut would load and never fire.
+        guard !KeyCodes.flagKeyCodes.contains(keyCode) else {
+            throw ConfigError("'\(name)' is a modifier key: it cannot be the key of a shortcut ('\(text)')")
+        }
+        let mods = try Modifiers.parse(tokens: tokens.dropLast()) {
+            ConfigError($0.isEmpty ? "a modifier is missing in '\(text)'" : "unknown modifier '\($0)' in '\(text)'")
+        }
         return KeyCombo(keyCode: keyCode, modifiers: mods)
     }
 }

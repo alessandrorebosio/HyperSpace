@@ -5,9 +5,9 @@ a tiling window manager with virtual workspaces. Docs in `docs/`.
 
 ## Constraints
 
-- Targets **macOS 13** and must build with the **Command Line Tools only** (CI checks it): no
-  SwiftUI macros (`@State`, `@Observable`, `#Preview`). View state lives in `ObservableObject`
-  models with `@Published`.
+- Targets **macOS 13** and must build and pass its tests with the **Command Line Tools only**
+  (CI runs both that way): no SwiftUI macros (`@State`, `@Observable`, `#Preview`). View state
+  lives in `ObservableObject` models with `@Published`.
 - The `swiftui-macos` skill in `.claude/skills` assumes macOS 26 and Swift 6.2: use its
   runtime insights (view identity, observation cost, AppKit bridging), not its macOS 26-only
   APIs or `@Observable`.
@@ -16,5 +16,6 @@ a tiling window manager with virtual workspaces. Docs in `docs/`.
 ## Commands
 
 - `make test` — unit tests (Swift Testing)
-- `make app` — builds `build/HyperSpace.app`; rebuild and relaunch it before asking for a manual test
+- `make app` — builds `build/HyperSpace.app` (it neither quits nor relaunches a running copy)
+- `make run` — quits the running copy, rebuilds and opens the new one: run it before asking for a manual test
 - `build/HyperSpace.app/Contents/MacOS/HyperSpace --render-settings <folder>` — PNGs of every settings page

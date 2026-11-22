@@ -54,16 +54,17 @@ struct WorkspaceState: Codable, Equatable {
             .appendingPathComponent("workspaces.json")
     }
 
-    static func load(now: Date = Date()) -> WorkspaceState? {
-        guard let data = try? Data(contentsOf: fileURL),
+    /// `url`: where the state is read from (the tests give a temporary file).
+    static func load(now: Date = Date(), from url: URL = fileURL) -> WorkspaceState? {
+        guard let data = try? Data(contentsOf: url),
               let state = try? decoder.decode(WorkspaceState.self, from: data),
               now.timeIntervalSince(state.savedAt) < maxAge else { return nil }
         return state
     }
 
     /// A failure (a full disk) is logged: the next start then finds older workspaces or none.
-    func save() {
-        let url = Self.fileURL
+    /// `url`: where the state is written (the tests give a temporary file).
+    func save(to url: URL = Self.fileURL) {
         do {
             let data = try Self.encoder.encode(self)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -118,7 +119,8 @@ struct WorkspaceRestorer {
     func window(_ index: Int) -> WorkspaceState.Window { windows[index] }
 
     /// Saved windows no window was found for yet (apps not reopened so far).
-    var unclaimed: [WorkspaceState.Window] {
-        windows.indices.filter { !claimed.contains($0) }.map { windows[$0] }
-    }
+    var unclaimed: [WorkspaceState.Window] { unclaimedIndices.map { windows[$0] } }
+
+    /// Their indices in the saved state (its columns are written with them).
+    var unclaimedIndices: [Int] { windows.indices.filter { !claimed.contains($0) } }
 }

@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import ServiceManagement
-import SwiftUI
 
 /// State of the General page: startup, config file, permission and quit.
 final class GeneralModel: ObservableObject {
@@ -22,7 +21,7 @@ final class GeneralModel: ObservableObject {
     /// app's health (the app itself works).
     @Published private(set) var loginError: String?
     /// The config file, as shown (with `~`).
-    @Published private(set) var configPath = GeneralModel.displayPath(ConfigStore.url)
+    @Published private(set) var configPath = ConfigStore.url.abbreviatedPath
     /// Why the config could not be moved or switched: shown under the file's row.
     @Published private(set) var configLocationError: String?
 
@@ -71,42 +70,12 @@ final class GeneralModel: ObservableObject {
         assignIfChanged(SMAppService.mainApp.status == .enabled, to: &launchAtLogin)
     }
 
-    static func displayPath(_ url: URL) -> String {
-        (url.path as NSString).abbreviatingWithTildeInPath
-    }
+    /// The config file itself, for the panels that ask where it should go.
+    var configURL: URL { ConfigStore.url }
 
-    /// Asks where the config should go and moves it there (a file already there is replaced,
-    /// once the panel has asked).
-    func moveConfig() {
-        let panel = NSSavePanel()
-        panel.title = "Move Config File"
-        panel.message = "HyperSpace moves its config file here and reads it from here from now on."
-        panel.prompt = "Move"
-        panel.nameFieldStringValue = ConfigStore.url.lastPathComponent
-        panel.directoryURL = Self.suggestedFolder
-        panel.canCreateDirectories = true
-        panel.showsHiddenFiles = true
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        relocate(to: url, moving: true)
-    }
-
-    /// Asks for a config file that already exists (in a dotfiles folder, say) and uses it as it is.
-    func useOtherConfig() {
-        let panel = NSOpenPanel()
-        panel.title = "Use Another Config File"
-        panel.message = "HyperSpace reads this file from now on; the current one stays where it is."
-        panel.prompt = "Use"
-        panel.allowedContentTypes = [.json]
-        panel.directoryURL = Self.suggestedFolder
-        panel.showsHiddenFiles = true
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        relocate(to: url, moving: false)
-    }
-
-    /// `~/.config/hyperspace` when it exists, else `~/.config`, else the home folder.
-    private static var suggestedFolder: URL {
+    /// `~/.config/hyperspace` when it exists, else `~/.config`, else the home folder: where the
+    /// panels that move or pick the config start.
+    static var suggestedFolder: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let standard = ConfigLocation.standard(home: home).deletingLastPathComponent()
         if FileManager.default.fileExists(atPath: standard.path) { return standard }
@@ -114,24 +83,53 @@ final class GeneralModel: ObservableObject {
         return FileManager.default.fileExists(atPath: config.path) ? config : home
     }
 
-    private func relocate(to url: URL, moving: Bool) {
+    func showConfigInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.url])
+    }
+
+    func openAccessibilitySettings() {
+        Permissions.openSettings()
+    }
+
+    func quit() {
+        NSApp.terminate(nil)
+    }
+
+    /// Uses the config at `url` from now on: `moving`, the current file goes there first (a
+    /// file already there is replaced, once the panel has asked); otherwise the file there is
+    /// read as it is.
+    func relocate(to url: URL, moving: Bool) {
         do {
             try actions.relocateConfig(url, moving)
             assignIfChanged(nil, to: &configLocationError)
         } catch {
             configLocationError = "The config file could not be \(moving ? "moved" : "switched"): \(error.localizedDescription)"
         }
-        assignIfChanged(Self.displayPath(ConfigStore.url), to: &configPath)
+        assignIfChanged(ConfigStore.url.abbreviatedPath, to: &configPath)
     }
 
-    /// How the app is doing, in a few words with a color: on the sidebar and the General page.
-    var health: (text: String, color: Color) {
+    /// How the app is doing: on the sidebar and the General page, which give it its color.
+    enum Health: Equatable {
+        case running
+        /// The Accessibility permission is missing (it comes before a config error).
+        case permissionMissing
+        case configProblem
+
+        var text: String {
+            switch self {
+            case .running: return "Running"
+            case .permissionMissing: return Permissions.missingShort
+            case .configProblem: return "Needs attention"
+            }
+        }
+    }
+
+    var health: Health {
         Self.health(accessibilityGranted: accessibilityGranted, configProblem: configProblem != nil)
     }
 
-    static func health(accessibilityGranted: Bool, configProblem: Bool) -> (text: String, color: Color) {
-        if !accessibilityGranted { return (Permissions.missingShort, .orange) }
-        if configProblem { return ("Needs attention", .red) }
-        return ("Running", .green)
+    static func health(accessibilityGranted: Bool, configProblem: Bool) -> Health {
+        if !accessibilityGranted { return .permissionMissing }
+        return configProblem ? .configProblem : .running
     }
 }

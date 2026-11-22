@@ -1,11 +1,11 @@
 # 5. Actions
 
-Actions are `verb [argument]` strings used in `keyboard.bindings[].action` and `mouse.buttons[].action`. They are parsed **once at config load** (`Action.parse`):
+Actions are `verb [argument]` strings used in `keyboard.bindings[].action`, `mouse.buttons[].action` and `trackpad.corners`. They are parsed **once at config load** (`Action.parse`):
 an unknown action or bad arguments is a config error. The verb is case-insensitive; leading/trailing spaces are ignored. Actions run on the **main thread** (`ActionRunner`).
 
 Window-manager commands only work while tiling is on (`running`), otherwise they do nothing.
 
-**Holding a shortcut**: an action runs once per press. Only the ones that move in steps repeat with the key's autorepeat: `focus`, `swap`, `resize`, `ratio`, `key` and `media` (`Action.repeats`). The repeats keep the action of the press even if a modifier is released meanwhile ([Keyboard](03-keyboard.md#shortcuts-bindings)).
+**Holding a shortcut**: an action runs once per press. Only the ones that move in steps repeat with the key's autorepeat: `focus`, `swap`, `resize`, `ratio`, `key` and, of `media`, the volume and the brightness (`Action.repeats`; play/pause, next/previous and mute would flap or run through the tracks). The repeats keep the action of the press even if a modifier is released meanwhile ([Keyboard](03-keyboard.md#shortcuts-bindings)).
 
 **Names**: config keys are camelCase (`reverseScroll`), key names and arguments snake_case (`caps_lock`, `mission_control`, `play_pause`), verbs kebab-case (`move-to-workspace`). `media next` / `previous` also accept the key names `next_track` / `previous_track`.
 
@@ -29,7 +29,7 @@ Window-manager commands only work while tiling is on (`running`), otherwise they
 | Action | Arguments | Effect |
 |---|---|---|
 | `workspace` | `<n>` (from 1) \| `back-and-forth` | Show workspace n on *its* display and focus it; `back-and-forth` returns to the last focused workspace. |
-| `workspace-overview` | (none) | While the shortcut's key is held, a panel shows every workspace with its apps and the shortcut that shows it; releasing the key closes it. Bound to a mouse button, it opens and closes on each press. |
+| `workspace-overview` | (none) | While the shortcut's key is held, a panel shows every workspace with its apps and the shortcut that shows it; releasing the key closes it. Bound to a mouse button, it opens and closes on each press. A click anywhere, HyperSpace's own windows included, closes it too. |
 | `move-to-workspace` | `<n>` (from 1) | Move the focused window (only it) to workspace n. |
 | `focus-display` | — | Focus the window of the workspace shown on the next display (wraps around). Needs more than one display. |
 | `move-workspace-to-display` | — | Move the whole focused workspace (windows and arrangement) to the next display, where it is now "at home". Needs more than one display. |
@@ -74,9 +74,9 @@ Details in [Scratchpad](08-scratchpad.md).
 | `unknown action '…'` | verb not recognised |
 | `expected left/right/up/down in '…'` | `focus`/`swap` without a valid direction |
 | `unknown layout in '…'` | `layout` with a wrong name |
-| `expected a number in '…'` | `ratio` without a number |
+| `expected a number in '…'` | `ratio` without a number, or with one that is not finite (`inf`, `nan`) |
 | `expected a workspace number in '…'` | `workspace`/`move-to-workspace` without a number ≥ 1 |
-| `expected 'resize width\|height <points>' in '…'` | malformed `resize` |
+| `expected 'resize width\|height <points>' in '…'` | malformed `resize`, or points that are not finite |
 | `missing argument in '…'` | `launch`/`shell`/`key` without an argument |
 | `expected back/forward in '…'` | `navigate` |
 | `unknown system action in '…'` / `unknown media key in '…'` | unknown argument |

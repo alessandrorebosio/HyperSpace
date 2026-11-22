@@ -10,9 +10,9 @@ extension WindowManager {
             apps[pid] = watcher
             log.debug("watch \(watcher.appLabel, privacy: .public)")
             discover(watcher)
-        } else if attempt < 20 {
-            if attempt == 0 || attempt == 19 { note("cannot watch \(app.bundleIdentifier ?? "?") yet (attempt \(attempt + 1))") }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        } else if attempt < Self.watchAttempts {
+            if attempt == 0 || attempt == Self.watchAttempts - 1 { note("cannot watch \(app.bundleIdentifier ?? "?") yet (attempt \(attempt + 1))") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Delay.watchRetry) { [weak self] in
                 self?.addApp(app, attempt: attempt + 1)
             }
         }
@@ -21,69 +21,91 @@ extension WindowManager {
     func removeApp(_ pid: pid_t) {
         apps.removeValue(forKey: pid)?.invalidate()
         axQueues.forget(pid)
-        focusedIn[pid] = nil
-        focusEpoch[pid] = nil
+        focusState.focusedIn[pid] = nil
+        focusState.focusEpoch[pid] = nil
+        discovery.rejected[pid] = nil
         for id in windowIDs[pid] ?? [] { untrack(id) }
         scheduleRetile()
     }
 
     /// Looks for windows not tracked yet. The app is asked on its own AX queue (a slow app
     /// does not hold up the others or the shortcuts); new windows are tracked on the main
-    /// thread and retiled.
-    func discover(_ watcher: AppWatcher, then done: (() -> Void)? = nil) {
+    /// thread and retiled. The app's focused window is read along (see `refreshFocused`).
+    func discover(_ watcher: AppWatcher) {
         let pid = watcher.pid
         let app = watcher.element
-        // Windows already tracked are not described again (`track` would skip them anyway):
-        // only their id is read, which spares a busy app most of the round trips.
-        let known = Set(windowIDs[pid] ?? [])
-        let generation = discoveryGeneration
-        pendingDiscoveries += 1
+        // Windows already tracked are not described again (`track` would skip them anyway),
+        // nor the ones found to be nothing to manage: only their id is read, which spares a
+        // busy app most of the round trips.
+        let known = Set(windowIDs[pid] ?? []).union(discovery.rejected[pid] ?? [])
+        let generation = discovery.run
+        let epoch = focusState.focusEpoch[pid, default: 0]
+        discovery.pending += 1
         axQueues.read(pid, {
-            let main = AX.element(app, kAXMainWindowAttribute).flatMap(AX.windowID)
-            let focused = AX.element(app, kAXFocusedWindowAttribute).flatMap(AX.windowID)
+            let main = AX.mainWindowID(of: app)
+            let focused = AX.focusedWindowID(of: app)
             let unknown = AX.elements(app, kAXWindowsAttribute).filter { element in
                 AX.windowID(element).map { !known.contains($0) } ?? true
             }
             return (unknown.map { AX.probe($0, pid: pid, main: .some(main)) }, focused)
         }, then: { [weak self] (probes: [AX.WindowProbe], focused: CGWindowID?) in
-            guard let self, generation == discoveryGeneration else { return }
-            discovered(probes, focused: focused, watcher: watcher, then: done)
+            guard let self, generation == discovery.run else { return }
+            discovered(probes, focused: focused, epoch: epoch, watcher: watcher)
         })
     }
 
     /// The answer of a lookup of this run (one of an earlier run, tiling turned off and on
     /// meanwhile, is dropped before it gets here and is not counted).
-    private func discovered(_ probes: [AX.WindowProbe], focused: CGWindowID?, watcher: AppWatcher, then done: (() -> Void)?) {
+    /// `epoch` counted the app's focus notifications when the look started.
+    private func discovered(_ probes: [AX.WindowProbe], focused: CGWindowID?, epoch: Int, watcher: AppWatcher) {
         let pid = watcher.pid
         scoped {
             var found = false
             if running, apps[pid] === watcher {
-                // Known from here on (a notification since then knows better).
-                if focusedIn[pid] == nil { focusedIn[pid] = focused ?? 0 }
-                for probe in probes where track(probe, in: watcher) != nil { found = true }
+                if focusState.focusedIn[pid] == nil {
+                    // Known from here on (a notification since then knows better).
+                    focusState.focusedIn[pid] = focused ?? 0
+                } else if focusState.focusEpoch[pid, default: 0] == epoch, focusState.focusedIn[pid] != focused ?? 0 {
+                    // A focus change the app did not announce: followed like a notification.
+                    noteFocused(focused, of: pid)
+                    scheduleFocusUpdate()
+                }
+                for probe in probes {
+                    guard let (window, reveals) = track(probe, in: watcher) else { continue }
+                    found = true
+                    // A window of an app still opening that was found by this look, not
+                    // announced: it gets what an announced one gets (it stays in the workspace
+                    // the app was opened from without taking the focus there).
+                    if !discovery.adopting, launches.contains(pid) { windowTracked(window, reveals: reveals, watcher: watcher) }
+                }
             }
             if found { scheduleRetile() }
-            done?()
             discoveryFinished()
         }
     }
 
     private func discoveryFinished() {
-        pendingDiscoveries = max(0, pendingDiscoveries - 1)
-        guard pendingDiscoveries == 0, !afterDiscoveries.isEmpty else { return }
-        let waiting = afterDiscoveries
-        afterDiscoveries.removeAll()
+        discovery.pending = max(0, discovery.pending - 1)
+        guard discovery.pending == 0, !discovery.waiting.isEmpty else { return }
+        let waiting = discovery.waiting
+        discovery.waiting.removeAll()
         waiting.forEach { $0() }
     }
 
     /// Runs `block` once the window lookups in flight are done (at most 3 s later: a hung app
     /// must not keep the others from tiling).
     func whenDiscovered(_ block: @escaping () -> Void) {
-        guard pendingDiscoveries > 0 else { return block() }
+        guard discovery.pending > 0 else { return block() }
+        // Only in this run: tiling turned off and on meanwhile starts its own lookups.
+        let run = discovery.run
         var ran = false
-        let once = { if !ran { ran = true; block() } }
-        afterDiscoveries.append(once)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: once)
+        let once = { [weak self] in
+            guard let self, !ran, run == discovery.run else { return }
+            ran = true
+            block()
+        }
+        discovery.waiting.append(once)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Delay.discoveryTimeout, execute: once)
     }
 
     /// Starts managing a window; nil when it is already known or not a window to manage.
@@ -101,6 +123,7 @@ extension WindowManager {
         }
         guard windows[id] == nil else { return nil }
         guard probe.kind == .standard || probe.kind == .dialog else {
+            if probe.isNeverManaged { discovery.rejected[watcher.pid, default: []].insert(id) }
             log.debug("skip window of \(appID, privacy: .public): role \(role, privacy: .public) subrole \(probe.subrole ?? "-", privacy: .public)")
             return nil
         }
@@ -108,6 +131,14 @@ extension WindowManager {
         window.isDialog = probe.kind == .dialog || probe.dialogLike
         window.title = probe.title
         window.isFloating = shouldFloat(window) { probe.title }
+        // There before this run and found where no display shows it: left in a parking corner
+        // by a run that did not end well (a crash), or on a display that is gone or left out.
+        // It counts as parked, so it comes back with its workspace (and on quit) like any
+        // parked window, centered. (A new window is its app's business, wherever it opens.)
+        if discovery.windowsAtStart.contains(id), let frame = probe.frame, case let screens = currentScreens(), Self.isParked(frame, on: screens),
+           let screen = screens.screen(for: frame) {
+            window.hiddenFrame = screen.centered(frame.size)
+        }
         // A dialog belongs to the window it was opened from: the app's main window, else the
         // app's window focused last, else any of its windows.
         let parent = window.isDialog ? dialogParent(of: watcher.pid, main: probe.mainWindow, excluding: id) : nil
@@ -115,10 +146,10 @@ extension WindowManager {
         // Right after start, the window this one was before HyperSpace (or the Mac) restarted.
         var restored: WorkspaceState.Window?
         if parent == nil, let app = watcher.bundleID,
-           let index = restorer?.claim(app: app, title: probe.title, window: id, pid: watcher.pid),
-           let saved = restorer?.window(index) {
+           let index = restoreSession.restorer?.claim(app: app, title: probe.title, window: id, pid: watcher.pid),
+           let saved = restoreSession.restorer?.window(index) {
             restored = saved
-            restoredIndex[id] = index
+            restoreSession.index[id] = index
             if let floating = saved.floating {
                 window.isFloating = floating
                 window.userOverride = true
@@ -171,6 +202,9 @@ extension WindowManager {
         windowIDs[window.pid, default: []].append(id)
         order.append(id)
         watcher.watch(element)
+        // Already the focused one of its app (its focus notification came before it was
+        // known, and found no window to follow): followed now.
+        if !discovery.adopting, focusState.focusedIn[window.pid] == id, frontmostPID == window.pid { scheduleFocusUpdate() }
         log.debug("track \(watcher.appLabel, privacy: .public) window \(id) workspace \(window.workspace) floating \(window.isFloating)\(parent.map { " dialog of \($0.id)" } ?? "")")
         return (window, reveals)
     }
@@ -179,7 +213,7 @@ extension WindowManager {
     private func dialogParent(of pid: pid_t, main: CGWindowID?, excluding id: CGWindowID) -> ManagedWindow? {
         let mine = orderedWindows.filter { $0.pid == pid && $0.id != id && $0.parent == nil }
         if let main, let window = mine.first(where: { $0.id == main }) { return window }
-        if let window = mine.first(where: { lastFocused[$0.workspace] == $0.id && display(showing: $0.workspace) != nil }) { return window }
+        if let window = mine.first(where: { focusState.lastFocused[$0.workspace] == $0.id && display(showing: $0.workspace) != nil }) { return window }
         return mine.first { display(showing: $0.workspace) != nil } ?? mine.first
     }
 
@@ -210,10 +244,10 @@ extension WindowManager {
         DispatchQueue.main.async { [weak self] in
             guard let self, windows[window.id] === window, display(showing: window.workspace) == nil else { return }
             log.debug("reveal workspace \(window.workspace) for opened app \(window.appLabel, privacy: .public)")
-            lastFocused[window.workspace] = window.id
+            focusState.lastFocused[window.workspace] = window.id
             switchWorkspace(window.workspace)
             // The window may reach the screen a moment later: focus it then.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Delay.revealFocus) { [weak self] in
                 guard let self, windows[window.id] === window, display(showing: window.workspace) != nil,
                       focused()?.id != window.id, currentBounds()[window.id] != nil else { return }
                 focus(window)
@@ -227,31 +261,42 @@ extension WindowManager {
                 ids.removeAll { $0 == id }
                 windowIDs[pid] = ids.isEmpty ? nil : ids
             }
-            if focusedIn[pid] == id { focusedIn[pid] = 0 }
+            if focusState.focusedIn[pid] == id { focusState.focusedIn[pid] = 0 }
         }
         windows[id] = nil
         order.removeAll { $0 == id }
-        lastFocused = lastFocused.filter { $0.value != id }
-        restoredIndex[id] = nil
-        restoredApplied.remove(id)
-        if movedAway == id { movedAway = nil }
+        focusState.lastFocused = focusState.lastFocused.filter { $0.value != id }
+        restoreSession.index[id] = nil
+        restoreSession.applied.remove(id)
+        if focusState.movedAway == id { focusState.movedAway = nil }
         // Its dialogs left open are on their own now.
         for dialog in windows.values where dialog.parent == id { dialog.parent = nil }
     }
 
     /// Space switch: pick up windows AX could not see before and drop dead ones.
     func rescan() {
-        // (CGWindowListCreate, which returns only the ids, is not available from Swift.)
-        let alive = WindowList.allIDs()
-        // An empty list is a failed query, not every window gone.
-        if !alive.isEmpty {
-            for id in windows.keys where !alive.contains(id) { untrack(id) }
-        }
+        guard running else { return }
+        forgetClosedWindows()
+        // What was nothing to manage may be a window by now: looked at again.
+        discovery.rejected.removeAll()
         for watcher in apps.values { discover(watcher) }
         whenDiscovered { [weak self] in
             self?.applyRestoredLayout()
             self?.scheduleRetile()
         }
+    }
+
+    /// Drops the windows that no longer exist (an app does not always say a window closed);
+    /// returns whether there were any.
+    @discardableResult
+    func forgetClosedWindows() -> Bool {
+        // (CGWindowListCreate, which returns only the ids, is not available from Swift.)
+        let alive = WindowList.allIDs()
+        // An empty list is a failed query, not every window gone.
+        guard !alive.isEmpty else { return false }
+        let closed = windows.keys.filter { !alive.contains($0) }
+        closed.forEach(untrack)
+        return !closed.isEmpty
     }
 
     func handle(_ notification: String, element: AXUIElement) {
@@ -307,6 +352,8 @@ extension WindowManager {
     /// A new window: described on its app's AX queue, then tracked. A window AX does not
     /// describe yet (no subrole) is looked at again a few times.
     private func windowCreated(_ element: AXUIElement, pid: pid_t, attempt: Int = 0) {
+        // (An app that quit meanwhile has no queue any more: asking would make it one again.)
+        guard running, apps[pid] != nil else { return }
         axQueues.read(pid, { AX.probe(element, pid: pid) }, then: { [weak self] probe in
             self?.described(element, probe, pid: pid, attempt: attempt)
         })
@@ -315,8 +362,8 @@ extension WindowManager {
     private func described(_ element: AXUIElement, _ probe: AX.WindowProbe, pid: pid_t, attempt: Int) {
         guard running, let watcher = apps[pid] else { return }
         scoped {
-            if probe.kind == .pending, attempt < 5 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 * Double(1 << attempt)) { [weak self] in
+            if probe.kind == .pending, attempt < Self.describeAttempts {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Delay.describeRetry * Double(1 << attempt)) { [weak self] in
                     self?.windowCreated(element, pid: pid, attempt: attempt + 1)
                 }
                 return
@@ -332,24 +379,24 @@ extension WindowManager {
             // A scratchpad window is shown where you are, whatever its workspace.
             if window.scratchpad { return }
             // A dialog of a scratchpad window comes and goes with it (see `retile`).
-            if case .scratchpad = placement(of: window) { return scheduleRetile(after: [0.25]) }
+            if case .scratchpad = placement(of: window) { return scheduleRetile(after: [Delay.newWindowSettle]) }
             if display(showing: window.workspace) == nil, frontmostPID == pid {
-                lastFocused[window.workspace] = window.id
+                focusState.lastFocused[window.workspace] = window.id
                 // An app with a rule you just opened: `reveal` shows its workspace.
                 if reveals { return }
                 // It finished loading after you left its workspace (or it is not one that takes
                 // you there): it stays there, and the focus stays where you are.
                 log.debug("window \(window.id) (\(watcher.appLabel, privacy: .public)) opened in hidden workspace \(window.workspace)")
-                let here = activeDisplay.flatMap { displayed[$0] }
+                let here = focusedWorkspace
                 ignoreFocusChanges()
-                movedAway = window.id
+                focusState.movedAway = window.id
                 retile()
                 if let here { focusWindow(in: here) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.scheduleRetile() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + Delay.newWindowSettle) { [weak self] in self?.scheduleRetile() }
                 return
             }
             // Some apps put the window on screen a moment after announcing it.
-            scheduleRetile(after: [0.25])
+            scheduleRetile(after: [Delay.newWindowSettle])
         }
     }
 

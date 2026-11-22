@@ -20,6 +20,8 @@ enum Layout {
             guard count > 1 else { return [area] }
             let horizontal = kind == .tall
             let length = horizontal ? area.width : area.height
+            // A gap that leaves no room is left out.
+            let gap = length - gap >= 2 ? gap : 0
             let master = ((length - gap) * ratio).rounded()
             let (masterRect, rest) = area.divided(atDistance: master, from: horizontal ? .minXEdge : .minYEdge)
             let stack = horizontal
@@ -46,6 +48,9 @@ enum Layout {
 
     static func split(_ rect: CGRect, weights: [CGFloat], horizontally: Bool, gap: CGFloat) -> [CGRect] {
         let length = horizontally ? rect.width : rect.height
+        // Gaps that leave the tiles no room (a large gap, many windows) are left out: the
+        // tiles would get a negative length.
+        let gap = Self.fittingGap(gap, count: weights.count, length: length)
         let usable = length - gap * CGFloat(weights.count - 1)
         // Degenerate weights (all zero) would divide by zero: split evenly instead.
         let sum = weights.reduce(0, +)
@@ -60,6 +65,12 @@ enum Layout {
                 ? CGRect(x: rect.minX + offset, y: rect.minY, width: extent, height: rect.height)
                 : CGRect(x: rect.minX, y: rect.minY + offset, width: rect.width, height: extent)
         }
+    }
+
+    /// `gap` between `count` tiles sharing `length`, or 0 when the gaps would leave less
+    /// than a point for each tile.
+    static func fittingGap(_ gap: CGFloat, count: Int, length: CGFloat) -> CGFloat {
+        length - gap * CGFloat(count - 1) >= CGFloat(count) ? gap : 0
     }
 
     /// Closest rect in `direction`, preferring ones that overlap on the perpendicular axis.
@@ -98,7 +109,7 @@ extension CGRect {
         return CGRect(origin: rounded ? CGPoint(x: x.rounded(), y: y.rounded()) : CGPoint(x: x, y: y), size: size)
     }
 
-    func isClose(to other: CGRect, tolerance: CGFloat = 2) -> Bool {
+    func isClose(to other: CGRect, tolerance: CGFloat) -> Bool {
         origin.isClose(to: other.origin, tolerance: tolerance) && size.isClose(to: other.size, tolerance: tolerance)
     }
 }

@@ -2,19 +2,26 @@ import SwiftUI
 
 /// The Workspaces page: the workspaces with their two shortcuts, and the apps that open in one.
 struct WorkspacesView: View {
-    @ObservedObject var model: TilingModel
+    /// What the window pages share: the save status, the shortcut caps' recording and duplicates.
+    let store: TilingModel
+    @ObservedObject var model: WorkspacesModel
+    /// The cap being recorded and the shortcuts used twice: a change of either redraws the caps.
+    @ObservedObject var capture: FieldCapture<TilingModel.Field>
+    @ObservedObject var conflicts: ShortcutConflicts
+    /// The apps running, for the app menu.
+    @ObservedObject var apps: RunningApps
 
     var body: some View {
-        let screens = model.screens
-        let names = model.workspaces.map(\.name)
+        // Worked out once for both layouts of the list: each row's other names and display choices.
+        let rows = WorkspaceRow.rows(model: model, store: store)
         Form {
             PageHero(page: .workspaces)
             PermissionNotice()
-            SaveErrorNotice(status: model.saveStatus)
-            TilingOffNotice(model: model)
+            SaveErrorNotice(status: store.saveStatus)
+            TilingOffNotice(model: store.options)
 
             Section {
-                if model.workspaces.isEmpty {
+                if rows.isEmpty {
                     EmptyRow(symbol: "square.stack.3d.up", text: "No workspaces: every window shares one")
                 } else {
                     // Side by side when the page is wide enough; otherwise each workspace on two
@@ -22,40 +29,12 @@ struct WorkspacesView: View {
                     ViewThatFits(in: .horizontal) {
                         ShortcutGrid(columns: ["Show workspace", "Move window here"], leading: "Name", after: "Display",
                                      trailing: RemoveButton.width) {
-                            ForEach(Array(model.workspaces.enumerated()), id: \.element.id) { index, workspace in
-                                GridRow {
-                                    nameField(workspace, at: index, names: names)
-                                        .frame(width: 120)
-                                    ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
-                                        .equatable()
-                                    ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
-                                        .equatable()
-                                    displayPicker(workspace, screens: screens, alignment: .leading)
-                                    Spacer(minLength: 0)
-                                    RemoveButton { model.askToRemoveWorkspace(workspace.id) }
-                                }
-                            }
+                            ForEach(rows) { $0 }
                         }
                         VStack(alignment: .leading, spacing: 12) {
-                            ForEach(Array(model.workspaces.enumerated()), id: \.element.id) { index, workspace in
-                                if index > 0 { Divider() }
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack(spacing: 10) {
-                                        nameField(workspace, at: index, names: names)
-                                            .frame(maxWidth: 160)
-                                        Spacer(minLength: 0)
-                                        displayPicker(workspace, screens: screens, alignment: .trailing)
-                                        RemoveButton { model.askToRemoveWorkspace(workspace.id) }
-                                    }
-                                    HStack(spacing: 10) {
-                                        caption("Show")
-                                        ShortcutCap(model: model, keys: workspace.switchKeys, field: .switchKeys(workspace.id))
-                                            .equatable()
-                                        caption("Move here")
-                                        ShortcutCap(model: model, keys: workspace.moveKeys, field: .moveKeys(workspace.id))
-                                            .equatable()
-                                    }
-                                }
+                            ForEach(rows) { row in
+                                if !row.isFirst { Divider() }
+                                row.compacted
                             }
                         }
                         .padding(.vertical, 2)
@@ -89,8 +68,9 @@ struct WorkspacesView: View {
                 }
             } header: {
                 SectionHeader(title: "App Rules") {
-                    AddAppMenu(candidates: model.assignmentCandidates, chooseTitle: "Other App…",
-                               add: model.addAssignment, choose: model.chooseAppForAssignment)
+                    AddAppMenu(candidates: apps.candidates(excluding: model.assignments.map(\.app)), add: model.addAssignment) {
+                        if let bundleID = SettingsPanels.chooseApp(prompt: "Assign") { model.addAssignment(bundleID) }
+                    }
                     .disabled(model.workspaces.isEmpty)
                     .help(model.workspaces.isEmpty ? "Add a workspace first" : "Open an app's windows in a workspace")
                 }
@@ -110,31 +90,97 @@ struct WorkspacesView: View {
     }
 }
 
-extension WorkspacesView {
-    private func nameField(_ workspace: TilingModel.Workspace, at index: Int, names: [String]) -> some View {
-        WorkspaceNameField(draft: model.nameDraft(for: workspace), saved: workspace.name,
-                           others: Set(names.enumerated().filter { $0.offset != index }.map(\.element)),
-                           typed: model.nameTyped)
+/// One workspace: its name, its two shortcuts, its display and its remove button. As a row of
+/// the page's grid, or `compact`, on two lines (name, display and remove; then the shortcuts)
+/// when the window is too narrow for the grid.
+private struct WorkspaceRow: View, Identifiable {
+    let model: WorkspacesModel
+    let workspace: TilingModel.Workspace
+    let draft: NameDraft
+    /// The other workspaces' names.
+    let others: Set<String>
+    let displays: [TilingModel.DisplayOption]
+    /// The two shortcut caps, built by the page with what they show (recording, duplicate):
+    /// a change of either redraws the row.
+    let switchCap: ShortcutCap
+    let moveCap: ShortcutCap
+    let isFirst: Bool
+    var compact = false
+
+    var id: UUID { workspace.id }
+
+    /// The same row on two lines.
+    var compacted: WorkspaceRow {
+        var row = self
+        row.compact = true
+        return row
     }
 
-    /// At most 160 points wide: a long display name (one not connected, say) is truncated
-    /// rather than widening the page.
-    private func displayPicker(_ workspace: TilingModel.Workspace, screens: [ScreenInfo],
-                               alignment: Alignment) -> some View {
-        Picker("Display", selection: Binding(get: { workspace.display },
-                                             set: { model.setDisplay($0, for: workspace.id) })) {
-            ForEach(model.displayOptions(for: workspace, screens: screens), id: \.self) { option in
+    /// A row per workspace, each with what it needs worked out once per redraw of the page.
+    static func rows(model: WorkspacesModel, store: TilingModel) -> [WorkspaceRow] {
+        let names = model.workspaces.map(\.name)
+        let screens = model.screens
+        return model.workspaces.enumerated().map { index, workspace in
+            WorkspaceRow(model: model, workspace: workspace, draft: model.nameDraft(for: workspace),
+                         others: Set(names.enumerated().filter { $0.offset != index }.map(\.element)),
+                         displays: TilingModel.displayOptions(pin: workspace.display, screens: screens),
+                         switchCap: ShortcutCap(store: store, name: "Show workspace \(workspace.name)",
+                                                keys: workspace.switchKeys, field: .switchKeys(workspace.id)),
+                         moveCap: ShortcutCap(store: store, name: "Move window to workspace \(workspace.name)",
+                                              keys: workspace.moveKeys, field: .moveKeys(workspace.id)),
+                         isFirst: index == 0)
+        }
+    }
+
+    var body: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    nameField.frame(maxWidth: Metrics.nameMaxWidth)
+                    Spacer(minLength: 0)
+                    displayPicker(alignment: .trailing)
+                    removeButton
+                }
+                HStack(spacing: 10) {
+                    ColumnCaption("Show")
+                    switchCap.equatable()
+                    ColumnCaption("Move here")
+                    moveCap.equatable()
+                }
+            }
+        } else {
+            GridRow {
+                nameField.frame(width: Metrics.nameWidth)
+                switchCap.equatable()
+                moveCap.equatable()
+                displayPicker(alignment: .leading)
+                Spacer(minLength: 0)
+                removeButton
+            }
+        }
+    }
+
+    private var nameField: some View {
+        WorkspaceNameField(draft: draft, saved: workspace.name, others: others, typed: model.nameTyped)
+    }
+
+    private var removeButton: some View {
+        RemoveButton(what: "the workspace \(workspace.name)") { model.askToRemoveWorkspace(workspace.id) }
+    }
+
+    /// At most `Metrics.displayMenuWidth` wide: a long display name (one not connected, say) is
+    /// truncated rather than widening the page.
+    private func displayPicker(alignment: Alignment) -> some View {
+        Picker("Display of workspace \(workspace.name)",
+               selection: Binding(get: { workspace.display }, set: { model.setDisplay($0, for: workspace.id) })) {
+            ForEach(displays, id: \.self) { option in
                 if option.startsGroup { Divider() }
                 Text(option.label).tag(option.value)
             }
         }
         .labelsHidden()
-        .frame(maxWidth: 160, alignment: alignment)
+        .frame(maxWidth: Metrics.displayMenuWidth, alignment: alignment)
         .help("Pin the workspace to a display: by position (whichever monitor is second or third) or a monitor by name. It shows there while that display is connected")
-    }
-
-    private func caption(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
 }
 
@@ -150,7 +196,8 @@ private struct WorkspaceNameField: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            TextField("Name", text: Binding(get: { draft.text }, set: { draft.text = $0; typed() }))
+            TextField("Name of workspace \(saved)", text: Binding(get: { draft.text }, set: { draft.text = $0; typed() }),
+                      prompt: Text("Name"))
                 .textFieldStyle(.roundedBorder)
                 .labelsHidden()
             WarningBadge(text: TilingModel.nameWarning(typed: draft.text, saved: saved, others: others))

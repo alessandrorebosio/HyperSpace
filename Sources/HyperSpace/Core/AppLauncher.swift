@@ -5,6 +5,11 @@ enum AppLauncher {
     /// Names already resolved to a bundle identifier (main thread only): shortcuts such as
     /// `scratchpad <App>` ask on every press. Kept for the app's run.
     private static var bundleIDs: [String: String] = [:]
+    /// Names no app answered to, and when (system uptime): not looked for again for
+    /// `missLifetime`, so a shortcut for an app that is not there costs one search, not one
+    /// per press, and an app installed or opened since is still found soon.
+    private static var misses: [String: TimeInterval] = [:]
+    private static let missLifetime: TimeInterval = 10
 
     private static func installedURL(forBundleID id: String) -> URL? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
@@ -22,6 +27,8 @@ enum AppLauncher {
     /// (by the name it shows), else the one of the app of that name in the usual folders.
     static func bundleID(for name: String) -> String? {
         if let known = bundleIDs[name] { return known }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let missed = misses[name], now - missed < missLifetime { return nil }
         let resolved: String?
         if installedURL(forBundleID: name) != nil {
             resolved = name
@@ -31,6 +38,7 @@ enum AppLauncher {
             resolved = urlInFolders(named: name).flatMap { Bundle(url: $0)?.bundleIdentifier }
         }
         if let resolved { bundleIDs[name] = resolved }
+        misses[name] = resolved == nil ? now : nil
         return resolved
     }
 
@@ -54,7 +62,7 @@ enum AppLauncher {
 
     /// Posted on the main thread when an app launches or quits, once `runningApps` has been
     /// asked for: the settings models publish the new list, so their app menus follow.
-    static let runningAppsDidChange = Notification.Name("HyperSpaceRunningAppsDidChange")
+    static let runningAppsDidChange = Notification.Name("HyperSpace.runningAppsDidChange")
 
     /// The regular apps running, by name. The pages ask on every redraw (a keystroke in a
     /// text field), so the list is kept until an app launches or quits.

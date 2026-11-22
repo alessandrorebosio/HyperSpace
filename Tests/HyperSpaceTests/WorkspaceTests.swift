@@ -1,3 +1,4 @@
+import ApplicationServices
 import CoreGraphics
 import Foundation
 import Testing
@@ -27,10 +28,18 @@ import Testing
     }
 }
 
+/// Which display each workspace lives on and shows, and where new windows go.
 @Suite struct WorkspaceLogicTests {
     typealias W = WindowManager
     let main: CGDirectDisplayID = 1
     let top: CGDirectDisplayID = 2
+
+    /// Workspace n lives on display n; the others on the main display (index 0).
+    @Test func workspaceHomes() {
+        #expect((0..<6).map { W.homeIndex(of: $0, displays: 2) } == [0, 1, 0, 0, 0, 0])
+        #expect((0..<4).map { W.homeIndex(of: $0, displays: 3) } == [0, 1, 2, 0])
+        #expect(W.homeIndex(of: 1, displays: 1) == 0)
+    }
 
     @Test func homes() {
         #expect(W.homeDisplay(of: 0, movedTo: nil, displays: [main, top]) == main)
@@ -42,26 +51,12 @@ import Testing
         #expect(W.homeDisplay(of: 0, movedTo: nil, displays: []) == nil)
     }
 
+    /// A pin wins over the default home, and is ignored while its display is unplugged.
     @Test func pinnedDisplay() {
-        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
-        let builtIn = ScreenInfo(id: 1, frame: rect, visible: rect, name: "Built-in Retina Display")
-        let lg = ScreenInfo(id: 2, frame: rect, visible: rect, name: "LG UltraFine")
-        let dell = ScreenInfo(id: 3, frame: rect, visible: rect, name: "DELL U2720Q")
-        let screens = [builtIn, lg, dell]
-        #expect(ScreenInfo.pinned("main", among: screens)?.id == 1)
-        #expect(ScreenInfo.pinned("2", among: screens)?.id == 2)
-        #expect(ScreenInfo.pinned("4", among: screens) == nil)
-        #expect(ScreenInfo.pinned("dell u2720q", among: screens)?.id == 3)
-        #expect(ScreenInfo.pinned("ultrafine", among: screens)?.id == 2)
-        #expect(ScreenInfo.pinned("Samsung", among: screens) == nil)
-        #expect(ScreenInfo.pinned("", among: screens) == nil)
-        #expect(lg.pinValue(among: screens) == "LG UltraFine")
-        // Two identical monitors: the name alone cannot tell them apart.
-        let twin = ScreenInfo(id: 4, frame: rect, visible: rect, name: "LG UltraFine")
-        #expect(lg.pinValue(among: screens + [twin]) == lg.uuid)
-        // A pin wins over the default home, and is ignored while its display is unplugged.
+        let screens = [makeScreen(1, name: "Built-in Retina Display"), makeScreen(2, x: 1000, name: "LG UltraFine"),
+                       makeScreen(3, x: 2000, name: "DELL U2720Q")]
         #expect(W.homeDisplay(of: 0, movedTo: ScreenInfo.pinned("3", among: screens)?.id, displays: [1, 2, 3]) == 3)
-        #expect(W.homeDisplay(of: 1, movedTo: ScreenInfo.pinned("DELL", among: [builtIn, lg])?.id, displays: [1, 2]) == 2)
+        #expect(W.homeDisplay(of: 1, movedTo: ScreenInfo.pinned("DELL", among: Array(screens.prefix(2)))?.id, displays: [1, 2]) == 2)
     }
 
     private func sync(_ displayed: [CGDirectDisplayID: Int], _ displays: [CGDirectDisplayID],
@@ -106,37 +101,56 @@ import Testing
     }
 }
 
-@Suite struct WorkspaceStateTests {
-    @Test func restorerMatchesByTitleThenApp() {
-        let state = WorkspaceState(windows: [
-            .init(app: "com.apple.Safari", title: "GitHub", workspace: 1),
-            .init(app: "com.apple.Safari", title: "Mail", workspace: 2),
-            .init(app: "com.spotify.client", title: "Spotify", workspace: 7, floating: true),
-        ])
-        // Every window there at the start.
-        var restorer = WorkspaceRestorer(state, windowsAtStart: [1, 2, 3, 4], appsAtStart: [7])
-        #expect(restorer.claim(app: "com.apple.Safari", title: "Mail", window: 1, pid: 7) == 1)
-        // The tab changed: the next saved Safari window.
-        #expect(restorer.claim(app: "com.apple.Safari", title: "Apple", window: 2, pid: 7) == 0)
-        #expect(restorer.claim(app: "com.apple.Safari", title: "GitHub", window: 3, pid: 7) == nil)
-        #expect(restorer.claim(app: "com.microsoft.VSCode", title: nil, window: 4, pid: 7) == nil)
-        #expect(restorer.unclaimed == [state.windows[2]])
-        #expect(restorer.window(1).workspace == 2)
+@Suite struct RevealTests {
+    @Test func onlyAppsYouJustOpenedWithARule() {
+        func reveals(assigned: Int? = 2, launched: Bool = true, restored: Bool = false, scratchpad: Bool = false,
+                     dialog: Bool = false, revealAfter: Date = .distantPast) -> Bool {
+            WindowManager.revealsWorkspace(assigned: assigned, workspaces: 4, launched: launched, restored: restored,
+                                           scratchpad: scratchpad, dialog: dialog, now: Date(), revealAfter: revealAfter)
+        }
+        #expect(reveals())
+        #expect(!reveals(assigned: nil))
+        #expect(!reveals(assigned: 7))
+        #expect(!reveals(launched: false))
+        #expect(!reveals(restored: true))
+        #expect(!reveals(scratchpad: true))
+        #expect(!reveals(dialog: true))
+        // During the login grace.
+        #expect(!reveals(revealAfter: .distantFuture))
     }
+}
 
-    @Test func roundTrip() throws {
-        var state = WorkspaceState(windows: [.init(app: "a", title: "t", workspace: 3)],
-                                   columns: ["3": [[0]]], displays: ["UUID-1": 3], moved: ["3": "UUID-2"])
-        state.savedAt = Date(timeIntervalSince1970: 1_800_000_000)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        #expect(try decoder.decode(WorkspaceState.self, from: encoder.encode(state)) == state)
+@Suite struct WorkspaceCountTests {
+    @Test func windowsOfRemovedWorkspacesJoinTheFirst() {
+        let fitted = WindowManager.fittedWorkspaces([1: 0, 2: 1, 3: 2, 4: 5], count: 2)
+        #expect(fitted == [1: 0, 2: 1, 3: 0, 4: 0])
     }
+}
 
-    @Test func savedColumns() {
-        let layout = ColumnLayout(columns: [[10, 11], [], [12]])
-        #expect(layout.columns.map(\.windows) == [[10, 11], [12]])
+/// What the overview and the menu list for a workspace.
+@Suite struct WorkspaceSummaryTests {
+    @Test func summaryListsEachAppOnceInOrder() {
+        let windows = ["Safari", "Terminal", "Safari", "Notes", "Safari"].map {
+            WorkspaceSummary.Window(app: $0, title: nil, icon: nil)
+        }
+        let summary = WorkspaceSummary(index: 0, name: "1", display: nil, windows: windows)
+        #expect(summary.apps.map(\.name) == ["Safari", "Terminal", "Notes"])
+        #expect(summary.apps.map(\.windows) == [3, 1, 1])
+    }
+}
+
+/// Which accessibility elements the window manager never tiles.
+@Suite struct WindowProbeTests {
+    @Test func elementsNeverManagedAreToldFromWindowsNotMovableNow() {
+        func probe(_ role: String?, _ subrole: String?, _ kind: AX.WindowProbe.Kind) -> AX.WindowProbe {
+            AX.WindowProbe(element: AXUIElementCreateSystemWide(), id: 1, role: role, subrole: subrole, kind: kind,
+                           dialogLike: false, title: nil, frame: nil, mainWindow: nil)
+        }
+        #expect(probe(kAXWindowRole, "AXSheet", .other).isNeverManaged)
+        #expect(probe(kAXScrollAreaRole, nil, .other).isNeverManaged)
+        // A standard window whose position cannot be set right now may be movable later.
+        #expect(!probe(kAXWindowRole, kAXStandardWindowSubrole, .other).isNeverManaged)
+        #expect(!probe(kAXWindowRole, kAXStandardWindowSubrole, .standard).isNeverManaged)
+        #expect(!probe(kAXWindowRole, nil, .pending).isNeverManaged)
     }
 }

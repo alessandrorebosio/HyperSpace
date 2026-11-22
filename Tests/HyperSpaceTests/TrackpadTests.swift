@@ -57,23 +57,6 @@ import Testing
         #expect(!tracker.holding)
         #expect(tracker.update(touch(0.03, 0.80)).isEmpty)
     }
-
-    @Test func config() throws {
-        let off = try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data("{}".utf8)))
-        #expect(off.trackpad == TrackpadConfig())
-        #expect(!off.trackpad.isActive)
-        let raw = #"{ "trackpad": { "edgeSliders": true, "leftEdge": "Volume", "rightEdge": "none" } }"#
-        let on = try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(raw.utf8)))
-        #expect(on.trackpad == TrackpadConfig(edgeSliders: true, leftEdge: .volume, rightEdge: .none))
-        #expect(!on.tap.holdsCornerClicks)
-        #expect(on.trackpad.isActive)
-        // Pointer moves are watched only with the sliders on, to hold the pointer during a slide.
-        let moved = CGEventMask(1) << CGEventType.mouseMoved.rawValue
-        #expect(on.tap.holdsPointer && on.tap.eventMask & moved != 0)
-        #expect(!off.tap.holdsPointer && off.tap.eventMask & moved == 0)
-        let bad = #"{ "trackpad": { "leftEdge": "mute" } }"#
-        #expect(throws: ConfigError.self) { try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(bad.utf8))) }
-    }
 }
 
 @Suite struct HorizontalEdgeTests {
@@ -188,25 +171,20 @@ import Testing
         #expect(CornerTapTracker.corner(x: 0.05, y: 0.50) == nil)
     }
 
-    @Test func config() throws {
-        let raw = #"{ "trackpad": { "bottomEdge": "Seek", "corners": { "topRight": "media mute", "topLeft": "none", "bottomLeft": "" } } }"#
-        let config = try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(raw.utf8)))
-        #expect(config.trackpad.bottomEdge == .seek)
-        #expect(config.trackpad.topEdge == .none)
-        #expect(config.trackpad.corners == [.topRight: .media(.mute)])
-        // Corners work with the sliders off; clicks are watched to drop a tap's.
-        #expect(config.trackpad.isActive && !config.trackpad.slidersActive)
-        let down = CGEventMask(1) << CGEventType.leftMouseDown.rawValue
-        #expect(config.tap.holdsPointer && config.tap.holdsCornerClicks && config.tap.eventMask & down != 0)
-        for bad in [#"{ "trackpad": { "corners": { "middle": "media mute" } } }"#,
-                    #"{ "trackpad": { "corners": { "topRight": "explode" } } }"#] {
-            #expect(throws: ConfigError.self) { try HyperSpace.Config(JSONDecoder().decode(RawConfig.self, from: Data(bad.utf8))) }
-        }
-    }
-
-    @Test func settingsReadTheCorners() {
-        let section: [String: Any] = ["corners": ["topRight": "media mute", "topLeft": "none", "nowhere": "media next", "bottomLeft": 3]]
-        #expect(TrackpadModel.corners(in: section) == [.topRight: "media mute"])
+    /// Pressing the trackpad (a click) is no tap, and the double tap starts over after it.
+    @Test func aPressIsNotATap() {
+        var tracker = CornerTapTracker(corners: [.topRight])
+        #expect(taps(&tracker, at: [0]) == [nil])
+        _ = tracker.update(first: finger(0.95, 0.95), count: 1, time: 0.2)
+        #expect(tracker.update(first: finger(0.95, 0.95), count: 1, pressed: true, time: 0.22) == nil)
+        #expect(!tracker.holding)
+        // Ignored until lifted, even once the press ends.
+        _ = tracker.update(first: finger(0.95, 0.95), count: 1, time: 0.25)
+        #expect(!tracker.holding)
+        #expect(tracker.update(first: nil, count: 0, time: 0.27) == nil)
+        // The tap before the press no longer counts: one more tap is a first tap.
+        #expect(taps(&tracker, at: [0.4]) == [nil])
+        #expect(taps(&tracker, at: [0.7]) == [.topRight])
     }
 }
 

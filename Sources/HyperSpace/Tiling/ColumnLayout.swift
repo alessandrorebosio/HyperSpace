@@ -10,6 +10,11 @@ struct ColumnLayout {
         var accordion = false
         /// The accordion's window in front: the one focused last.
         var front: CGWindowID?
+
+        /// An accordion needs two windows: left with one, the column is a plain one.
+        mutating func settle() {
+            if windows.count < 2 { accordion = false }
+        }
     }
 
     private(set) var columns: [Column] = []
@@ -32,7 +37,7 @@ struct ColumnLayout {
             .map { column in
                 var column = column
                 column.windows = column.windows.filter(present.contains)
-                if column.windows.count < 2 { column.accordion = false }
+                column.settle()
                 return column
             }
             .filter { !$0.windows.isEmpty }
@@ -77,10 +82,31 @@ struct ColumnLayout {
         columns[c].front = id
     }
 
-    /// The window before (-1) or after (+1) `id` in its accordion.
-    func accordionNeighbor(of id: CGWindowID, _ step: Int) -> CGWindowID? {
-        guard let (c, r) = locate(id), columns[c].accordion, columns[c].windows.indices.contains(r + step) else { return nil }
-        return columns[c].windows[r + step]
+    /// The window before (-1) or after (+1) `id` in its accordion, among `shown` (the windows
+    /// on screen; nil: all of them): the ones out of sight are passed over.
+    func accordionNeighbor(of id: CGWindowID, _ step: Int, among shown: Set<CGWindowID>? = nil) -> CGWindowID? {
+        guard let (c, r) = locate(id), columns[c].accordion else { return nil }
+        return Self.next(in: columns[c].windows, from: r, step, among: shown).map { columns[c].windows[$0] }
+    }
+
+    /// The index of the next window of `windows` after `row` going by `step` that is among `shown`.
+    private static func next(in windows: [CGWindowID], from row: Int, _ step: Int, among shown: Set<CGWindowID>?) -> Int? {
+        var index = row + step
+        while windows.indices.contains(index) {
+            if shown?.contains(windows[index]) ?? true { return index }
+            index += step
+        }
+        return nil
+    }
+
+    /// The index of the next column after `column` going by `step` with a window among `shown`.
+    private func nextColumn(from column: Int, _ step: Int, among shown: Set<CGWindowID>?) -> Int? {
+        var index = column + step
+        while columns.indices.contains(index) {
+            if columns[index].windows.contains(where: { shown?.contains($0) ?? true }) { return index }
+            index += step
+        }
+        return nil
     }
 
     func locate(_ id: CGWindowID) -> (column: Int, row: Int)? {
@@ -95,29 +121,37 @@ struct ColumnLayout {
     ///   swaps its column with the neighbour.
     /// - up/down: swaps with the window above/below in its column, or, alone, joins
     ///   the neighbouring column (left first) at the top/bottom.
-    mutating func move(_ id: CGWindowID, _ direction: Direction) {
+    ///
+    /// `shown` are the windows on screen (nil: all of them). The move is among them, as it
+    /// looks: windows out of sight (minimized, hidden) keep their place and are passed over,
+    /// so a window sharing its column only with such windows counts as alone in it.
+    mutating func move(_ id: CGWindowID, _ direction: Direction, among shown: Set<CGWindowID>? = nil) {
         guard let (c, r) = locate(id) else { return }
+        let step = direction == .left || direction == .up ? -1 : 1
+        let sharesColumn = columns[c].windows.contains { $0 != id && (shown?.contains($0) ?? true) }
         switch direction {
         case .left, .right:
-            if columns[c].windows.count > 1 {
+            if sharesColumn {
                 // Out of a shared column (or an accordion) into a new column beside it.
-                columns[c].windows.remove(at: r)
-                if columns[c].windows.count < 2 { columns[c].accordion = false }
-                if columns[c].front == id { columns[c].front = columns[c].windows[max(0, r - 1)] }
+                remove(id)
                 columns.insert(Column(windows: [id]), at: direction == .left ? c : c + 1)
             } else {
-                let target = c + (direction == .left ? -1 : 1)
-                guard columns.indices.contains(target) else { return }
-                columns.swapAt(c, target)
+                // Past the next column drawn; its own column goes along when it holds nothing else.
+                guard let target = nextColumn(from: c, step, among: shown) else { return }
+                let whole = columns[c].windows.count == 1
+                let moved = whole ? columns[c] : Column(windows: [id])
+                remove(id)
+                let past = direction == .left ? target : target + 1
+                columns.insert(moved, at: whole && target > c ? past - 1 : past)
             }
         case .up, .down:
-            let target = r + (direction == .up ? -1 : 1)
-            if columns[c].windows.indices.contains(target) {
+            if let target = Self.next(in: columns[c].windows, from: r, step, among: shown) {
                 columns[c].windows.swapAt(r, target)
-            } else if columns[c].windows.count == 1, columns.count > 1 {
-                let neighbour = c > 0 ? c - 1 : c + 1
-                columns.remove(at: c)
-                let into = neighbour > c ? neighbour - 1 : neighbour
+            } else if !sharesColumn, let neighbour = nextColumn(from: c, -1, among: shown) ?? nextColumn(from: c, 1, among: shown),
+                      let mate = columns[neighbour].windows.first {
+                remove(id)
+                // Located again: taking `id` out may have closed its column.
+                guard let (into, _) = locate(mate) else { return }
                 if direction == .down {
                     columns[into].windows.append(id)
                 } else {
@@ -152,7 +186,7 @@ struct ColumnLayout {
             var column = column
             column.windows = column.windows.filter(ids.contains)
             guard !column.windows.isEmpty else { return nil }
-            if column.windows.count < 2 { column.accordion = false }
+            column.settle()
             if let front = column.front, !column.windows.contains(front) { column.front = nil }
             return column
         }
@@ -191,7 +225,7 @@ struct ColumnLayout {
             columns.remove(at: c)
             return
         }
-        if columns[c].windows.count < 2 { columns[c].accordion = false }
+        columns[c].settle()
         if columns[c].front == id { columns[c].front = columns[c].windows[max(0, r - 1)] }
     }
 

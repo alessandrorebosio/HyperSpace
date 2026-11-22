@@ -2,17 +2,19 @@ import SwiftUI
 
 /// The Tiling page: on/off in the hero, the layout, spacing, focus and accordion.
 struct TilingView: View {
-    @ObservedObject var model: TilingModel
+    @ObservedObject var model: TilingOptionsModel
+    /// What keeps the window pages from saving, if anything.
+    let status: SaveStatus
 
     var body: some View {
         Form {
             PageHero(page: .tiling) {
-                SettingSwitch(title: "Tile windows", isOn: model.enabled, set: model.setEnabled)
-                    .help(model.enabled ? "Tiling is on" : "Tiling is off: windows stay where you put them")
-                    .accessibilityLabel("Tile windows")
+                SettingSwitch(title: "Tiling", isOn: model.enabled, set: model.setEnabled)
+                    .help(model.enabled ? Wording.tilingOn : Wording.tilingOff)
+                    .accessibilityLabel("Tiling")
             }
             PermissionNotice()
-            SaveErrorNotice(status: model.saveStatus)
+            SaveErrorNotice(status: status)
 
             Section {
                 LayoutChooser(selection: model.layout, gap: model.gap, padding: model.padding,
@@ -62,21 +64,6 @@ struct TilingView: View {
             .disabled(!model.enabled)
         }
         .formStyle(.grouped)
-    }
-}
-
-/// Shown on the window pages while tiling is off: the settings are kept but do nothing.
-struct TilingOffNotice: View {
-    @ObservedObject var model: TilingModel
-
-    var body: some View {
-        if !model.enabled {
-            Section {
-                NoticeRow(symbol: "pause.fill", color: .gray, title: "Tiling is off",
-                          detail: "Windows stay where you put them. These settings are kept and apply as soon as it is on.",
-                          button: "Turn On") { model.setEnabled(true) }
-            }
-        }
     }
 }
 
@@ -174,7 +161,7 @@ private struct LayoutOption: View {
             VStack(spacing: 7) {
                 LayoutThumbnail(kind: kind, gap: gap, padding: padding, peek: peek, selected: selected, compact: compact)
                     .frame(width: compact ? 60 : 84, height: compact ? 40 : 54)
-                Text(kind.rawValue.capitalized)
+                Text(kind.displayName)
                     .font((compact ? Font.caption : Font.callout).weight(selected ? .semibold : .medium))
                     .lineLimit(1)
                     .foregroundStyle(selected ? Color.primary : Color.secondary)
@@ -186,7 +173,7 @@ private struct LayoutOption: View {
         }
         .buttonStyle(.plain)
         .modifier(OptionBackground(selected: selected, corner: Self.corner))
-        .accessibilityLabel(kind.rawValue.capitalized)
+        .accessibilityLabel(kind.displayName)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

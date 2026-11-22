@@ -46,25 +46,22 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
 
     private static let defaultEdges = Dictionary(uniqueKeysWithValues: Edge.allCases.map { ($0, $0.defaultAction) })
 
-    private struct Snapshot: Equatable {
+    struct Snapshot: Equatable {
         var edgeSliders: Bool
         var edges: [Edge: EdgeAction]
         var corners: [TrackpadCorner: String]
     }
 
     /// The section, and the values as loaded: only what changed since is written.
-    private var sync = FileSync<Snapshot>(SyncedSlice(sections: "trackpad"))
-    var saveStatus: SaveStatus { sync.status }
+    var sync = FileSync<Snapshot>(SyncedSlice(sections: "trackpad"))
 
     /// `config`: the file as `ConfigWriter.readIfValid()` returns it.
     init(config: [String: Any]) {
         load(config)
     }
 
-    /// Nothing here is edited over time (no recording, no typing): the file always shows at once.
-    func reload(from root: [String: Any]) {
-        if sync.shouldReload(root, editing: false) { load(root) }
-    }
+    // Nothing here is edited over time (no recording, no typing): the file always shows at once
+    // (`isEditing` stays false).
 
     func edge(_ edge: Edge) -> EdgeAction {
         edges[edge] ?? edge.defaultAction
@@ -72,29 +69,26 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
 
     func setEdgeSliders(_ on: Bool) {
         guard edgeSliders != on else { return }
-        edgeSliders = on
-        save()
+        edit { edgeSliders = on }
     }
 
     func setEdge(_ action: EdgeAction, for edge: Edge) {
         guard self.edge(edge) != action else { return }
-        edges[edge] = action
-        save()
+        edit { edges[edge] = action }
     }
 
     /// `action`: the action's config text; "none" (or empty) clears the corner.
     func setCorner(_ action: String, for corner: TrackpadCorner) {
         let value = Self.cornerValue(action)
         guard corners[corner] != value else { return }
-        corners[corner] = value
-        save()
+        edit { corners[corner] = value }
     }
 
     static func label(_ action: EdgeAction, vertical: Bool) -> String {
         switch action {
         case .volume: return "Volume"
         case .brightness: return "Display brightness"
-        case .seek: return vertical ? "Seek (up forward)" : "Seek (arrow keys)"
+        case .seek: return vertical ? "Seek (up is forward)" : "Seek (right is forward)"
         case .none: return "Nothing"
         }
     }
@@ -128,7 +122,7 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
         return result
     }
 
-    private func load(_ config: [String: Any]) {
+    func load(_ config: [String: Any]) {
         let trackpad = ConfigWriter.section("trackpad", of: config)
         // An unknown edge (a hand-edited file) shows as its default; the config reports it.
         var newEdges: [Edge: EdgeAction] = [:]
@@ -144,14 +138,14 @@ final class TrackpadModel: ObservableObject, FileBackedModel {
     }
 
     /// Writes the values changed since the load (a key the user never set stays out of the file).
-    private func save() {
+    func save() {
         let loaded = sync.loaded
         let current = Snapshot(edgeSliders: edgeSliders, edges: edges, corners: corners)
         sync.save(current) { root in
-            ConfigWriter.edit(&root, section: "trackpad") { trackpad in
-                if current.edgeSliders != loaded?.edgeSliders { trackpad["edgeSliders"] = current.edgeSliders }
-                for edge in Edge.allCases where self.edge(edge) != loaded?.edges[edge] {
-                    trackpad[edge.key] = self.edge(edge).rawValue
+            ConfigWriter.amend(&root, section: "trackpad") { trackpad in
+                trackpad.write("edgeSliders", current.edgeSliders, since: loaded?.edgeSliders)
+                for edge in Edge.allCases {
+                    trackpad.write(edge.key, self.edge(edge).rawValue, since: loaded?.edges[edge]?.rawValue)
                 }
                 if current.corners != loaded?.corners {
                     trackpad["corners"] = current.corners.isEmpty

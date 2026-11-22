@@ -46,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// remaps are reset and parked windows come back.
     private var signalSources: [DispatchSourceSignal] = []
     private var trusted = false
+    /// The error of a write of `tiling.enabled` that failed, while the menu bar shows it as
+    /// the config error: it goes with the next write that succeeds, not only with a load.
+    private var tilingWriteError: String?
     private var config: Config?
 
     /// Opened by macOS at login rather than by the user.
@@ -81,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             statusMenu.keyboardLocked = eventTap.isKeyboardLocked
         }
+        NotificationCenter.default.addObserver(forName: EventTap.tapAvailabilityDidChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            statusMenu.tapUnavailable = eventTap.isTapUnavailable
+        }
         store.onChange = { [weak self] in self?.apply($0) }
         windowManager.onWorkspaceChange = { [weak self] in
             self?.statusMenu.workspaces = $0
@@ -110,7 +117,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let error = ConfigWriter.save(section: "tiling", { $0["enabled"] = on }) {
             // The file cannot be written (a syntax error): tiling still follows, until a reload.
             // The parse error already shown (with its line and column) says more than this one.
-            if statusMenu.configError == nil { statusMenu.configError = error }
+            if statusMenu.configError == nil {
+                statusMenu.configError = error
+                tilingWriteError = error
+                settingsWindow.configProblemChanged()
+            }
+            windowManager.setEnabled(on)
+            return
+        }
+        // Written: an earlier failure to write no longer holds (a load error stays reported).
+        if let shown = tilingWriteError, statusMenu.configError == shown {
+            statusMenu.configError = nil
+            settingsWindow.configProblemChanged()
+        }
+        tilingWriteError = nil
+        // The file is written but does not load (an error the app reports, like an unknown
+        // layout): the reload keeps the last valid config, so the engine is told directly,
+        // as when the file cannot be written. Otherwise the menu would say one thing and
+        // the windows do another.
+        if statusMenu.configError != nil {
             windowManager.setEnabled(on)
             return
         }
@@ -126,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "HyperSpace \(AppInfo.version) — \(Date().formatted(date: .numeric, time: .standard))",
             "macOS \(ProcessInfo.processInfo.operatingSystemVersionString), up \(Int(ProcessInfo.processInfo.systemUptime / 60)) min",
             "Accessibility: \(Permissions.isTrusted(prompt: false) ? "granted" : "missing"), launched at login: \(launchedAtLogin)",
+            "Event tap: \(eventTap.isTapUnavailable ? "unavailable (cannot be created, retried every 5 s)" : "available")",
             "Devices: " + (Peripherals.batteries().map { "\($0.name) \($0.percent)%\($0.charging ? " charging" : "")" }.joined(separator: ", ").nilIfEmpty ?? "none with a battery"),
             "Keyboard: \(eventTap.isKeyboardLocked ? "locked" : "active"); keyboards: " +
                 remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
@@ -168,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func apply(_ result: Result<Config, Error>) {
         switch result {
         case .success(let config):
+            tilingWriteError = nil
             self.config = config
             statusMenu.tilingEnabled = config.tiling.enabled
             remapper.apply(config.remaps)

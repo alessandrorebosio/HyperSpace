@@ -59,20 +59,12 @@ final class WindowManager {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     /// Bursts of events become one retile, one focus lookup, one snap-back check, one save.
-    private let retileCoalescer = Coalescer(delay: 0.03)
-    private let focusCoalescer = Coalescer()
-    private let snapBackCoalescer = Coalescer(delay: 0.15)
-    let saveCoalescer = Coalescer(delay: 2)
-    var drag: DragSession?
-    /// Dragging writes to the app on its AX queue, one write at a time with only the latest
-    /// point waiting; `dragGeneration` tells the writes of an old drag from the current one.
-    var dragWriteInFlight = false
-    var dragPendingPoint: CGPoint?
-    var dragGeneration = 0
-    /// The window under the pointer is being looked up (off the main thread) for a new drag;
-    /// a release meanwhile is kept and played once it is found.
-    var dragStarting = false
-    var dragEndedEarly: CGPoint?
+    private let retileCoalescer = Coalescer(delay: Delay.retile)
+    let focusCoalescer = Coalescer()
+    private let snapBackCoalescer = Coalescer(delay: Delay.snapBackCheck)
+    let saveCoalescer = Coalescer(delay: Delay.save)
+    /// The modifier-drag in progress (see `DragState`).
+    var dragState = DragState()
     /// Finds the window a drag starts on: an AX hit test that a hung app answers slowly.
     let dragLookup = DispatchQueue(label: "HyperSpace.dragLookup", qos: .userInteractive)
     lazy var refcon = Unmanaged.passUnretained(self).toOpaque()
@@ -88,13 +80,8 @@ final class WindowManager {
     let displayMonitor = DisplayMonitor()
     /// Clicks the desktop of a display with nothing to focus, so macOS makes it the active one.
     lazy var focusAnchor = FocusAnchor()
-    /// The app focused last, to bring dialogs forward only when their app comes to the front.
-    private var lastFrontPID: pid_t?
-    /// Each watched app's focused window (0: none), kept from its focus notifications so that
-    /// commands need no AX round trip (see `readFocused`).
-    var focusedIn: [pid_t: CGWindowID] = [:]
-    /// Counts each app's focus notifications: a lookup started before a newer one is dropped.
-    var focusEpoch: [pid_t: Int] = [:]
+    /// Who has the focus and where the user works (see `FocusState`).
+    var focusState = FocusState()
     /// The workspace each display showed before the current one.
     var shownBefore: [CGDirectDisplayID: Int] = [:]
     /// Column arrangement of each workspace (columns layout), accordions included.
@@ -103,35 +90,14 @@ final class WindowManager {
     /// the accordion is a column of `ColumnLayout`).
     var accordionWorkspaces: Set<Int> = []
     var previousWorkspace: Int?
-    var lastFocused: [Int: CGWindowID] = [:]
-    /// Focus changes we cause ourselves must not switch workspace back.
-    var followFocusAfter = Date.distantPast
-    /// A window just moved to a hidden workspace that still has focus: it must not drag
-    /// its workspace onto the screen. Cleared as soon as focus goes elsewhere.
-    var movedAway: CGWindowID?
-    /// The display the user works on, set when we move the focus there: an empty workspace
-    /// has no window to tell, and the pointer may still be on the other display.
-    var activeDisplay: CGDirectDisplayID?
-    /// The display of an empty workspace holding the focus (the focus anchor is there): the
-    /// display you work on, even while the window left behind still looks focused to macOS.
-    var heldDisplay: CGDirectDisplayID?
     /// Last value sent to `onWorkspaceChange` (nil: none sent yet), so the menu bar is
     /// redrawn only on change.
     var lastNotice: WorkspaceBar??
     /// Workspaces apps were opened from, for the windows they show while loading.
     var launches = LaunchTracker()
-    /// Running apps are being picked up at start: retile once they all are.
-    private var adopting = false
     let axQueues = AXQueues()
-    /// The workspaces saved last time, while the windows found at start are matched to them.
-    var restorer: WorkspaceRestorer?
-    var restoredState: WorkspaceState?
-    var restoredIndex: [CGWindowID: Int] = [:]
-    /// Restored windows whose saved order and column were applied: never again, so what you
-    /// arrange afterwards is not undone by a later look for windows (a Space change).
-    var restoredApplied: Set<CGWindowID> = []
-    /// Counts the restores, so the timer that ends one cannot end a later one.
-    var restoreGeneration = 0
+    /// Matching the windows found to the workspaces saved last time (see `RestoreSession`).
+    var restoreSession = RestoreSession()
     /// The last state written (its date left out), so an unchanged state is not written again.
     var lastSaved: WorkspaceState?
     let saveQueue = DispatchQueue(label: "HyperSpace.state", qos: .utility)
@@ -141,11 +107,8 @@ final class WindowManager {
     var pendingScratchpad: [String: Date] = [:]
     /// The size a scratchpad window took instead of the one asked for `target`.
     var scratchpadFitted: (target: CGRect, size: CGSize)?
-    /// Window lookups still running on the apps' AX queues, and what waits for them.
-    var pendingDiscoveries = 0
-    /// Counts the runs (start to stop), so a lookup of an earlier run is not counted in this one.
-    var discoveryGeneration = 0
-    var afterDiscoveries: [() -> Void] = []
+    /// The looks for windows in flight and the run they belong to (see `DiscoveryState`).
+    var discovery = DiscoveryState()
 
     /// The tracked windows in tiling order.
     var orderedWindows: [ManagedWindow] { order.compactMap { windows[$0] } }
@@ -156,9 +119,59 @@ final class WindowManager {
     static let minimumTileLength: CGFloat = 80
     /// How far (in points) a frame may be from its target and still count as there.
     static let frameTolerance: CGFloat = 1
+    /// The same for frames that only have to be told apart roughly (a window covering a whole
+    /// display, a floating window already where it should be).
+    static let looseTolerance: CGFloat = 2
     /// For this long after we move a window, the moves it reports are ours (or the app's
     /// answer to ours), not the user's.
     static let ownMoveSettle: TimeInterval = 0.5
+    /// How long the displays read last are good for outside a command: bursts of events (every
+    /// focus change asks) read them once. A display change drops them at once; this only
+    /// bounds how late a change with no notification (the Dock resized) is seen.
+    static let screensLifetime: TimeInterval = 1
+
+    /// How many times an app that cannot be watched yet (still launching) is tried again.
+    static let watchAttempts = 20
+    /// How many times a window AX does not describe yet is looked at again.
+    static let describeAttempts = 5
+
+    /// The waits of the window manager, in seconds.
+    enum Delay {
+        /// Bursts of events become one retile.
+        static let retile: TimeInterval = 0.03
+        /// Between two looks at the mouse buttons while a window moved by hand is still held.
+        static let snapBackCheck: TimeInterval = 0.15
+        /// From a change to writing the state.
+        static let save: TimeInterval = 2
+        /// Focus changes for this long after we move the focus or hide windows are ours.
+        static let focusIgnore: TimeInterval = 0.6
+        /// An app that has not come to the front by then is activated and focused once more.
+        static let focusRetry: TimeInterval = 0.15
+        /// Some apps put a new window on screen a moment after announcing it.
+        static let newWindowSettle: TimeInterval = 0.25
+        /// Apps resize themselves for the new display's scale a moment after a move across displays.
+        static let crossDisplaySettle: [TimeInterval] = [0.3, 0.8]
+        /// macOS relocates the windows of a removed display a moment after saying it is gone.
+        static let displayChangeSettle: [TimeInterval] = [0.5, 1.5]
+        /// The looks for the windows of an app just launched.
+        static let launchLooks: [TimeInterval] = [0.5, 1.5, 3, 6]
+        /// The rescans after a start, once apps answering with placeholders have settled.
+        static let startRescans: [TimeInterval] = [2, 6]
+        /// From showing the workspace of an app just opened to focusing its window there.
+        static let revealFocus: TimeInterval = 0.3
+        /// The longest the window lookups in flight are waited for.
+        static let discoveryTimeout: TimeInterval = 3
+        /// Between two tries at watching an app.
+        static let watchRetry: TimeInterval = 0.5
+        /// The first wait for a window AX does not describe yet; doubled each time.
+        static let describeRetry: TimeInterval = 0.2
+        /// How long windows found after a start are matched to the saved workspaces.
+        static let restoreWindow: TimeInterval = 60
+        /// How long the next window of an app opened for the scratchpad goes there.
+        static let scratchpadLaunch: TimeInterval = 30
+        /// Before asking a scratchpad window once more for the size it missed.
+        static let scratchpadRefit: TimeInterval = 0.1
+    }
 
     /// At least one workspace per display, even when fewer are configured.
     var workspaceCount: Int { max(1, config.workspaces.count, NSScreen.screens.count) }
@@ -209,10 +222,21 @@ final class WindowManager {
 
     func currentScreens() -> [ScreenInfo] {
         if let screens = scope?.screens { return screens }
-        let screens = ScreenInfo.current(leavingOut: displayMonitor.absent)
+        let now = ProcessInfo.processInfo.systemUptime
+        let screens: [ScreenInfo]
+        // Only while running: stopped, nothing tells when the displays change.
+        if running, let read = screensRead, now - read.at < Self.screensLifetime {
+            screens = read.screens
+        } else {
+            screens = ScreenInfo.current(leavingOut: displayMonitor.absent)
+            screensRead = running ? (screens, now) : nil
+        }
         scope?.screens = screens
         return screens
     }
+
+    /// The displays as read last and when (see `screensLifetime`); nil after a display change.
+    var screensRead: (screens: [ScreenInfo], at: TimeInterval)?
 
     func currentBounds() -> [CGWindowID: CGRect] {
         if let bounds = scope?.bounds { return bounds }
@@ -255,28 +279,11 @@ final class WindowManager {
             }
         }
         config.enabled ? start() : stop()
+        // A display left with a workspace that is gone, or just moved to its pin, shows its
+        // next one: before the menu bar is told.
+        if running { syncDisplays() }
         notifyWorkspace()
         scheduleRetile()
-    }
-
-    /// Fewer workspaces than before (a reload, or a display unplugged with fewer workspaces
-    /// configured than displays): what belonged to the removed ones is forgotten, and their
-    /// windows join the first workspace.
-    private func fitWorkspaces(to count: Int) {
-        displayed = displayed.filter { $0.value < count }
-        homeOverride = homeOverride.filter { $0.key < count }
-        accordionWorkspaces = accordionWorkspaces.filter { $0 < count }
-        shownBefore = shownBefore.filter { $0.value < count }
-        if let previous = previousWorkspace, previous >= count { previousWorkspace = nil }
-        let fitted = Self.fittedWorkspaces(windows.mapValues(\.workspace), count: count)
-        for (id, workspace) in fitted { windows[id]?.workspace = workspace }
-        columns = columns.filter { $0.key < count }
-        lastFocused = lastFocused.filter { $0.key < count }
-    }
-
-    /// Each window's workspace once there are only `count`: those of removed workspaces join the first.
-    static func fittedWorkspaces(_ workspaces: [CGWindowID: Int], count: Int) -> [CGWindowID: Int] {
-        workspaces.mapValues { $0 < count ? $0 : 0 }
     }
 
     /// Tiling on or off until the next config load (when the file cannot be written).
@@ -289,21 +296,10 @@ final class WindowManager {
         scheduleRetile()
     }
 
-    /// Puts every parked window back where it was. On quit (`waitUntilDone`) the writes are
-    /// waited for (up to 1.5 s), so the windows really come back before the app exits; when
-    /// tiling is merely turned off they go through the apps' queues without blocking.
-    func restoreHiddenWindows(waitUntilDone: Bool = true) {
-        for window in windows.values {
-            guard let frame = window.hiddenFrame else { continue }
-            setFrame(window, frame)
-            window.hiddenFrame = nil
-        }
-        if waitUntilDone { axQueues.flush(timeout: 1.5) }
-    }
-
     private func start() {
         guard !running else { return }
         running = true
+        screensRead = nil
         // Apps that quit while tiling was off were never forgotten.
         axQueues.prune(keeping: Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier)))
 
@@ -331,8 +327,8 @@ final class WindowManager {
             // it finished launching, for some apps after their first window).
             noteLaunch(app)
             if let watcher = apps[app.processIdentifier] {
+                // (The look also reads its focused window, as `refreshFocused` would.)
                 discover(watcher)
-                refreshFocused(app.processIdentifier)
             } else {
                 addApp(app)
             }
@@ -350,6 +346,7 @@ final class WindowManager {
         // Window elements use the global AX timeout (6 s by default): an app still busy
         // launching at login must not stall the window manager that long.
         _ = AX.systemWide
+        discovery.windowsAtStart = WindowList.allIDs()
         loadSavedState()
         syncDisplays()
         // One app per run loop turn, the frontmost first: shortcuts stay responsive while
@@ -358,33 +355,18 @@ final class WindowManager {
         let pending = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
             .sorted { ($0.processIdentifier == frontmost ? 0 : 1) < ($1.processIdentifier == frontmost ? 0 : 1) }
-        adopting = true
-        adopt(pending[...])
+        discovery.adopting = true
+        adopt(pending[...], run: discovery.run)
         // Right after a login or a WindowServer restart, or on a busy Mac, apps can answer AX
         // with placeholder elements: look again once they have settled.
-        DispatchQueue.main.asyncAfter(delays: [2, 6]) { [weak self] in self?.rescan() }
-    }
-
-    private func displaysChanged() {
-        // The focused window of the removed display moving must not switch workspaces.
-        ignoreFocusChanges()
-        syncDisplays()
-        // At least one workspace per display: one fewer display can mean one fewer workspace.
-        let count = workspaceCount
-        if displayed.values.contains(where: { $0 >= count }) || windows.values.contains(where: { $0.workspace >= count }) {
-            fitWorkspaces(to: count)
-            syncDisplays()
-        }
-        // macOS relocates the windows of the removed display a moment after the notification.
-        scheduleRetile(after: [0.5, 1.5])
-        notifyWorkspace()
+        DispatchQueue.main.asyncAfter(delays: Delay.startRescans) { [weak self] in self?.rescan() }
     }
 
     /// Some apps create their first window before AX describes it (no subrole yet) or without
     /// announcing it: look again a few times, so an app with a rule goes to its workspace
     /// right away instead of when it is focused.
     private func lookAgainAfterLaunch(_ pid: pid_t) {
-        DispatchQueue.main.asyncAfter(delays: [0.5, 1.5, 3, 6]) { [weak self] in
+        DispatchQueue.main.asyncAfter(delays: Delay.launchLooks) { [weak self] in
             guard let self, let watcher = apps[pid] else { return }
             discover(watcher)
         }
@@ -403,13 +385,15 @@ final class WindowManager {
         }
     }
 
-    private func adopt(_ pending: ArraySlice<NSRunningApplication>) {
-        guard running else { return }
+    /// `run` is the run (`discovery.run`) these apps belong to: tiling turned off and on
+    /// meanwhile starts over, and what is left of this pass is dropped.
+    private func adopt(_ pending: ArraySlice<NSRunningApplication>, run: Int) {
+        guard running, run == discovery.run else { return }
         guard let app = pending.first else {
             // Once every window found has been looked at (AX answers come back asynchronously).
             whenDiscovered { [weak self] in
-                guard let self, running, adopting else { return }
-                adopting = false
+                guard let self, running, discovery.adopting else { return }
+                discovery.adopting = false
                 applyRestoredLayout()
                 rescueStrandedWindows()
                 scheduleRetile()
@@ -417,13 +401,14 @@ final class WindowManager {
             return
         }
         addApp(app)
-        DispatchQueue.main.async { [weak self] in self?.adopt(pending.dropFirst()) }
+        DispatchQueue.main.async { [weak self] in self?.adopt(pending.dropFirst(), run: run) }
     }
 
     private func stop() {
         guard running else { return }
         restoreHiddenWindows(waitUntilDone: false)
         running = false
+        screensRead = nil
         workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         workspaceObservers.removeAll()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
@@ -434,29 +419,21 @@ final class WindowManager {
         apps.values.forEach { $0.invalidate() }
         apps.removeAll()
         launches.removeAll()
-        adopting = false
         windows.removeAll()
         windowIDs.removeAll()
         order.removeAll()
-        lastFocused.removeAll()
         displayed.removeAll()
         homeOverride.removeAll()
         departed.removeAll()
         shownBefore.removeAll()
-        activeDisplay = nil
-        lastFrontPID = nil
-        focusedIn.removeAll()
-        focusEpoch.removeAll()
-        // Lookups still in flight belong to this run: their answers are dropped.
-        discoveryGeneration += 1
-        pendingDiscoveries = 0
-        afterDiscoveries.removeAll()
         // Nothing of this run may leak into the next start (which loads the saved state again).
-        restorer = nil
-        restoredState = nil
-        restoredIndex.removeAll()
-        restoredApplied.removeAll()
-        restoreGeneration += 1
+        // Each of these starts over as a whole, so no part of it can be missed; the counters
+        // go on, so that what is still in flight (lookups, a restore's timer, a drag's writes,
+        // a focus retry) is told from the next run's and dropped.
+        focusState = FocusState(request: focusState.request)
+        discovery = DiscoveryState(run: discovery.run + 1)
+        restoreSession = RestoreSession(generation: restoreSession.generation + 1)
+        dragState = DragState(generation: dragState.generation + 1)
         lastSaved = nil
         columns.removeAll()
         accordionWorkspaces.removeAll()
@@ -465,21 +442,6 @@ final class WindowManager {
         lastNotice = nil
         pendingScratchpad.removeAll()
         scratchpadFitted = nil
-        movedAway = nil
-        drag = nil
-        dragStarting = false
-        dragEndedEarly = nil
-        dragGeneration += 1
-    }
-
-    /// After a crash windows can be left parked off-screen: bring them back.
-    private func rescueStrandedWindows() {
-        let screens = currentScreens()
-        guard let main = screens.first else { return }
-        for (id, frame) in currentBounds() {
-            guard let window = windows[id], Self.isParked(frame, on: screens) else { continue }
-            setFrame(window, main.centered(frame.size))
-        }
     }
 
     // MARK: - Where a window belongs
@@ -553,29 +515,8 @@ final class WindowManager {
 
     /// Coalesces bursts of events (an app opening five windows) into one retile.
     func scheduleRetile() {
-        guard running, !adopting else { return }
+        guard running, !discovery.adopting else { return }
         retileCoalescer.schedule { [weak self] in self?.retile() }
-    }
-
-    /// An app activation and its focused-window change arrive together: one lookup for both.
-    func scheduleFocusUpdate() {
-        guard running else { return }
-        focusCoalescer.schedule { [weak self] in self?.updateFocus() }
-    }
-
-    private func updateFocus() {
-        scoped {
-            // As macOS reports it: focusing the window left behind is how you leave an empty display.
-            let window = reportedFocused()
-            if let window, window.pid != lastFrontPID {
-                // Its app came to the front (⌘Tab, a click, the Dock): its dialogs come along.
-                let dialogs = dialogs(of: window)
-                if !dialogs.isEmpty { axQueues.perform(window.pid) { dialogs.forEach(AX.raise) } }
-            }
-            lastFrontPID = window?.pid ?? frontmostPID
-            followFocus(window)
-            notifyWorkspace(focused: window)
-        }
     }
 
     /// Retiles once no mouse button is held (the user may still be dragging the window).
@@ -590,7 +531,7 @@ final class WindowManager {
     }
 
     func retile() {
-        guard running, config.enabled, drag == nil, !dragStarting else { return }
+        guard running, config.enabled, dragState.session == nil, !dragState.starting else { return }
         scoped {
             syncDisplays()
             let screens = currentScreens()
@@ -608,42 +549,48 @@ final class WindowManager {
                     // itself is placed by `showScratchpad`).
                     if let owner = scratchpadOwner(of: window), let frame = bounds[owner.id],
                        let screen = screens.screen(for: frame) {
-                        restore(window, on: screen, screens)
+                        restore(window, on: screen, screens, from: bounds[window.id])
                     }
                 case .workspace(let workspace):
                     if !shown.contains(workspace) {
                         parkOrKeepHidden(window, bounds: bounds, screens: screens)
                     } else if window.isFloating, let id = display(showing: workspace), let screen = screens.first(id: id) {
-                        restore(window, on: screen, screens)
+                        if window.hiddenFrame != nil {
+                            restore(window, on: screen, screens, from: bounds[window.id])
+                        } else if let frame = bounds[window.id], !window.movedByUsRecently, Self.isOutOfSight(frame, on: screens) {
+                            // On a display that is left out (asleep, on another input) or gone,
+                            // where nothing brings it back: to the display showing its workspace.
+                            setFrame(window, screen.centered(frame.size))
+                        }
                     }
                 }
             }
 
             let membersByWorkspace = Dictionary(grouping: orderedWindows.filter(takesTile), by: \.workspace)
+            let displays = screens.map { (frame: $0.frame, area: area(of: $0)) }
             for screen in screens {
                 guard let workspace = displayed[screen.id] else { continue }
                 let members = membersByWorkspace[workspace] ?? []
                 let tiled = members.filter { window in
                     guard let frame = bounds[window.id] else { return false }
-                    // A native full-screen window covers the whole display, menu bar included.
-                    return window.hiddenFrame != nil || !screens.contains { frame.isClose(to: $0.frame) }
+                    return window.hiddenFrame != nil || !Self.isFullScreen(frame, displays: displays)
                 }
                 let state = state(for: screen.id)
                 if state.layout == .columns {
                     // Every member keeps its place, on screen or not (minimized, its app hidden,
                     // full screen, another Space): it comes back where it was.
                     var layout = columns[workspace] ?? ColumnLayout()
-                    layout.sync(with: members.map(\.id), focused: lastFocused[workspace])
+                    layout.sync(with: members.map(\.id), focused: focusState.lastFocused[workspace])
                     columns[workspace] = layout
                 }
                 guard !tiled.isEmpty else { continue }
                 log.debug("retile display \(screen.id) workspace \(workspace): \(tiled.count) tiled \(tiled.map(\.appLabel), privacy: .public)")
                 let frames: [CGWindowID: CGRect]
-                if state.layout == .columns, let layout = columns[workspace] {
-                    frames = layout.restricted(to: Set(tiled.map(\.id)))
+                if state.layout == .columns {
+                    frames = (columns[workspace] ?? ColumnLayout()).restricted(to: Set(tiled.map(\.id)))
                         .frames(in: area(of: screen), gap: config.gap, peek: config.accordionPadding) { windows[$0]?.weight ?? 1 }
                 } else {
-                    let focusedIndex = tiled.firstIndex { $0.id == lastFocused[workspace] } ?? 0
+                    let focusedIndex = tiled.firstIndex { $0.id == focusState.lastFocused[workspace] } ?? 0
                     let kind = accordionWorkspaces.contains(workspace) ? .accordion : state.layout
                     let list = Layout.frames(kind, weights: tiled.map(\.weight), in: area(of: screen),
                                              gap: config.gap, ratio: state.ratio, focused: focusedIndex, peek: config.accordionPadding)
@@ -653,12 +600,23 @@ final class WindowManager {
                     guard let frame = frames[window.id] else { continue }
                     window.hiddenFrame = nil
                     let current = bounds[window.id]
-                    if !(current?.isClose(to: frame, tolerance: Self.frameTolerance) ?? false) {
+                    if current?.isClose(to: frame, tolerance: Self.frameTolerance) ?? false {
+                        window.crossDisplayTarget = nil
+                    } else {
                         setFrame(window, frame, from: current, screens: screens)
                     }
                 }
             }
             scheduleSave()
+        }
+    }
+
+    /// Whether `frame` is a native full-screen window's: it covers a whole display, menu bar
+    /// included. Not told on a display whose tiling area is all of it (no menu bar, no Dock,
+    /// no padding): a lone tile there is as large, and would be left out of the layout.
+    static func isFullScreen(_ frame: CGRect, displays: [(frame: CGRect, area: CGRect)]) -> Bool {
+        displays.contains {
+            frame.isClose(to: $0.frame, tolerance: looseTolerance) && !$0.area.isClose(to: $0.frame, tolerance: looseTolerance)
         }
     }
 
@@ -669,57 +627,9 @@ final class WindowManager {
         return area.width > 0 && area.height > 0 ? area : screen.visible
     }
 
-    /// Counts focus requests, so a retry of an old one gives up.
-    var focusRequest = 0
-
-    /// Focus changes in the next moment come from us (hiding windows makes apps refocus),
-    /// not from the user, and must not switch workspaces.
-    func ignoreFocusChanges() {
-        followFocusAfter = Date().addingTimeInterval(0.6)
-    }
-
-    /// Focuses a window without the resulting focus change switching workspaces. Crossing
-    /// to another display brings the pointer along (if enabled), and as macOS sometimes
-    /// ignores a background app raising a window on another display, it checks and retries.
-    /// `frame` is where the window is going, when we just moved it (the move is not done yet).
-    func focus(_ window: ManagedWindow, at frame: CGRect? = nil) {
-        scoped {
-            ignoreFocusChanges()
-            focusRequest += 1
-            let request = focusRequest
-            releaseHeldFocus()
-            let dialogs = dialogs(of: window)
-            axQueues.perform(window.pid) {
-                AX.focus(window.element, pid: window.pid)
-                dialogs.forEach(AX.raise)
-            }
-            lastFrontPID = window.pid
-            let screens = currentScreens()
-            if let frame = frame ?? currentBounds()[window.id], let screen = screens.screen(for: frame) {
-                activeDisplay = screen.id
-                bringPointer(to: frame.center, on: screen)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                // A later focus (another workspace, keys pressed in a row) wins over this retry.
-                guard let self, focusRequest == request,
-                      frontmostPID != window.pid else { return }
-                note("focus did not take for \(window.appLabel) window \(window.id), retrying")
-                ignoreFocusChanges()
-                NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateAllWindows])
-                axQueues.perform(window.pid) { AX.focus(window.element, pid: window.pid) }
-            }
-        }
-    }
-
     /// The dialogs of a window: they share its workspace and come and go with it.
     func dialogWindows(of window: ManagedWindow) -> [ManagedWindow] {
         windows.values.filter { $0.parent == window.id }
-    }
-
-    /// The dialogs of a window that are on screen: they come to the front with it.
-    private func dialogs(of window: ManagedWindow) -> [AXUIElement] {
-        let shown = Set(displayed.values)
-        return dialogWindows(of: window).filter { $0.hiddenFrame == nil && belongsOnScreen($0, shown: shown) }.map(\.element)
     }
 
     /// Puts a window in a workspace, with its dialogs (they share its workspace); returns them all.
@@ -728,12 +638,6 @@ final class WindowManager {
         let moving = [window] + dialogWindows(of: window)
         moving.forEach { $0.workspace = workspace }
         return moving
-    }
-
-    /// Moves the pointer to `point` when it is on another display than `screen`.
-    func bringPointer(to point: CGPoint, on screen: ScreenInfo) {
-        guard config.mouseFollowsFocus, !screen.frame.contains(Pointer.location) else { return }
-        Pointer.warp(to: point)
     }
 
     /// `current`, when known, lets a move within a display skip the writes it does not need.
@@ -746,7 +650,7 @@ final class WindowManager {
         let axState = apps[window.pid]?.axState
         let element = window.element
         let name = window.appLabel
-        axQueues.perform(window.pid) { [weak self] in
+        axQueues.perform(window.pid) { [weak self, weak window] in
             // AXEnhancedUserInterface (set by VoiceOver-aware tools) makes some apps
             // animate every AX resize; switch it off while we move the window. Read once per
             // app, and again after a move that failed.
@@ -773,12 +677,23 @@ final class WindowManager {
                 DispatchQueue.main.async { self?.note("moving a window of \(name) failed: AX error \(failure.rawValue)") }
             }
             if enhanced, let app { AX.setBool(app, "AXEnhancedUserInterface", true) }
+            // Counted from the write itself: a busy app may get to it much later than it was asked.
+            DispatchQueue.main.async { window?.movedByUs = Date() }
         }
         // Others resize themselves a moment later, for the scale of the new display; that
         // resize comes too soon to count as the user's, so look again once it is done.
-        if current != nil, !sameDisplay, takesTile(window) {
-            DispatchQueue.main.asyncAfter(delays: [0.3, 0.8]) { [weak self] in self?.scheduleRetile() }
+        // Once per tile: a window that never gets there (its app hung, a minimum size keeping
+        // its center on the other display) would otherwise be retiled for ever.
+        if current != nil, !sameDisplay, takesTile(window), Self.looksAgain(at: frame, after: window.crossDisplayTarget) {
+            window.crossDisplayTarget = frame
+            DispatchQueue.main.asyncAfter(delays: Delay.crossDisplaySettle) { [weak self] in self?.scheduleRetile() }
         }
+    }
+
+    /// Whether a window sent across displays to `target` is looked at again a moment later:
+    /// not when it was already, for that same tile (`last`), and has not got there since.
+    static func looksAgain(at target: CGRect, after last: CGRect?) -> Bool {
+        !(last?.isClose(to: target, tolerance: frameTolerance) ?? false)
     }
 
     enum FrameStep { case size, position }
@@ -796,7 +711,7 @@ final class WindowManager {
         case (true, false): return [.size]
         case (false, true): return [.position]
         case (true, true):
-            let grows = target.width > current.width + 1 || target.height > current.height + 1
+            let grows = target.width > current.width + frameTolerance || target.height > current.height + frameTolerance
             return grows ? [.position, .size] : [.size, .position]
         }
     }
@@ -820,21 +735,4 @@ final class WindowManager {
         Dictionary(WindowList.onScreen().map { ($0.id, $0.bounds) }, uniquingKeysWith: { first, _ in first })
     }
 
-    func state(for screen: CGDirectDisplayID?) -> ScreenState {
-        screen.flatMap { screenStates[ScreenInfo.uuid(of: $0)] } ?? ScreenState(layout: config.layout, ratio: config.masterRatio)
-    }
-
-    func setState(_ state: ScreenState, for screen: CGDirectDisplayID) {
-        screenStates[ScreenInfo.uuid(of: screen)] = state
-    }
-
-    func updateActiveScreen(_ change: (inout ScreenState) -> Void) {
-        scoped {
-            guard let id = focusedScreen()?.id else { return }
-            var state = state(for: id)
-            change(&state)
-            setState(state, for: id)
-            scheduleRetile()
-        }
-    }
 }

@@ -12,8 +12,11 @@ enum RemapTarget: Equatable {
     case combination(Modifiers, keyCode: UInt16?, keyName: String?)
 
     static func parse(_ text: String) throws -> RemapTarget {
-        let tokens = text.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        guard !tokens.isEmpty, !tokens.contains(where: \.isEmpty) else { throw ConfigError("empty remap target") }
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw ConfigError("empty remap target") }
+        // Empty names are kept, to be refused ("ctrl++alt"), as in `KeyCombo` and `Modifiers`.
+        let tokens = text.split(separator: "+", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        guard !tokens.contains(where: \.isEmpty) else { throw ConfigError("a key is missing in remap target '\(text)'") }
 
         if tokens.count == 1, let hid = KeyCodes.lookup(tokens[0])?.hidUsage {
             return .key(hid)

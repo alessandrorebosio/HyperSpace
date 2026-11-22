@@ -7,7 +7,7 @@ When it is off, HyperSpace stops observing apps, brings every parked window back
 
 **Standard windows**: role `AXWindow`, subrole `AXStandardWindow`, and a settable position. **Dialogs** (subrole `AXDialog`/`AXSystemDialog`, movable) are tracked too, as floating windows of their parent (see [Dialogs](#dialogs)). Sheets, panels and popovers are ignored.
 Windows are described on the app's own AX queue (`AX.probe`: role, subrole, title, frame, the app's main window), not on the main thread; a window AX does not describe yet (no subrole) is looked at again after 0.2, 0.4, 0.8, 1.6 and 3.2 s.
-Excluded from a retile: minimized windows, hidden apps, windows on other macOS Spaces (not in the on-screen list), **native full-screen windows** (a frame that covers a whole display),
+Excluded from a retile: minimized windows, hidden apps, windows on other macOS Spaces (not in the on-screen list), **native full-screen windows** (a frame that covers a whole display, menu bar included; not inferred on a display whose tiling area is the whole display — no menu bar, no Dock, no padding — where a lone tile is just as large),
 floating windows and scratchpad windows (and their dialogs). Windows without a CGWindowID are skipped (and noted in the debug report).
 A window out of sight that way still belongs to its workspace: in `columns` it keeps its place in the arrangement (the others close up meanwhile) and comes back to it.
 New windows join the end of the tiling order; the first window of a workspace is its **master**.
@@ -15,7 +15,7 @@ New windows join the end of the tiling order; the first window of a workspace is
 ## Layouts
 
 Set `tiling.layout` (default `columns`); each display has its own layout and ratio at runtime (`layout …`, `ratio …` actions; Settings sets the default).
-The area is the display's `NSScreen.visibleFrame` (menu bar and Dock excluded), flipped to AX coordinates against the main display, shrunk by `padding` on every side (ignored if it would leave no room); `gap` separates windows. No layout uses fixed screen coordinates.
+The area is the display's `NSScreen.visibleFrame` (menu bar and Dock excluded), flipped to AX coordinates against the main display, shrunk by `padding` on every side (ignored if it would leave no room); `gap` separates windows (a gap that would leave the tiles no room — a large gap, many windows — is left out: `Layout.fittingGap`). No layout uses fixed screen coordinates.
 
 | Layout | Arrangement |
 |---|---|
@@ -40,6 +40,8 @@ Each workspace has a `ColumnLayout`: new windows get their own column on the rig
 
 After a `swap` in columns the moved window's weight is reset to 1.
 
+`swap` moves among the windows on screen, as it looks: the ones out of sight (minimized, app hidden) keep their place and are passed over, so a window sharing its column only with such windows counts as alone in it. `focus left/right` through an accordion column passes over them too.
+
 ### Accordion on any layout
 
 The `accordion` action (Settings → Shortcuts → *Stack windows as an accordion*) stacks the windows of the focused workspace as an accordion without changing the display's layout, and unstacks them when pressed again (like i3's tabbed/stacked containers).
@@ -50,7 +52,7 @@ The `accordion` action (Settings → Shortcuts → *Stack windows as an accordio
 
 ## Focus, swap, master
 
-In `accordion`, `focus left/right` and `swap left/right` go to / exchange with the previous or next window of the stack (in order); past either end `focus` goes on to the nearest window on another display.
+In `accordion` and in `monocle` (whose windows cover each other just the same), `focus left/right` goes through the stack in order and `swap left/right` exchanges the window with the previous or next one, reordering the stack; windows out of sight are passed over, and past either end `focus` goes on to the nearest window on another display.
 
 - **`focus <dir>`**: among all visible windows of displayed workspaces (floating and other displays included) it picks the nearest one in that direction by window centers,
   preferring windows that overlap on the perpendicular axis (others are penalised).
@@ -68,7 +70,7 @@ In `accordion`, `focus left/right` and `swap left/right` go to / exchange with t
 - **`tall`/`wide`**: along the master/stack split, the ratio changes by `delta / area length` (the area being the visible frame less `padding`; the master grows with a positive delta; a stack window grows by shrinking the master).
   Along the stack, the window's weight changes (needs a stack of at least 2 windows, and the window cannot be the master).
 - **`columns`**: *width* changes the window's column weight (needs 2+ columns on screen); *height* changes the window's weight in its column (needs 2+ windows of it on screen).
-- **`monocle`**, **`accordion`**: nothing.
+- **`monocle`**, **`accordion`**: nothing. Nor on a workspace stacked with the `accordion` shortcut over `tall`, `wide` or `monocle`.
 - Weights are computed so the other items keep their relative sizes; every item keeps at least 80 pt.
 
 ## Gaps and padding
@@ -122,7 +124,7 @@ Bursts are coalesced (30 ms). `retile` also: parks windows of non-displayed work
 - Moves use `size → position → size` across displays (the first resize lets the window fit the destination, the second fixes apps that clamp to the old screen); within a display only what changed, shrinking before moving.
 - Across displays (moving a window to a workspace shown on another display, `swap` with a window there, a workspace moved to another display):
   - the frame is read back right after the writes and written once more (position, then size) if the app kept another size or position;
-  - the workspace is retiled again after 0.3 s and 0.8 s: many apps resize themselves for the new display's scale a moment after the move, too soon (< 0.5 s) to be taken for a hand resize and snapped back. Floating and scratchpad windows are left alone.
+  - the workspace is retiled again after 0.3 s and 0.8 s: many apps resize themselves for the new display's scale a moment after the move, too soon (< 0.5 s) to be taken for a hand resize and snapped back. Once per target tile: a window that never gets there (its app hung, a minimum size) is not retiled for ever. Floating and scratchpad windows are left alone.
   - a parked window counts as being on the display it is parked on (the one its sliver shows on), so bringing it back into its tile there is a move within a display.
 - `AXEnhancedUserInterface` is switched off during a move (it makes some apps animate every AX resize) and restored after.
 - If the app does not take focus within 0.15 s, HyperSpace activates it and retries.

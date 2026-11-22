@@ -40,21 +40,30 @@ final class MouseModel: ObservableObject, FileBackedModel {
 
     @Published private(set) var rules: [Rule] = []
     @Published private(set) var reverseScroll = TapConfig.defaultReverseScroll
-    @Published private(set) var capturing: Field?
+    /// The cap being recorded: its own object, so starting or ending a capture redraws the
+    /// rows, not the page.
+    let capture: FieldCapture<Field>
 
-    private let recorder: ShortcutRecorder
-    /// The section, and the scroll setting as loaded: written only once it changes.
-    private var sync = FileSync<Bool>(SyncedSlice(sections: "mouse"))
-    var saveStatus: SaveStatus { sync.status }
+    /// What the page writes, as loaded: each part is written only once it differs.
+    struct Snapshot {
+        var reverseScroll: Bool
+        /// The complete mappings, in the file's form.
+        var buttons: [[String: Any]]
+    }
+
+    var sync = FileSync<Snapshot>(SyncedSlice(sections: "mouse"))
 
     /// `config`: the file as `ConfigWriter.readIfValid()` returns it.
     init(eventTap: EventTap, config: [String: Any]) {
-        recorder = ShortcutRecorder(eventTap: eventTap)
+        capture = FieldCapture(recorder: ShortcutRecorder(eventTap: eventTap))
+        // A capture that ends with nothing recorded: a mapping left incomplete goes (it was
+        // never saved), except the one whose action is recorded next.
+        capture.onEnd = { [weak self] next in
+            guard let self else { return }
+            rules.removeAll { !$0.isComplete && $0.id != next?.ruleID }
+            applyDeferredReload()
+        }
         load(config)
-    }
-
-    func reload(from root: [String: Any]) {
-        if sync.shouldReload(root, editing: capturing != nil) { load(root) }
     }
 
     // MARK: - Editing
@@ -67,7 +76,7 @@ final class MouseModel: ObservableObject, FileBackedModel {
     }
 
     func remove(_ id: UUID) {
-        if capturing?.ruleID == id { endCapture() }
+        if capturing?.ruleID == id { capture.end() }
         edit { rules.removeAll { $0.id == id } }
     }
 
@@ -187,11 +196,10 @@ final class MouseModel: ObservableObject, FileBackedModel {
     /// mappings are suspended meanwhile so the button reaches the window.
     /// Action: press the keys it should send, e.g. ⌘ and [ together.
     func startCapture(_ field: Field) {
-        stopCapture(keeping: field.ruleID)
-        capturing = field
+        capture.begin(field)
         switch field {
         case .button:
-            recorder.start(.otherMouseDown, pausing: .buttons) { [weak self] event in
+            capture.recorder.start(.otherMouseDown, pausing: .buttons) { [weak self] event in
                 guard let self, event.buttonNumber >= 2, event.buttonNumber < 32 else { return false }
                 let modifiers = Modifiers(event.modifierFlags)
                 finishCapture { $0.button = event.buttonNumber; $0.modifiers = modifiers; $0.invalidModifiers = nil }
@@ -200,7 +208,7 @@ final class MouseModel: ObservableObject, FileBackedModel {
         case .action:
             // As on the Shortcuts page, Escape alone cancels and Delete alone clears (the
             // button then does nothing).
-            recorder.startShortcut { [weak self] input in
+            capture.recorder.startShortcut { [weak self] input in
                 switch input {
                 case .cancel: self?.stopCapture()
                 case .clear: self?.finishCapture { $0.action = "none" }
@@ -210,32 +218,10 @@ final class MouseModel: ObservableObject, FileBackedModel {
         }
     }
 
-    /// Recording ends with nothing recorded (Esc, the cap clicked again, another page, the
-    /// window closed). As on every page, a mapping left incomplete goes: it was never saved.
-    func stopCapture() {
-        stopCapture(keeping: nil)
-    }
-
-    /// `stopCapture`, keeping the rule `kept` even if incomplete (its action is next).
-    private func stopCapture(keeping kept: UUID?) {
-        guard endCapture() else { return }
-        rules.removeAll { !$0.isComplete && $0.id != kept }
-        if let root = sync.takeDeferredReload() { load(root) }
-    }
-
-    /// Stops listening; false when nothing was being recorded.
-    @discardableResult
-    private func endCapture() -> Bool {
-        recorder.stop()
-        guard capturing != nil else { return false }
-        capturing = nil
-        return true
-    }
-
     /// The recorded button or keys go into the rule being recorded.
     private func finishCapture(_ change: (inout Rule) -> Void) {
         guard let field = capturing else { return }
-        endCapture()
+        capture.end()
         edit { rules.update(id: field.ruleID, change) }
         // A new mapping goes straight on to its action.
         if case .button(let id) = field, rules.first(where: { $0.id == id })?.action.isEmpty == true {
@@ -245,13 +231,13 @@ final class MouseModel: ObservableObject, FileBackedModel {
 
     /// An action picked from the menu: it ends the recording of that action.
     func setAction(_ action: String, for id: UUID) {
-        if capturing == .action(id) { endCapture() }
+        if capturing == .action(id) { capture.end() }
         edit { rules.update(id: id) { $0.action = action } }
     }
 
     // MARK: - Persistence
 
-    private func load(_ config: [String: Any]) {
+    func load(_ config: [String: Any]) {
         let mouse = ConfigWriter.section("mouse", of: config)
         let reverse = mouse["reverseScroll"] as? Bool ?? TapConfig.defaultReverseScroll
         assignIfChanged(reverse, to: &reverseScroll)
@@ -266,36 +252,30 @@ final class MouseModel: ObservableObject, FileBackedModel {
         for index in loaded.indices { loaded[index].id = ids[index] }
         // A mapping being recorded is not in the file yet: it stays.
         assignIfChanged(loaded + rules.filter { !$0.isComplete && !ids.contains($0.id) }, to: &rules)
-        sync.didLoad(config, reverse)
+        sync.didLoad(config, snapshot)
     }
 
-    /// A change made here: a reload skipped while recording comes first, so the save that
-    /// follows writes the file's latest mappings with the change.
-    private func edit(_ change: () -> Void) {
-        if let root = sync.takeDeferredReload() { load(root) }
-        change()
-        save()
+    private var snapshot: Snapshot {
+        Snapshot(reverseScroll: reverseScroll, buttons: rules.filter(\.isComplete).map { rule in
+            var entry: [String: Any] = ["button": rule.button ?? 0, "action": rule.action]
+            if let invalid = rule.invalidModifiers {
+                entry["modifiers"] = invalid
+            } else if !rule.modifiers.isEmpty {
+                entry["modifiers"] = rule.modifiers.configText
+            }
+            return entry
+        })
     }
 
-    private func save() {
-        let complete = rules.filter(\.isComplete)
-        let loadedScroll = sync.loaded
-        let reverseScroll = reverseScroll
-        sync.save(reverseScroll) { root in
-            ConfigWriter.edit(&root, section: "mouse") { mouse in
-                // Left out until changed, like every option the user never set.
-                if reverseScroll != loadedScroll { mouse["reverseScroll"] = reverseScroll }
-                let buttons = complete.map { rule -> [String: Any] in
-                    var entry: [String: Any] = ["button": rule.button!, "action": rule.action]
-                    if let invalid = rule.invalidModifiers {
-                        entry["modifiers"] = invalid
-                    } else if !rule.modifiers.isEmpty {
-                        entry["modifiers"] = rule.modifiers.configText
-                    }
-                    return entry
-                }
-                // An empty list is left out, like every list the pages write.
-                mouse["buttons"] = buttons.isEmpty ? nil : buttons
+    /// Writes what changed since the load: the scroll setting (left out until changed, like
+    /// every option the user never set) and the mappings.
+    func save() {
+        let current = snapshot
+        let old = sync.loaded
+        sync.save(current) { root in
+            ConfigWriter.amend(&root, section: "mouse") { mouse in
+                mouse.write("reverseScroll", current.reverseScroll, since: old?.reverseScroll)
+                mouse.writeList("buttons", current.buttons, since: old?.buttons)
             }
         }
     }

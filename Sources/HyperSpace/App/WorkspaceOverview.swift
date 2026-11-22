@@ -17,8 +17,10 @@ final class WorkspaceOverview {
     private var hosting: NSHostingView<OverviewView>?
     /// Whether the panel should be on screen: a fade out finishing after a new show leaves it.
     private var wanted = false
-    /// A click anywhere closes the panel too, in case the key up never reaches the tap.
-    private var clickMonitor: Any?
+    /// A click anywhere closes the panel too, in case the key up never reaches the tap: in
+    /// another app (the global monitor) or in one of HyperSpace's own windows (the local one,
+    /// which a global monitor does not see).
+    private var clickMonitors: [Any] = []
 
     init(host: Host) {
         self.host = host
@@ -48,17 +50,21 @@ final class WorkspaceOverview {
             panel.animator().alphaValue = 1
         }
         wanted = true
-        if clickMonitor == nil {
-            clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        if clickMonitors.isEmpty {
+            let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+            let global = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in self?.hide() }
+            let local = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
                 self?.hide()
+                return event
             }
+            clickMonitors = [global, local].compactMap { $0 }
         }
     }
 
     func hide() {
         wanted = false
-        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
-        clickMonitor = nil
+        for monitor in clickMonitors { NSEvent.removeMonitor(monitor) }
+        clickMonitors = []
         guard let panel, panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.1
@@ -159,9 +165,11 @@ struct OverviewView: View {
     var body: some View {
         let rows = stride(from: 0, to: cards.count, by: columns).map { Array(cards[$0..<min($0 + columns, cards.count)]) }
         VStack(alignment: .leading, spacing: Self.spacing) {
-            ForEach(rows.indices, id: \.self) { row in
+            // A row is its first card's workspace: the rows keep their identity when the
+            // workspaces change.
+            ForEach(rows, id: \.first?.id) { row in
                 HStack(alignment: .top, spacing: Self.spacing) {
-                    ForEach(rows[row]) { card in
+                    ForEach(row) { card in
                         CardView(card: card, focused: card.summary.index == focused)
                     }
                 }

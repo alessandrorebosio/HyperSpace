@@ -38,33 +38,81 @@ extension ConfigWriter {
         if error == nil, let written { slice.record(written) }
         return error
     }
+
+    /// Changes one top-level object of `root`, like `edit`, but a section that is missing and
+    /// still empty after `change` stays out of the file: a save that finds nothing to write
+    /// leaves the file as it is.
+    static func amend(_ root: inout [String: Any], section key: String, _ change: (inout [String: Any]) -> Void) {
+        var section = self.section(key, of: root)
+        change(&section)
+        if !section.isEmpty || root[key] != nil { root[key] = section }
+    }
 }
 
-/// The last save of a model that failed, shown as a notice at the top of its pages. Its own
-/// object, so an error that comes or goes redraws the notice only.
+/// What keeps a model's pages from saving, shown as a notice at the top of them. Its own
+/// object, so a problem that comes or goes redraws the notice only.
 final class SaveStatus: ObservableObject {
-    @Published private(set) var error: String?
+    struct Problem: Equatable {
+        let message: String
+        /// A change made on the page was not saved; false when the file could not be read to
+        /// begin with and nothing was changed yet.
+        let unsavedChange: Bool
 
+        var title: String { unsavedChange ? "Changes not saved" : "Config file cannot be read" }
+    }
+
+    @Published private(set) var problem: Problem?
+
+    var error: String? { problem?.message }
+
+    /// The result of a save: its error, or nil when it was written.
     func set(_ error: String?) {
-        assignIfChanged(error, to: &self.error)
+        assignIfChanged(error.map { Problem(message: $0, unsavedChange: true) }, to: &problem)
     }
 
-    /// The file parses again: a syntax error reported earlier no longer holds.
-    func fileIsValid() {
-        if error == ConfigWriter.SyntaxError.message { error = nil }
+    /// The window opened on a file that does not parse, or that cannot be read at all
+    /// (`message` says which): the pages show nothing of it.
+    func setUnreadable(_ message: String = ConfigWriter.SyntaxError.message) {
+        assignIfChanged(Problem(message: message, unsavedChange: false), to: &problem)
     }
+
+    /// The words for a file that is there but cannot be read (no permission, say).
+    static let unreadableMessage = ConfigWriter.UnreadableError().localizedDescription
+
+    /// The file is read and parses again: a syntax error or an unreadable file reported
+    /// earlier no longer holds.
+    func fileIsValid() {
+        if error == ConfigWriter.SyntaxError.message || error == Self.unreadableMessage { problem = nil }
+    }
+}
+
+/// What a model does when the app has loaded the file.
+enum FileChange {
+    case none
+    /// Its part of the file changed elsewhere: show it.
+    case reload
+    /// Its part is as the model last read it, but the model's last save failed: save again, so
+    /// the change the page shows is not lost.
+    case retrySave
 }
 
 /// How a settings model follows the file: the part of it the model shows (`SyncedSlice`), the
 /// values as last loaded or saved (only what changed since is written), the last save error,
 /// and a reload skipped while the user was editing, which is done when the edit ends and
 /// always before the next save, so that save never writes back a stale list.
+///
+/// A save that fails (the file has a syntax error, the disk is full) leaves the page showing a
+/// change the file does not have. When the file is next loaded, the save is tried again if the
+/// model's part of the file is still as the model read it; if that part changed meanwhile, the
+/// file wins and the page reloads (retrying would write stale lists over the newer ones).
 struct FileSync<Snapshot> {
     private var slice: SyncedSlice
     /// The values as last loaded or saved: a value never changed here is not written.
     private(set) var loaded: Snapshot?
     /// The file changed while the user was editing (recording a shortcut, typing a name).
     private(set) var reloadDeferred = false
+    /// The last save failed: the page shows a change the file does not have.
+    private(set) var unsaved = false
     let status = SaveStatus()
 
     init(_ slice: SyncedSlice) {
@@ -76,21 +124,22 @@ struct FileSync<Snapshot> {
         slice.record(root)
         loaded = snapshot
         reloadDeferred = false
+        unsaved = false
     }
 
-    /// The app loaded the file: whether the model should show it. Not while `editing`: the
-    /// reload then waits for `takeDeferredReload`.
-    mutating func shouldReload(_ root: [String: Any], editing: Bool) -> Bool {
+    /// The app loaded the file (it parses): what the model should do. A reload does not happen
+    /// while `editing`: it then waits for `takeDeferredReload`.
+    mutating func fileLoaded(_ root: [String: Any], editing: Bool) -> FileChange {
         status.fileIsValid()
         guard slice.changed(in: root) else {
             reloadDeferred = false
-            return false
+            return unsaved ? .retrySave : .none
         }
         if editing {
             reloadDeferred = true
-            return false
+            return .none
         }
-        return true
+        return .reload
     }
 
     /// An edit ends, or a save is about to start: the file to show first, if a reload was
@@ -107,32 +156,74 @@ struct FileSync<Snapshot> {
     @discardableResult
     mutating func save(_ snapshot: Snapshot, _ change: (inout [String: Any]) -> Void) -> String? {
         let error = ConfigWriter.save(recording: &slice, change)
-        if error == nil { loaded = snapshot }
-        status.set(error)
+        didSave(snapshot, error: error)
         return error
+    }
+
+    /// The outcome of a save of `snapshot`: written (`error` nil), or not.
+    mutating func didSave(_ snapshot: Snapshot, error: String?) {
+        if error == nil { loaded = snapshot }
+        unsaved = error != nil
+        status.set(error)
     }
 }
 
 extension FileSync where Snapshot == Void {
+    /// For a slice with no values of its own to compare.
     mutating func didLoad(_ root: [String: Any]) { didLoad(root, ()) }
-
-    @discardableResult
-    mutating func save(_ change: (inout [String: Any]) -> Void) -> String? { save((), change) }
 }
 
 /// A settings model that follows the file: `ConfigStore.didLoad` makes it reload when the part
-/// of the file it shows changed, unless the user is in the middle of an edit.
+/// of the file it shows changed, unless the user is in the middle of an edit. A model gives its
+/// `FileSync`, how it reads the file (`load`) and how it writes its values (`save`); following
+/// the file and saving a change are the same for all of them (the extension below).
 protocol FileBackedModel: AnyObject {
-    func reload(from root: [String: Any])
-    /// The last save error, for the page's notice.
-    var saveStatus: SaveStatus { get }
-    /// A key press or click being recorded ends (another page is shown).
+    associatedtype Snapshot
+    var sync: FileSync<Snapshot> { get set }
+    /// Something is being edited (a shortcut recorded, a name typed, a slider moved): a reload
+    /// now would undo it, so it waits for the edit to end.
+    var isEditing: Bool { get }
+    /// Shows `root`, the whole file, and tells `sync` (`didLoad`).
+    func load(_ root: [String: Any])
+    /// Writes what changed since the load, through `sync.save`.
+    func save()
+    /// A reload skipped while editing, done now (the default: `load` of the file as it is).
+    func applyDeferredReload()
+    /// A key press or click being recorded ends (another page is shown, the window is no
+    /// longer the key one).
     func stopCapture()
     /// The window closes: captures end, pending edits are saved, nothing stays suspended.
     func close()
 }
 
 extension FileBackedModel {
+    /// What keeps the model's pages from saving, for their notice.
+    var saveStatus: SaveStatus { sync.status }
+
+    var isEditing: Bool { false }
+
+    /// The app loaded the file: show it if the model's part changed elsewhere, or save again a
+    /// change that could not be written before (see `FileSync`).
+    func reload(from root: [String: Any]) {
+        switch sync.fileLoaded(root, editing: isEditing) {
+        case .reload: load(root)
+        case .retrySave: save()
+        case .none: break
+        }
+    }
+
+    func applyDeferredReload() {
+        if let root = sync.takeDeferredReload() { load(root) }
+    }
+
+    /// A change made on the page: a reload skipped while editing comes first, so the save that
+    /// follows writes the file's latest values with the change.
+    func edit(_ change: () -> Void) {
+        applyDeferredReload()
+        change()
+        save()
+    }
+
     func stopCapture() {}
     func close() { stopCapture() }
 }
@@ -154,4 +245,33 @@ func reusedIDs<Key: Hashable>(for keys: [Key], from old: [(key: Key, id: UUID)])
         available[key] = ids
         return id
     }
+}
+
+extension Array where Element: Identifiable {
+    /// Changes the element with `id`, if there is one.
+    mutating func update(id: Element.ID, _ change: (inout Element) -> Void) {
+        guard let index = firstIndex(where: { $0.id == id }) else { return }
+        change(&self[index])
+    }
+}
+
+extension Dictionary where Key == String, Value == Any {
+    /// Writes `value` under `key` only when it differs from `old`, the value as loaded: an
+    /// option the user never changed stays out of the file, or stays as it is written there.
+    mutating func write<T: Equatable>(_ key: String, _ value: T, since old: T?) {
+        if value != old { self[key] = value }
+    }
+
+    /// `write` for a list, as it goes in the file: an empty one is left out.
+    mutating func writeList(_ key: String, _ list: [Any], since old: [Any]?) {
+        guard listChanged(list, since: old) else { return }
+        self[key] = list.isEmpty ? nil : list
+    }
+}
+
+/// Whether `list` differs from `old`, the list as loaded (nil: nothing was loaded): the one
+/// test of "write a list only once it changed" every page uses.
+func listChanged(_ list: [Any], since old: [Any]?) -> Bool {
+    guard let old else { return true }
+    return !(list as NSArray).isEqual(to: old)
 }

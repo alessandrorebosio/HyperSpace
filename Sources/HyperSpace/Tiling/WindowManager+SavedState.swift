@@ -12,7 +12,8 @@ extension WindowManager {
         let byUUID = Dictionary(screens.map { ($0.uuid, $0.id) }, uniquingKeysWith: { a, _ in a })
         // Displays by UUID: any display the monitor was plugged into.
         for (key, uuid) in state.moved ?? [:] {
-            if let workspace = Int(key), workspace < workspaceCount { homeOverride[workspace] = uuid }
+            // (A pin in the config replaces a move made by hand, a saved one included.)
+            if let workspace = Int(key), workspace < workspaceCount, config.pins[workspace] == nil { homeOverride[workspace] = uuid }
         }
         for (uuid, workspace) in state.displays ?? [:] where workspace < workspaceCount {
             if let display = byUUID[uuid] { displayed[display] = workspace } else { departed[uuid] = workspace }
@@ -21,24 +22,24 @@ extension WindowManager {
         for (uuid, saved) in state.layouts ?? [:] {
             if let kind = LayoutKind(rawValue: saved.layout) { screenStates[uuid] = ScreenState(layout: kind, ratio: CGFloat(saved.ratio)) }
         }
-        restoredState = state
+        restoreSession.state = state
         // Apps that have been running for a while (HyperSpace restarted, not the Mac) may open
         // new windows meanwhile: those do not take a saved window of their app by default.
         let now = Date()
         let established = NSWorkspace.shared.runningApplications.filter { app in
             app.isFinishedLaunching && (app.launchDate.map { now.timeIntervalSince($0) > 30 } ?? true)
         }
-        restorer = WorkspaceRestorer(state, windowsAtStart: WindowList.allIDs(),
+        restoreSession.restorer = WorkspaceRestorer(state, windowsAtStart: discovery.windowsAtStart,
                                      appsAtStart: Set(established.map(\.processIdentifier)))
         log.debug("restoring \(state.windows.count) window(s) saved \(state.savedAt, privacy: .public)")
-        restoreGeneration += 1
-        let generation = restoreGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
-            guard let self, restoreGeneration == generation else { return }
-            restorer = nil
-            restoredState = nil
-            restoredIndex = [:]
-            restoredApplied = []
+        restoreSession.generation += 1
+        let generation = restoreSession.generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + Delay.restoreWindow) { [weak self] in
+            guard let self, restoreSession.generation == generation else { return }
+            restoreSession.restorer = nil
+            restoreSession.state = nil
+            restoreSession.index = [:]
+            restoreSession.applied = []
             scheduleSave()
         }
     }
@@ -47,17 +48,17 @@ extension WindowManager {
     /// windows (a Space change) applies only the windows found since, so what you arranged
     /// meanwhile is kept.
     func applyRestoredLayout() {
-        guard let state = restoredState else { return }
-        let fresh = Set(restoredIndex.keys.filter { windows[$0] != nil && !restoredApplied.contains($0) })
+        guard let state = restoreSession.state else { return }
+        let fresh = Set(restoreSession.index.keys.filter { windows[$0] != nil && !restoreSession.applied.contains($0) })
         guard !fresh.isEmpty else { return }
-        order = Self.restoredOrder(order, savedIndex: restoredIndex, placing: fresh)
-        let idByIndex = Dictionary(restoredIndex.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
+        order = Self.restoredOrder(order, savedIndex: restoreSession.index, placing: fresh)
+        let idByIndex = Dictionary(restoreSession.index.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
         for (key, saved) in state.columns {
             guard let workspace = Int(key) else { continue }
             let arrangement = saved.map { $0.compactMap { idByIndex[$0] } }
             let ids = Set(arrangement.joined())
             guard !ids.isDisjoint(with: fresh) else { continue }
-            if ids.isDisjoint(with: restoredApplied) {
+            if ids.isDisjoint(with: restoreSession.applied) {
                 // The first windows of this workspace found again: its saved arrangement.
                 columns[workspace] = ColumnLayout(columns: arrangement, accordions: Set(state.accordions?[key] ?? []))
             } else {
@@ -67,7 +68,7 @@ extension WindowManager {
                 columns[workspace] = layout
             }
         }
-        restoredApplied.formUnion(fresh)
+        restoreSession.applied.formUnion(fresh)
     }
 
     /// `order` with the `fresh` restored windows moved to their saved places: before the first
@@ -121,9 +122,12 @@ extension WindowManager {
     /// windows are still being matched to the saved state, which would lose the apps not
     /// reopened yet.
     func scheduleSave() {
-        guard running, restorer == nil else { return }
+        guard running, restoreSession.restorer == nil else { return }
         saveCoalescer.schedule { [weak self] in
-            guard let self, running, restorer == nil else { return }
+            guard let self, running, restoreSession.restorer == nil else { return }
+            // An app does not always say a window closed: it would stay in the columns, the
+            // menu and the file until the next Space change.
+            if forgetClosedWindows() { scheduleRetile() }
             var state = currentState()
             guard state.withoutTitles != lastSaved?.withoutTitles else { return }
             lastSaved = state
@@ -132,11 +136,30 @@ extension WindowManager {
         }
     }
 
+    /// `state` with the saved windows no window was found for (`unclaimed`, indices into
+    /// `saved.windows`) added after its own, in their saved workspaces and columns: each of
+    /// their columns after the columns the workspace has now.
+    static func keepingUnclaimed(_ unclaimed: [Int], of saved: WorkspaceState, in state: WorkspaceState) -> WorkspaceState {
+        var state = state
+        var moved: [Int: Int] = [:]
+        for index in unclaimed where saved.windows.indices.contains(index) {
+            moved[index] = state.windows.count
+            state.windows.append(saved.windows[index])
+        }
+        for (workspace, columns) in saved.columns {
+            let kept = columns.map { $0.compactMap { moved[$0] } }.filter { !$0.isEmpty }
+            if !kept.isEmpty { state.columns[workspace, default: []] += kept }
+        }
+        return state
+    }
+
     /// Saves at once (on quit), keeping the saved windows not found again yet.
     func saveState() {
         guard running else { return }
         var state = currentState()
-        if let restorer { state.windows += restorer.unclaimed }
+        if let unclaimed = restoreSession.restorer?.unclaimedIndices, let saved = restoreSession.state {
+            state = Self.keepingUnclaimed(unclaimed, of: saved, in: state)
+        }
         state.savedAt = Date()
         saveQueue.sync {}
         state.save()

@@ -17,6 +17,7 @@ private final class Tap {
     func resetKeys() -> Bool { state.resetKeys() }
     func setKeyBindingsSuspended(_ on: Bool) -> Bool { state.setKeyBindingsSuspended(on) }
     func setButtonsSuspended(_ on: Bool) { state.setButtonsSuspended(on) }
+    func clearButtons() { state.clearButtons() }
 }
 
 /// The event tap's decisions about keys and buttons.
@@ -25,6 +26,14 @@ private final class Tap {
         let tap = Tap()
         _ = tap.setConfig(try config(json).tap)
         return tap
+    }
+
+    /// The key code of the carrier of a combination, by what it stands for.
+    private func carrierCode(_ tap: Tap, _ modifiers: Modifiers) throws -> Int {
+        try #require(tap.config.carrierTable.indices.first { code in
+            let index = Int(tap.config.carrierTable[code])
+            return index >= 0 && tap.config.carriers[index].modifiers == modifiers
+        })
     }
 
     private func code(_ name: String) -> Int { Int(KeyCodes.lookup(name)!.keyCode!) }
@@ -162,5 +171,54 @@ private final class Tap {
         _ = tap.key(code: code("o"), modifiers: [.cmd, .alt], down: true, isRepeat: false)
         #expect(tap.setConfig(try config(bindings).tap))
         #expect(tap.key(code: code("o"), modifiers: [], down: false, isRepeat: false) == .pass)
+    }
+
+    @Test func overviewKeyPressedAgainWhileOpenIsSwallowed() throws {
+        let tap = try state(bindings)
+        let o = code("o")
+        #expect(tap.key(code: o, modifiers: [.cmd, .alt], down: true, isRepeat: false) == .overview(true))
+        // A second press (a key-up missed) does not open it twice.
+        #expect(tap.key(code: o, modifiers: [.cmd, .alt], down: true, isRepeat: false) == .swallow)
+        #expect(tap.key(code: o, modifiers: [], down: false, isRepeat: false) == .overview(false))
+    }
+
+    /// Two modifier-only combinations held together add up; releasing one keeps the other's.
+    @Test func modifierOnlyCarriersMerge() throws {
+        let tap = try state(#"""
+        { "keyboard": { "remap": [ { "from": "caps_lock", "to": "meh" }, { "from": "right_command", "to": "ctrl+cmd" } ] } }
+        """#)
+        let meh = try carrierCode(tap, .meh), ctrlCmd = try carrierCode(tap, [.ctrl, .cmd])
+        #expect(tap.key(code: meh, modifiers: [], down: true, isRepeat: false) == .swallow)
+        #expect(tap.key(code: ctrlCmd, modifiers: [], down: true, isRepeat: false) == .swallow)
+        #expect(tap.heldModifiers == .hyper)
+        #expect(tap.key(code: meh, modifiers: [], down: false, isRepeat: false) == .swallow)
+        #expect(tap.heldModifiers == [.ctrl, .cmd])
+        // Forgetting the keys lets go of the rest.
+        _ = tap.resetKeys()
+        #expect(tap.heldModifiers.isEmpty)
+    }
+
+    @Test func buttonsWithModifiers() throws {
+        let tap = try state(#"{ "mouse": { "buttons": [ { "button": 3, "modifiers": "cmd", "action": "navigate back" } ] } }"#)
+        #expect(tap.button(3, modifiers: [], down: true) == .pass)
+        #expect(tap.button(3, modifiers: [], down: false) == .pass)
+        #expect(tap.button(3, modifiers: [.cmd, .shift], down: true) == .pass)
+        #expect(tap.button(3, modifiers: .cmd, down: true) == .run(.navigate(back: true)))
+        // The release is swallowed whatever the modifiers are by then.
+        #expect(tap.button(3, modifiers: [], down: false) == .swallow)
+        #expect(tap.button(40, modifiers: [], down: true) == .pass)
+    }
+
+    /// After `clearButtons` (a new config, Settings capturing a button) a release owed to a press passes.
+    @Test func clearedButtonsNoLongerSwallowTheirRelease() throws {
+        let tap = try state(#"{ "mouse": { "buttons": [ { "button": 3, "action": "navigate back" } ] } }"#)
+        #expect(tap.button(3, modifiers: [], down: true) == .run(.navigate(back: true)))
+        tap.clearButtons()
+        #expect(tap.button(3, modifiers: [], down: false) == .pass)
+        // Suspending the buttons clears them too.
+        #expect(tap.button(3, modifiers: [], down: true) == .run(.navigate(back: true)))
+        tap.setButtonsSuspended(true)
+        tap.setButtonsSuspended(false)
+        #expect(tap.button(3, modifiers: [], down: false) == .pass)
     }
 }
