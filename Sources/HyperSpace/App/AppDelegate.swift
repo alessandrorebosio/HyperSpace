@@ -156,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "Keyboard: \(eventTap.isKeyboardLocked ? "locked" : "active"); keyboards: " +
                 remapper.connectedKeyboards().map { $0.product.isEmpty ? "?" : $0.product }.joined(separator: ", "),
         ]
+        lines.insert(contentsOf: eventTap.debugLines(), at: 4)
         let trackpad = config?.trackpad ?? TrackpadConfig()
         let corners = TrackpadCorner.allCases.compactMap { corner in trackpad.corners[corner].map { _ in corner.rawValue } }
         lines.append("Trackpad edge sliders: " + (trackpad.edgeSliders

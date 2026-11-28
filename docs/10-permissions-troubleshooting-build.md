@@ -45,6 +45,8 @@ notifications, drivers/kexts, root.
 - `HyperSpace <version> — <date>`, macOS version and uptime;
 - Accessibility `granted`/`missing`, *launched at login*;
 - `Event tap: available` or `unavailable (cannot be created, retried every 5 s)`;
+- `Event tap state:` `enabled`, `disabled by the system` or `not installed`; key bindings and mouse buttons `active` or `suspended` (they are while Settings records a shortcut or a button); the combination held right now (`⌃⌥⇧` while caps lock is down, else `none`); how many combination keys and actions the config has. `its thread did not answer` when the tap thread is busy or stuck;
+- `Event tap seen:` since the start, with how long ago the last one was: key presses, combination key events (caps lock down or up), shortcuts run, presses with a combination held that no shortcut answered, and how often macOS switched the tap off. Counts only: no key is recorded. When shortcuts stop working, copy this before anything else: key presses going up without combination key events means the remapped key no longer arrives; both going up with no shortcut run points at the bindings (suspended, or the config);
 - `Devices:` the wireless keyboards, mice and trackpads that report a battery, with their level (or `none with a battery`);
 - Keyboard `locked`/`active` and the names of connected keyboards;
 - `Trackpad edge sliders:` `off` or what each edge is set to, the corners that have an action and, while either is on, how many trackpads are watched (or `MultitouchSupport not available`);
@@ -61,6 +63,8 @@ Verbose logs go to the unified log (subsystem `com.alessandrorebosio.HyperSpace`
 ```bash
 log stream --predicate 'subsystem == "com.alessandrorebosio.HyperSpace"' --level debug
 ```
+
+Debug lines are not kept: `log show` does not find them afterwards, so the stream has to run while the problem happens. The event tap logs a combination key going down or up (`combination held: ⌃⌥⇧`, `combination released`), each shortcut run (`shortcut ⌃⌥⇧ key code 18: …`), a press with a combination held that no shortcut answered (`no shortcut for …`, with whether key bindings are suspended), key bindings suspended or resumed, and the tap being installed or switched off by the system. Ordinary typing is never logged.
 
 ## Build
 

@@ -58,6 +58,8 @@ final class EventTap {
     /// The last attempt to make the tap failed, and whether another one is already scheduled.
     private var tapFailed = false
     private var tapRetryScheduled = false
+    /// What the tap has seen, for the debug report (see `TapDiagnostics`).
+    private var counters = TapDiagnostics()
     /// Where the pointer is held while a trackpad edge slider is in progress, until
     /// `heldPointerUntil` (uptime nanoseconds) unless the hold is renewed: a trackpad that
     /// goes away with a finger on it must not leave the pointer stuck.
@@ -266,8 +268,35 @@ final class EventTap {
 
     func setKeyBindingsSuspended(_ suspended: Bool) {
         onTapThread { [self] in
+            if suspended != state.keyBindingsSuspended {
+                log.debug("key bindings \(suspended ? "suspended" : "resumed", privacy: .public)")
+            }
             if state.setKeyBindingsSuspended(suspended) { closeOverview() }
         }
+    }
+
+    /// Main thread: what the tap has seen and the state it is in, as lines for the debug
+    /// report. The tap thread is asked, and given `timeout` to answer: a thread that is stuck
+    /// is reported as such.
+    func debugLines(timeout: TimeInterval = 0.3) -> [String] {
+        final class Answer { var value: TapDiagnostics? }
+        let answer = Answer()
+        let done = DispatchSemaphore(value: 0)
+        onTapThread { [self] in
+            var snapshot = counters
+            snapshot.installed = tap != nil
+            snapshot.enabled = tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
+            snapshot.keyBindingsSuspended = state.keyBindingsSuspended
+            snapshot.buttonsSuspended = state.buttonsSuspended
+            snapshot.held = state.heldModifiers
+            snapshot.carriers = config.carriers.count
+            snapshot.actions = config.actions.count
+            answer.value = snapshot
+            done.signal()
+        }
+        // Read only once the tap thread is done with it.
+        guard done.wait(timeout: .now() + timeout) == .success, let value = answer.value else { return [TapDiagnostics.noAnswer] }
+        return value.lines(now: DispatchTime.now().uptimeNanoseconds)
     }
 
     private func installTap(mask newMask: CGEventMask) {
@@ -298,6 +327,7 @@ final class EventTap {
             return
         }
         tapCreation(failed: false)
+        log.debug("event tap installed, mask \(String(newMask, radix: 16), privacy: .public)")
         let src = CFMachPortCreateRunLoopSource(nil, port, 0)
         CFRunLoopAddSource(runLoop, src, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
@@ -326,6 +356,8 @@ final class EventTap {
         let pass = Unmanaged.passUnretained(event)
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            counters.disabled.add(at: DispatchTime.now().uptimeNanoseconds)
+            log.info("event tap switched off by the system (\(type == .tapDisabledByTimeout ? "timeout" : "user input", privacy: .public)): switched back on")
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             // Events were missed meanwhile: the mouse-up of a drag perhaps, or the key-up of a
             // combination's key, whose modifiers would stay on every event after.
@@ -357,9 +389,12 @@ final class EventTap {
 
         switch type {
         case .keyDown, .keyUp:
-            let decision = state.key(code: Int(event.getIntegerValueField(.keyboardEventKeycode)),
-                                     modifiers: Modifiers(event.flags), down: type == .keyDown,
-                                     isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+            let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
+            let modifiers = Modifiers(event.flags)
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            let heldBefore = state.heldModifiers
+            let decision = state.key(code: code, modifiers: modifiers, down: type == .keyDown, isRepeat: isRepeat)
+            note(decision, code: code, modifiers: modifiers, down: type == .keyDown, isRepeat: isRepeat, heldBefore: heldBefore)
             return perform(decision) ? nil : pass
         case .otherMouseDown, .otherMouseUp:
             let decision = state.button(Int(event.getIntegerValueField(.mouseEventButtonNumber)),
@@ -414,6 +449,34 @@ final class EventTap {
             return nil
         default:
             return pass
+        }
+    }
+
+    /// Tap thread: counts a key event for the debug report and logs what tells why a shortcut
+    /// did or did not run: a combination key going down or up, a shortcut, and a press with a
+    /// combination held that no shortcut answered. Ordinary typing is counted, never logged.
+    private func note(_ decision: TapState.Decision, code: Int, modifiers: Modifiers, down: Bool, isRepeat: Bool, heldBefore: Modifiers) {
+        let held = state.heldModifiers
+        guard (down && !isRepeat) || held != heldBefore else { return }
+        let now = DispatchTime.now().uptimeNanoseconds
+        if down, !isRepeat { counters.keys.add(at: now) }
+        if held != heldBefore {
+            counters.combinationKeys.add(at: now)
+            log.debug("combination \(held.isEmpty ? "released" : "held: " + held.symbols, privacy: .public)")
+            return
+        }
+        switch decision {
+        case .run(let action):
+            counters.shortcuts.add(at: now)
+            log.debug("shortcut \(modifiers.symbols, privacy: .public) key code \(code): \(String(describing: action), privacy: .public)")
+        case .overview(true):
+            counters.shortcuts.add(at: now)
+            log.debug("shortcut \(modifiers.symbols, privacy: .public) key code \(code): workspace overview")
+        case .pass where !held.isEmpty:
+            counters.unbound.add(at: now)
+            log.debug("no shortcut for \(modifiers.symbols, privacy: .public) key code \(code) (key bindings \(self.state.keyBindingsSuspended ? "suspended" : "active", privacy: .public))")
+        default:
+            break
         }
     }
 

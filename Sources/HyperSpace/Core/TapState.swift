@@ -35,10 +35,10 @@ struct TapState {
     /// The key code holding the workspace overview open, or -1.
     private var overviewKey = -1
     /// Set while the settings window captures a mouse button: buttons reach the app unmapped.
-    private var buttonsSuspended = false
+    private(set) var buttonsSuspended = false
     /// Set while the settings window captures a shortcut: key bindings are ignored
     /// (combination keys still work, so caps lock → ⌃⌥⇧ can be part of the shortcut).
-    private var keyBindingsSuspended = false
+    private(set) var keyBindingsSuspended = false
 
     /// A new config: everything held or swallowed is forgotten. True when the overview was
     /// open and must close.

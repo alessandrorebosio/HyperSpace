@@ -53,14 +53,18 @@ extension ScreenInfo {
 
     /// The UUID each display had when last asked: a display that is gone has none to ask for.
     private static var uuids: [CGDirectDisplayID: String] = [:]
+    /// The app asks on the main thread only; the tests ask from several at once.
+    private static let uuidsLock = NSLock()
 
     /// Asked every time while the display is there (macOS may give the id of a monitor that
     /// went away to another one); the UUID remembered only answers for a display that is gone.
     static func uuid(of id: CGDirectDisplayID) -> String {
-        guard let ref = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue(),
-              let text = CFUUIDCreateString(nil, ref) as String? else { return uuids[id] ?? String(id) }
-        uuids[id] = text
-        return text
+        let asked = CGDisplayCreateUUIDFromDisplayID(id).map { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String? } ?? nil
+        uuidsLock.lock()
+        defer { uuidsLock.unlock() }
+        guard let asked else { return uuids[id] ?? String(id) }
+        uuids[id] = asked
+        return asked
     }
 
     /// `rect` moved from this display to `other`, keeping its position and size as shares

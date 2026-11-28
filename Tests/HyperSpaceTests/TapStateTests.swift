@@ -222,3 +222,42 @@ private final class Tap {
         #expect(tap.button(3, modifiers: [], down: false) == .pass)
     }
 }
+
+/// The event tap's lines in the debug report.
+@Suite struct TapDiagnosticsTests {
+    private let second: UInt64 = 1_000_000_000
+
+    @Test func talliesSayHowLongAgo() {
+        var tally = TapDiagnostics.Tally()
+        #expect(tally.text(now: 5 * second) == "0")
+        tally.add(at: 2 * second)
+        tally.add(at: 3 * second)
+        #expect(tally.text(now: 5 * second) == "2 (last 2 s ago)")
+        #expect(tally.text(now: 303 * second) == "2 (last 5 min ago)")
+        #expect(tally.text(now: 3 * 3600 * second + 3 * second) == "2 (last 3 h ago)")
+        // A clock read before the last event (another thread's) is not a negative time.
+        #expect(tally.text(now: second) == "2 (last 0 s ago)")
+    }
+
+    @Test func stateLineTellsWhyShortcutsAreOff() {
+        var diagnostics = TapDiagnostics()
+        #expect(diagnostics.lines(now: 0)[0].hasPrefix("Event tap state: not installed; key bindings active"))
+        diagnostics.installed = true
+        #expect(diagnostics.lines(now: 0)[0].hasPrefix("Event tap state: disabled by the system"))
+        diagnostics.enabled = true
+        diagnostics.keyBindingsSuspended = true
+        diagnostics.held = .meh
+        diagnostics.carriers = 1
+        diagnostics.actions = 40
+        #expect(diagnostics.lines(now: 0)[0] == "Event tap state: enabled; key bindings suspended (Settings is recording); "
+            + "mouse buttons active; combination held: ⌃⌥⇧; 1 combination key(s), 40 action(s)")
+    }
+
+    @Test func seenLineCountsWithoutKeys() {
+        var diagnostics = TapDiagnostics()
+        diagnostics.keys.add(at: second)
+        diagnostics.unbound.add(at: second)
+        #expect(diagnostics.lines(now: 4 * second)[1] == "Event tap seen: key presses 1 (last 3 s ago); combination key events 0; "
+            + "shortcuts run 0; presses with a combination and no shortcut 1 (last 3 s ago); switched off by the system 0")
+    }
+}
